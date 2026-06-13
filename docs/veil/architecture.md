@@ -30,7 +30,7 @@ Veil adds:
 
 ```
 packages/
-├── context/                    # NEW: Context management core
+├── engrammic/                  # NEW: Context management core (@engrammic/veil)
 │   ├── src/
 │   │   ├── manager.ts          # Window manager, loader/unloader
 │   │   ├── scorer.ts           # Heuristic relevance scoring
