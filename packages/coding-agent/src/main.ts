@@ -5,8 +5,11 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
+import { VeilHarness } from "@engrammic/veil";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
@@ -685,6 +688,26 @@ export async function main(args: string[], options?: MainOptions) {
 			}
 		}
 
+		// Create .veil directory for context DB
+		const veilDir = join(cwd, ".veil");
+		if (!existsSync(veilDir)) {
+			mkdirSync(veilDir, { recursive: true });
+		}
+
+		// Create VeilHarness with graceful degradation
+		const contextBudget = Math.floor((sessionOptions.model?.contextWindow ?? 128000) * 0.7);
+		let veilHarness: VeilHarness | undefined;
+		try {
+			veilHarness = new VeilHarness({
+				dbPath: join(veilDir, "context.db"),
+				maxTokens: contextBudget,
+				sessionId: sessionManager.getSessionId(),
+			});
+		} catch (err) {
+			console.error(`Failed to initialize context management: ${err instanceof Error ? err.message : String(err)}`);
+			console.error("Continuing without context management.");
+		}
+
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
@@ -696,6 +719,7 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			veilHarness,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
@@ -718,6 +742,20 @@ export async function main(args: string[], options?: MainOptions) {
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRegistry, resourceLoader } = services;
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
+
+	// Cleanup VeilHarness on exit
+	if (session.veilHarness) {
+		let harnessCleanedUp = false;
+		const cleanupHarness = async () => {
+			if (harnessCleanedUp || !session.veilHarness) return;
+			harnessCleanedUp = true;
+			await session.veilHarness.close();
+		};
+		process.on("beforeExit", cleanupHarness);
+		process.on("SIGINT", async () => {
+			await cleanupHarness();
+		});
+	}
 
 	if (parsed.help) {
 		const extensionFlags = resourceLoader

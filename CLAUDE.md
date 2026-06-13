@@ -53,3 +53,7 @@ The coding-agent CLI is the main entry point (`pi` command when installed, `./ve
 
 Local context files live in `context/` (gitignored):
 - `context/distribution.md` - marketing/community distribution channels
+
+## Git Commits
+
+Do not add Co-Authored-By lines to commit messages.
