@@ -7,9 +7,13 @@
 - [ ] Rename all packages: `@earendil-works/pi-*` → `@engrammic/veil-*`
 - [ ] Update all internal imports across packages
 - [x] Rename CLI: `pi` → `veil`
+- [x] Update CLI description and help text
+- [x] Rename config dir: `.pi` → `.veil`
+- [x] Add Pi → Veil migration (auto-copies ~/.pi to ~/.veil)
 - [ ] Update all documentation
 - [ ] Update AGENTS.md
-- [x] Remove Pi branding (logos, pi.dev references) — user-facing done
+- [x] Remove Pi branding — user-facing strings done
+- [x] Disable pi.dev endpoints (version check, telemetry, share viewer)
 - [ ] Update GitHub Actions workflows
 
 ## API Endpoints (engrammic.ai)
@@ -29,6 +33,7 @@
 - [x] Implement heuristic scoring (scorer.ts)
 - [x] Implement eviction logic (checkEviction in manager.ts)
 - [x] Create VeilHarness with Pi-compatible hooks
+- [x] Add sessionId support to VeilHarness
 
 ## Phase 2: Cold Storage ✅
 
@@ -37,11 +42,12 @@
 - [x] MemoryColdStore (testing)
 - [x] Stub adapters: Zep, LanceDB, Chroma, Mem0, Engrammic KG
 
-## Phase 3: Integration (Current)
+## Phase 3: Integration ✅
 
-- [ ] Wire VeilHarness into agent-session.ts
-  - Compose Veil hooks before extension hooks
-  - Add VeilHarness as optional AgentSessionConfig
+- [x] Wire VeilHarness into agent-session.ts
+  - [x] Add VeilHarness as optional AgentSessionConfig field
+  - [x] Compose Veil hooks before extension hooks in _installAgentToolHooks
+  - [x] Create VeilHarness in main.ts with cleanup handlers
 - [ ] Add context lifecycle events to extension system
 - [ ] Integrate with compaction (eviction-aware compaction)
 
@@ -51,8 +57,10 @@
 - [ ] `/context` command for visibility
 - [ ] `/veil` command for memory management
 - [ ] Documentation
+- [ ] Test harness end-to-end with API key
 
 ## Housekeeping
 
 - [ ] Fix pnpm shrinkwrap script (currently needs `--no-verify`)
+- [ ] Fix tsgo type errors (Response/Headers types)
 - [ ] Update CI workflows for pnpm
