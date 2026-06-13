@@ -742,7 +742,17 @@ export async function main(args: string[], options?: MainOptions) {
 					}) => void,
 				): (() => void) => {
 					return created.session.agent.subscribe((event) => {
-						if (event.type === "tool_execution_start") {
+						if (event.type === "turn_start") {
+							veilHarness.resetTurnCaptures();
+						} else if (event.type === "tool_execution_start") {
+							// Prune pendingArgs if it grows too large (guards against crash/abort leaks)
+							if (pendingArgs.size > 100) {
+								const entries = [...pendingArgs.entries()];
+								pendingArgs.clear();
+								for (const [k, v] of entries.slice(-50)) {
+									pendingArgs.set(k, v);
+								}
+							}
 							pendingArgs.set(event.toolCallId, event.args as Record<string, unknown>);
 						} else if (event.type === "tool_execution_end") {
 							const input = pendingArgs.get(event.toolCallId) ?? {};
