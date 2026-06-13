@@ -410,7 +410,16 @@ export class AgentSession {
 	 * happens here instead of in wrappers.
 	 */
 	private _installAgentToolHooks(): void {
-		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
+			// Veil hook first (eviction check)
+			if (this._veilHarness) {
+				await this._veilHarness.beforeToolCall(
+					{ toolCall: { name: toolCall.name }, args },
+					signal,
+				);
+			}
+
+			// Extension hooks second
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -431,7 +440,16 @@ export class AgentSession {
 			}
 		};
 
-		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+		this.agent.afterToolCall = async ({ toolCall, args, result, isError }, signal) => {
+			// Veil hook first (cognitive weight update)
+			if (this._veilHarness) {
+				await this._veilHarness.afterToolCall(
+					{ toolCall: { name: toolCall.name }, result: { isError } },
+					signal,
+				);
+			}
+
+			// Extension hooks second
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_result")) {
 				return undefined;
