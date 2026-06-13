@@ -29,10 +29,8 @@ export function smartTruncate(content: string, maxChars: number): string {
 }
 
 /**
- * Generate a fast content hash using the first 1000 chars + content length.
- * Returns first 16 chars of SHA-256 hex digest for deduplication.
+ * Generate SHA-256 hash of full content for deduplication.
  */
 export function contentHash(content: string): string {
-	const sample = content.slice(0, 1000) + content.length;
-	return createHash("sha256").update(sample).digest("hex").slice(0, 16);
+	return createHash("sha256").update(content).digest("hex");
 }

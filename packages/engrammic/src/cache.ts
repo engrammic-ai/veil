@@ -184,7 +184,7 @@ export class ContextCache {
 }
 
 export function hashContent(content: string): string {
-	return createHash("sha256").update(content).digest("hex").slice(0, 16);
+	return createHash("sha256").update(content).digest("hex");
 }
 
 export function createItem(content: string, type: ContextItem["type"], tags: string[] = []): ContextItem {

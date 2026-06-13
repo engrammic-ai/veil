@@ -74,10 +74,10 @@ describe("smartTruncate", () => {
 });
 
 describe("contentHash", () => {
-	test("returns 16-char hex string", () => {
+	test("returns full 64-char SHA-256 hex string", () => {
 		const hash = contentHash("some content");
-		assert.strictEqual(hash.length, 16);
-		assert.match(hash, /^[0-9a-f]{16}$/);
+		assert.strictEqual(hash.length, 64);
+		assert.match(hash, /^[0-9a-f]{64}$/);
 	});
 
 	test("same content → same hash", () => {
@@ -93,7 +93,7 @@ describe("contentHash", () => {
 
 	test("empty string produces a valid hash", () => {
 		const hash = contentHash("");
-		assert.strictEqual(hash.length, 16);
-		assert.match(hash, /^[0-9a-f]{16}$/);
+		assert.strictEqual(hash.length, 64);
+		assert.match(hash, /^[0-9a-f]{64}$/);
 	});
 });
