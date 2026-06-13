@@ -70,9 +70,7 @@ MIT — See [LICENSE](LICENSE) for Pi attribution.
 
 ## Credits
 
-Veil is built on top of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and the Earendil team.
-
-Pi gave agents the tools to work. Veil gives them the memory to remember why. Thank you for building something worth extending.
+Veil is built on top of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and the Earendil team. tysm for making Pi open source <3
 
 ## Links
 
