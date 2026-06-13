@@ -726,6 +726,41 @@ export async function main(args: string[], options?: MainOptions) {
 			created.session.setThinkingLevel(created.session.thinkingLevel);
 		}
 
+		// Wire up VeilHarness auto-capture via subscribeToEvents.
+		// AgentSession doesn't expose AgentHarness directly, so we create a
+		// compatible adapter over session.agent's subscription API.
+		if (veilHarness) {
+			const pendingArgs = new Map<string, Record<string, unknown>>();
+			const agentHarnessAdapter = {
+				on: (
+					_type: "tool_result",
+					handler: (event: {
+						toolName: string;
+						input: Record<string, unknown>;
+						content: Array<{ type: string; text?: string }>;
+						isError: boolean;
+					}) => void,
+				): (() => void) => {
+					return created.session.agent.subscribe((event) => {
+						if (event.type === "tool_execution_start") {
+							pendingArgs.set(event.toolCallId, event.args as Record<string, unknown>);
+						} else if (event.type === "tool_execution_end") {
+							const input = pendingArgs.get(event.toolCallId) ?? {};
+							pendingArgs.delete(event.toolCallId);
+							const result = event.result as { content?: Array<{ type: string; text?: string }> };
+							handler({
+								toolName: event.toolName,
+								input,
+								content: result.content ?? [],
+								isError: event.isError,
+							});
+						}
+					});
+				},
+			};
+			veilHarness.subscribeToEvents(agentHarnessAdapter);
+		}
+
 		return {
 			...created,
 			services,

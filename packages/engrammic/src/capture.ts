@@ -37,8 +37,15 @@ export function getCaptureRule(toolName: string, args: unknown): CaptureRule | n
  */
 function classifyBashCommand(command: string): CaptureRule | null {
 	// Strip common prefixes (sudo, time, env VAR=val) before pattern matching
-	const clean = (cmd: string): string =>
-		cmd.replace(/^(sudo|time|env\s+\S+=\S+)\s+/g, "").trim();
+	// Use a while loop to handle stacked prefixes like `sudo time grep foo`
+	const prefixPattern = /^(sudo|time|env\s+\S+=\S+)\s+/;
+	const clean = (cmd: string): string => {
+		let result = cmd.trim();
+		while (prefixPattern.test(result)) {
+			result = result.replace(prefixPattern, "").trim();
+		}
+		return result;
+	};
 
 	const checkSegment = (segment: string): CaptureRule | null => {
 		const c = clean(segment);
@@ -90,8 +97,8 @@ export function generateInternalTags(toolName: string, args: unknown): string[] 
 	if (/test|spec|__test__|__spec__|\.test\.|\.spec\./i.test(filepath)) {
 		tags.push("test");
 	}
-	if (/^src\//.test(filepath)) tags.push("source");
-	if (/^docs?\//.test(filepath)) tags.push("docs");
+	if (filepath.includes("/src/") || filepath.startsWith("src/")) tags.push("source");
+	if (/\/docs?\//i.test(filepath) || /^docs?\//i.test(filepath)) tags.push("docs");
 
 	return tags;
 }
