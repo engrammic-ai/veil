@@ -62,6 +62,11 @@ export interface ContextManagerConfig {
 	dbPath: string;
 }
 
+export interface CaptureRule {
+	type: "episodic" | "fact";
+	tags: string[];
+}
+
 export const DEFAULT_CONFIG: ContextManagerConfig = {
 	maxTokens: 128000,
 	reserveTokens: 16384,

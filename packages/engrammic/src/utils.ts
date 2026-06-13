@@ -13,6 +13,7 @@ export function estimateTokens(content: string): number {
  * Keeps first 70% and last 25% of maxChars, with an ellipsis marker in the middle.
  */
 export function smartTruncate(content: string, maxChars: number): string {
+	if (maxChars <= 0) return "";
 	if (content.length <= maxChars) {
 		return content;
 	}
