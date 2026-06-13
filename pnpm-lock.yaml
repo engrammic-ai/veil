@@ -125,6 +125,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: ^0.79.3
         version: 0.79.3
+      '@engrammic/veil':
+        specifier: workspace:*
+        version: link:../engrammic
       '@silvia-odwyer/photon-node':
         specifier: 0.3.4
         version: 0.3.4
@@ -233,17 +236,17 @@ importers:
   packages/engrammic:
     dependencies:
       better-sqlite3:
-        specifier: ^11.0.0
+        specifier: 11.10.0
         version: 11.10.0
     devDependencies:
       '@types/better-sqlite3':
-        specifier: ^7.6.0
+        specifier: 7.6.13
         version: 7.6.13
       shx:
-        specifier: ^0.4.0
+        specifier: 0.4.0
         version: 0.4.0
       typescript:
-        specifier: ^5.9.3
+        specifier: 5.9.3
         version: 5.9.3
 
   packages/tui:

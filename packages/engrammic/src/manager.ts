@@ -23,6 +23,7 @@ import type {
 	TaskContext,
 } from "./types.ts";
 import { DEFAULT_CONFIG } from "./types.ts";
+import { estimateTokens } from "./utils.ts";
 
 export class ContextManager {
 	private cache: ContextCache;
@@ -89,7 +90,7 @@ export class ContextManager {
 			if (item) {
 				this.cache.touch(id);
 				this.loaded.set(id, item);
-				this.budget.usedTokens += this.estimateTokens(item.content);
+				this.budget.usedTokens += estimateTokens(item.content);
 				items.push(item);
 			}
 		}
@@ -104,7 +105,7 @@ export class ContextManager {
 		for (const id of ids) {
 			const item = this.loaded.get(id);
 			if (item) {
-				this.budget.usedTokens -= this.estimateTokens(item.content);
+				this.budget.usedTokens -= estimateTokens(item.content);
 				this.loaded.delete(id);
 			}
 		}
@@ -273,10 +274,10 @@ export class ContextManager {
 	}
 
 	/**
-	 * Estimate token count (rough: ~4 chars per token).
+	 * Get the warm cache for direct access (e.g., deduplication).
 	 */
-	private estimateTokens(content: string): number {
-		return Math.ceil(content.length / 4);
+	getCache(): ContextCache {
+		return this.cache;
 	}
 
 	/**

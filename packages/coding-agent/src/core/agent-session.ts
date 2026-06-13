@@ -33,6 +33,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai";
+import type { VeilHarness } from "@engrammic/veil";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -184,6 +185,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Optional Veil harness for context management */
+	veilHarness?: VeilHarness;
 }
 
 export interface ExtensionBindings {
@@ -258,6 +261,7 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
+	private _veilHarness: VeilHarness | undefined;
 	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
@@ -326,6 +330,7 @@ export class AgentSession {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
+		this._veilHarness = config.veilHarness;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
@@ -352,6 +357,10 @@ export class AgentSession {
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	get veilHarness(): VeilHarness | undefined {
+		return this._veilHarness;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -401,7 +410,13 @@ export class AgentSession {
 	 * happens here instead of in wrappers.
 	 */
 	private _installAgentToolHooks(): void {
-		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
+			// Veil hook first (eviction check)
+			if (this._veilHarness) {
+				await this._veilHarness.beforeToolCall({ toolCall: { name: toolCall.name }, args }, signal);
+			}
+
+			// Extension hooks second
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -422,7 +437,13 @@ export class AgentSession {
 			}
 		};
 
-		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+		this.agent.afterToolCall = async ({ toolCall, args, result, isError }, signal) => {
+			// Veil hook first (cognitive weight update)
+			if (this._veilHarness) {
+				await this._veilHarness.afterToolCall({ toolCall: { name: toolCall.name }, result: { isError } }, signal);
+			}
+
+			// Extension hooks second
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_result")) {
 				return undefined;
