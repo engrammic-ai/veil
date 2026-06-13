@@ -4,6 +4,7 @@
  */
 
 export { ContextCache, createItem, hashContent } from "./cache.ts";
+export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 // Cold storage adapters
 export {
 	ChromaColdStore,
@@ -28,6 +29,7 @@ export { ContextManager } from "./manager.ts";
 export type { ScorerWeights } from "./scorer.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export {
+	type CaptureRule,
 	type ContextBudget,
 	type ContextItem,
 	type ContextManagerConfig,
@@ -36,3 +38,4 @@ export {
 	type EvictionCandidate,
 	type TaskContext,
 } from "./types.ts";
+export { contentHash, estimateTokens, smartTruncate } from "./utils.ts";

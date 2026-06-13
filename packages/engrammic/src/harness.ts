@@ -9,14 +9,20 @@
  *   }
  */
 
+import { hashContent } from "./cache.ts";
+import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { ContextManager } from "./manager.ts";
-import type { ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
+import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
+import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
+import { smartTruncate } from "./utils.ts";
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
 	onEviction?: (evicted: EvictionCandidate[]) => void;
 	onCheckpoint?: (turnCount: number) => void;
+	sessionId?: string; // Tag context items with session
+	captureConfig?: Partial<CaptureConfig>;
 }
 
 export interface BeforeToolCallContext {
@@ -38,13 +44,27 @@ export interface AfterToolCallResult {
 	terminate?: boolean;
 }
 
+export interface ToolResultEvent {
+	toolName: string;
+	input: Record<string, unknown>;
+	content: Array<{ type: string; text?: string }>;
+	isError: boolean;
+}
+
 export class VeilHarness {
 	private manager: ContextManager;
 	private config: VeilHarnessConfig;
 	private currentTaskContext: TaskContext = { tags: [] };
+	private sessionId: string | undefined;
+	private unsubscribe?: () => void;
+	private captureConfig: CaptureConfig;
+	private capturesThisTurn: number = 0;
+	private totalCaptures: number = 0;
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
+		this.sessionId = config.sessionId;
+		this.captureConfig = { ...DEFAULT_CAPTURE_CONFIG, ...config.captureConfig };
 		this.manager = new ContextManager(config, config.coldStore);
 	}
 
@@ -53,6 +73,13 @@ export class VeilHarness {
 	 */
 	getManager(): ContextManager {
 		return this.manager;
+	}
+
+	/**
+	 * Get the session ID associated with this harness instance.
+	 */
+	getSessionId(): string | undefined {
+		return this.sessionId;
 	}
 
 	/**
@@ -116,6 +143,67 @@ export class VeilHarness {
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Subscribe to tool_result events from Pi's AgentHarness.
+	 * The returned unsubscribe function is stored and called automatically on close().
+	 */
+	subscribeToEvents(agentHarness: {
+		on: (type: "tool_result", handler: (event: ToolResultEvent) => void) => () => void;
+	}): void {
+		this.unsubscribe = agentHarness.on("tool_result", this.handleToolResult.bind(this));
+	}
+
+	/**
+	 * Handle a tool_result event from Pi's agent loop.
+	 */
+	private handleToolResult(event: ToolResultEvent): void {
+		if (event.isError) return;
+		this.autoCapture(event.toolName, event.input, event.content);
+	}
+
+	/**
+	 * Auto-capture a tool result into the warm cache, respecting rate limits and deduplication.
+	 */
+	private autoCapture(toolName: string, args: unknown, content: Array<{ type: string; text?: string }>): void {
+		// Check rate limits
+		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
+		if (this.totalCaptures >= this.captureConfig.maxItemsPerSession) return;
+
+		// Get capture rule
+		const rule = getCaptureRule(toolName, args);
+		if (!rule) return;
+
+		// Extract text content
+		const text = extractContent(content);
+		if (text.length < this.captureConfig.minChars) return;
+
+		// Truncate if needed
+		const truncated = smartTruncate(text, this.captureConfig.maxChars);
+
+		// Check for duplicates — use the same hash function as createItem (cache.ts)
+		const hash = hashContent(truncated);
+		const existing = this.manager.getCache().getByHash(hash);
+		if (existing) {
+			this.manager.getCache().touch(existing.id);
+			return;
+		}
+
+		// Generate tags
+		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
+
+		// Store in warm cache
+		this.manager.remember(truncated, rule.type, tags);
+		this.capturesThisTurn++;
+		this.totalCaptures++;
+	}
+
+	/**
+	 * Reset per-turn capture counter. Call at turn boundaries.
+	 */
+	resetTurnCaptures(): void {
+		this.capturesThisTurn = 0;
 	}
 
 	/**
@@ -221,9 +309,10 @@ export class VeilHarness {
 	}
 
 	/**
-	 * Close all connections.
+	 * Close all connections and clean up event subscriptions.
 	 */
 	async close() {
+		this.unsubscribe?.();
 		return this.manager.close();
 	}
 }

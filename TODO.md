@@ -1,39 +1,64 @@
 # Veil TODO
 
-## BEFORE FIRST PUBLISH - REBRAND
+## Rebrand Status
 
-> **DO NOT PUBLISH WITHOUT COMPLETING THIS**
-
-- [ ] Rename all packages: `@earendil-works/pi-*` → `@engrammic/veil-*`
-- [ ] Update all internal imports across packages
-- [ ] Rename CLI: `pi` → `veil`
-- [ ] Update all documentation
-- [ ] Update AGENTS.md
-- [ ] Remove Pi branding (logos, pi.dev references)
+- [x] Rename CLI: `pi` → `veil`
+- [x] Update CLI description and help text
+- [x] Rename config dir: `.pi` → `.veil`
+- [x] Add Pi → Veil migration (auto-copies ~/.pi to ~/.veil)
+- [x] Remove Pi branding — user-facing strings done
+- [x] Disable pi.dev endpoints (version check, telemetry, share viewer)
+- [ ] Update docs (README done, others TBD)
 - [ ] Update GitHub Actions workflows
+
+> Internal packages stay `@earendil-works/pi-*` for upstream compatibility.
+> CLI package rename to `@engrammic/veil` only when distributing via npm.
+
+## API Endpoints (engrammic.ai)
+
+> Implement these backend services to replace disabled pi.dev endpoints
+
+- [ ] `GET /api/latest-version` — returns `{ version, packageName?, note? }`
+- [ ] `GET /api/report-install` — install telemetry (or decide to skip)
+- [ ] Session viewer at `/session/#<gist_id>` — renders shared sessions
+- [ ] Changelog page at `/changelog`
 
 ---
 
-## Phase 1: Core Context (Current)
+## Phase 1: Core Context ✅
 
-- [ ] Create `packages/context/` — context manager
-- [ ] Create `packages/memory/` — SQLite warm cache
-- [ ] Hook into agent loop (`context` event)
-- [ ] Implement heuristic scoring
+- [x] Create `packages/engrammic/` — context manager with SQLite warm cache
+- [x] Implement heuristic scoring (scorer.ts)
+- [x] Implement eviction logic (checkEviction in manager.ts)
+- [x] Create VeilHarness with Pi-compatible hooks
+- [x] Add sessionId support to VeilHarness
 
-## Phase 2: Integration
+## Phase 2: Cold Storage ✅
 
-- [ ] Wire context manager into agent-session.ts
-- [ ] Replace/extend compaction with eviction
-- [ ] Add decay manager
+- [x] ColdStore interface for pluggable backends
+- [x] SqliteColdStore (default, zero config)
+- [x] MemoryColdStore (testing)
+- [x] Stub adapters: Zep, LanceDB, Chroma, Mem0, Engrammic KG
 
-## Phase 3: KG Adapter
+## Phase 3: Integration ✅
 
-- [ ] Interface for cold storage
-- [ ] Connect to context-service
+- [x] Wire VeilHarness into agent-session.ts
+  - [x] Add VeilHarness as optional AgentSessionConfig field
+  - [x] Compose Veil hooks before extension hooks in _installAgentToolHooks
+  - [x] Create VeilHarness in main.ts with cleanup handlers
+- [ ] Add context lifecycle events to extension system
+- [ ] Integrate with compaction (eviction-aware compaction)
 
 ## Phase 4: Polish
 
-- [ ] CLI flags for context config
+- [ ] CLI flags for context config (`--context-budget`, `--eviction-threshold`)
 - [ ] `/context` command for visibility
-- [ ] Tests
+- [ ] `/veil` command for memory management
+- [ ] Documentation
+- [ ] Test harness end-to-end with API key
+
+## Housekeeping
+
+- [ ] Fix pnpm shrinkwrap script (currently needs `--no-verify`)
+- [ ] Fix tsgo type errors (Response/Headers types)
+- [ ] Update CI workflows for pnpm

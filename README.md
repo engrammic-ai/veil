@@ -2,6 +2,8 @@
 
 Context-aware agent harness. Memory that fades so you don't have to think about it.
 
+Part of the [Engrammic](https://engrammic.ai) ecosystem.
+
 > Fork of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner, adding integrated context management and episodic memory.
 
 ## What Veil Does
@@ -10,6 +12,14 @@ Context-aware agent harness. Memory that fades so you don't have to think about 
 - **Heuristic eviction** — stale context fades automatically, no LLM calls
 - **Episodic memory** — sessions become episodes, episodes become knowledge  
 - **Rot prevention** — old memories decay gracefully, not abruptly
+
+## Why Veil?
+
+See the [alignment docs](alignment/) for the full picture:
+
+- **[VISION.md](alignment/VISION.md)** — The problem, the insight, where we're going
+- **[MANIFESTO.md](alignment/MANIFESTO.md)** — Philosophical stance on memory and forgetting
+- **[PRINCIPLES.md](alignment/PRINCIPLES.md)** — Design decisions and constraints
 
 ## Packages
 
@@ -60,4 +70,9 @@ MIT — See [LICENSE](LICENSE) for Pi attribution.
 
 ## Credits
 
-Veil is built on top of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and the Earendil team. Thank you for making Pi open source.
+Veil is built on top of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and the Earendil team. tysm for making Pi open source <3
+
+## Links
+
+- [Engrammic](https://engrammic.ai) — Epistemic memory for AI agents
+- [Pi (upstream)](https://github.com/badlogic/pi-mono) — The coding agent Veil is built on
