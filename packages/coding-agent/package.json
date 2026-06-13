@@ -4,10 +4,10 @@
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
-		"configDir": ".pi"
+		"configDir": ".veil"
 	},
 	"bin": {
-		"pi": "dist/cli.js"
+		"veil": "dist/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -36,6 +36,7 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
+		"@engrammic/veil": "workspace:*",
 		"@earendil-works/pi-agent-core": "^0.79.3",
 		"@earendil-works/pi-ai": "^0.79.3",
 		"@earendil-works/pi-tui": "^0.79.3",
