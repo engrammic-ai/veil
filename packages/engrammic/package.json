@@ -10,6 +10,10 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./cold": {
+			"types": "./dist/cold/index.d.ts",
+			"import": "./dist/cold/index.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [
@@ -19,17 +23,24 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsc",
-		"test": "node --test --experimental-strip-types src/**/*.test.ts"
+		"test": "node --test --import tsx src/**/*.test.ts"
 	},
 	"dependencies": {
-		"better-sqlite3": "^11.0.0"
+		"better-sqlite3": "11.10.0"
 	},
 	"devDependencies": {
-		"@types/better-sqlite3": "^7.6.0",
-		"shx": "^0.4.0",
-		"typescript": "^5.9.3"
+		"@types/better-sqlite3": "7.6.14",
+		"shx": "0.4.0",
+		"typescript": "5.9.3"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-agent-core": "workspace:*"
+		"@getzep/zep-cloud": "^2.0.0",
+		"@lancedb/lancedb": "^0.15.0",
+		"chromadb": "^1.9.0"
+	},
+	"peerDependenciesMeta": {
+		"@getzep/zep-cloud": { "optional": true },
+		"@lancedb/lancedb": { "optional": true },
+		"chromadb": { "optional": true }
 	}
 }

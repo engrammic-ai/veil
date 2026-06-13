@@ -3,16 +3,36 @@
  * Context management for Veil - dynamic loading, heuristic eviction, episodic memory
  */
 
-export { ContextManager } from './manager.js'
-export { ContextCache, createItem, hashContent } from './cache.js'
-export { computeRelevance, rankItems, findEvictionCandidates } from './scorer.js'
-export type { ScorerWeights } from './scorer.js'
+export { ContextCache, createItem, hashContent } from "./cache.ts";
+// Cold storage adapters
 export {
-	DEFAULT_CONFIG,
-	type ContextItem,
-	type TaskContext,
+	ChromaColdStore,
+	type ChromaColdStoreConfig,
+	// Interface
+	type ColdStore,
+	type ColdStoreCapabilities,
+	type ColdStoreConfig,
+	LanceDBColdStore,
+	type LanceDBColdStoreConfig,
+	MemoryColdStore,
+	// Adapters (no external deps)
+	SqliteColdStore,
+	type SqliteColdStoreConfig,
+	// Adapters (peer deps required)
+	ZepColdStore,
+	type ZepColdStoreConfig,
+} from "./cold/index.ts";
+export { VeilHarness, type VeilHarnessConfig } from "./harness.ts";
+// Core
+export { ContextManager } from "./manager.ts";
+export type { ScorerWeights } from "./scorer.ts";
+export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
+export {
 	type ContextBudget,
-	type ContextWindow,
+	type ContextItem,
 	type ContextManagerConfig,
+	type ContextWindow,
+	DEFAULT_CONFIG,
 	type EvictionCandidate,
-} from './types.js'
+	type TaskContext,
+} from "./types.ts";
