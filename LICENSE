@@ -1,6 +1,10 @@
 MIT License
 
-Copyright (c) 2025 Mario Zechner
+Copyright (c) 2026 Engrammic
+Copyright (c) 2025 Mario Zechner (pi-mono, https://github.com/badlogic/pi-mono)
+
+Veil is a fork of pi-mono by Mario Zechner, modified to add integrated
+context management and episodic memory capabilities.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
