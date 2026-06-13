@@ -6,11 +6,20 @@
 
 - [ ] Rename all packages: `@earendil-works/pi-*` → `@engrammic/veil-*`
 - [ ] Update all internal imports across packages
-- [ ] Rename CLI: `pi` → `veil`
+- [x] Rename CLI: `pi` → `veil`
 - [ ] Update all documentation
 - [ ] Update AGENTS.md
-- [ ] Remove Pi branding (logos, pi.dev references)
+- [x] Remove Pi branding (logos, pi.dev references) — user-facing done
 - [ ] Update GitHub Actions workflows
+
+## API Endpoints (engrammic.ai)
+
+> Implement these backend services to replace disabled pi.dev endpoints
+
+- [ ] `GET /api/latest-version` — returns `{ version, packageName?, note? }`
+- [ ] `GET /api/report-install` — install telemetry (or decide to skip)
+- [ ] Session viewer at `/session/#<gist_id>` — renders shared sessions
+- [ ] Changelog page at `/changelog`
 
 ---
 
