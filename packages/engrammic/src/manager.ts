@@ -274,6 +274,13 @@ export class ContextManager {
 	}
 
 	/**
+	 * Get the warm cache for direct access (e.g., deduplication).
+	 */
+	getCache(): ContextCache {
+		return this.cache;
+	}
+
+	/**
 	 * Get cold store capabilities.
 	 */
 	getColdCapabilities(): ColdStore["capabilities"] {
