@@ -17,6 +17,7 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
 	onEviction?: (evicted: EvictionCandidate[]) => void;
 	onCheckpoint?: (turnCount: number) => void;
+	sessionId?: string; // Tag context items with session
 }
 
 export interface BeforeToolCallContext {
@@ -42,9 +43,11 @@ export class VeilHarness {
 	private manager: ContextManager;
 	private config: VeilHarnessConfig;
 	private currentTaskContext: TaskContext = { tags: [] };
+	private sessionId: string | undefined;
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
+		this.sessionId = config.sessionId;
 		this.manager = new ContextManager(config, config.coldStore);
 	}
 
@@ -53,6 +56,13 @@ export class VeilHarness {
 	 */
 	getManager(): ContextManager {
 		return this.manager;
+	}
+
+	/**
+	 * Get the session ID associated with this harness instance.
+	 */
+	getSessionId(): string | undefined {
+		return this.sessionId;
 	}
 
 	/**
