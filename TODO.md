@@ -1,20 +1,18 @@
 # Veil TODO
 
-## BEFORE FIRST PUBLISH - REBRAND
+## Rebrand Status
 
-> **DO NOT PUBLISH WITHOUT COMPLETING THIS**
-
-- [ ] Rename all packages: `@earendil-works/pi-*` → `@engrammic/veil-*`
-- [ ] Update all internal imports across packages
 - [x] Rename CLI: `pi` → `veil`
 - [x] Update CLI description and help text
 - [x] Rename config dir: `.pi` → `.veil`
 - [x] Add Pi → Veil migration (auto-copies ~/.pi to ~/.veil)
-- [ ] Update all documentation
-- [ ] Update AGENTS.md
 - [x] Remove Pi branding — user-facing strings done
 - [x] Disable pi.dev endpoints (version check, telemetry, share viewer)
+- [ ] Update docs (README done, others TBD)
 - [ ] Update GitHub Actions workflows
+
+> Internal packages stay `@earendil-works/pi-*` for upstream compatibility.
+> CLI package rename to `@engrammic/veil` only when distributing via npm.
 
 ## API Endpoints (engrammic.ai)
 
