@@ -11,6 +11,14 @@ Context-aware agent harness. Memory that fades so you don't have to think about 
 - **Episodic memory** — sessions become episodes, episodes become knowledge  
 - **Rot prevention** — old memories decay gracefully, not abruptly
 
+## Why Veil?
+
+See the [alignment docs](alignment/) for the full picture:
+
+- **[VISION.md](alignment/VISION.md)** — The problem, the insight, where we're going
+- **[MANIFESTO.md](alignment/MANIFESTO.md)** — Philosophical stance on memory and forgetting
+- **[PRINCIPLES.md](alignment/PRINCIPLES.md)** — Design decisions and constraints
+
 ## Packages
 
 | Package | Description |

@@ -21,6 +21,8 @@ packages/*/dist-firefox/
 *.swo
 *~
 
+docs/superpowers/
+
 # Package specific
 .npm/
 coverage/
@@ -40,3 +42,4 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+docs/superpowers/

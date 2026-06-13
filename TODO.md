@@ -14,26 +14,36 @@
 
 ---
 
-## Phase 1: Core Context (Current)
+## Phase 1: Core Context ✅
 
-- [ ] Create `packages/context/` — context manager
-- [ ] Create `packages/memory/` — SQLite warm cache
-- [ ] Hook into agent loop (`context` event)
-- [ ] Implement heuristic scoring
+- [x] Create `packages/engrammic/` — context manager with SQLite warm cache
+- [x] Implement heuristic scoring (scorer.ts)
+- [x] Implement eviction logic (checkEviction in manager.ts)
+- [x] Create VeilHarness with Pi-compatible hooks
 
-## Phase 2: Integration
+## Phase 2: Cold Storage ✅
 
-- [ ] Wire context manager into agent-session.ts
-- [ ] Replace/extend compaction with eviction
-- [ ] Add decay manager
+- [x] ColdStore interface for pluggable backends
+- [x] SqliteColdStore (default, zero config)
+- [x] MemoryColdStore (testing)
+- [x] Stub adapters: Zep, LanceDB, Chroma, Mem0, Engrammic KG
 
-## Phase 3: KG Adapter
+## Phase 3: Integration (Current)
 
-- [ ] Interface for cold storage
-- [ ] Connect to context-service
+- [ ] Wire VeilHarness into agent-session.ts
+  - Compose Veil hooks before extension hooks
+  - Add VeilHarness as optional AgentSessionConfig
+- [ ] Add context lifecycle events to extension system
+- [ ] Integrate with compaction (eviction-aware compaction)
 
 ## Phase 4: Polish
 
-- [ ] CLI flags for context config
+- [ ] CLI flags for context config (`--context-budget`, `--eviction-threshold`)
 - [ ] `/context` command for visibility
-- [ ] Tests
+- [ ] `/veil` command for memory management
+- [ ] Documentation
+
+## Housekeeping
+
+- [ ] Fix pnpm shrinkwrap script (currently needs `--no-verify`)
+- [ ] Update CI workflows for pnpm

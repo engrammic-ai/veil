@@ -29,6 +29,16 @@ function readJson(path) {
 	return JSON.parse(readFileSync(path, "utf8"));
 }
 
+// Skip shrinkwrap for pnpm-based repos (no package-lock.json)
+if (!existsSync(rootLockfilePath)) {
+	if (checkOnly) {
+		console.log("Skipping shrinkwrap check (pnpm repo, no package-lock.json).");
+		process.exit(0);
+	}
+	console.log("Skipping shrinkwrap generation (pnpm repo, no package-lock.json).");
+	process.exit(0);
+}
+
 function packageDependencies(entry) {
 	return {
 		...(entry.dependencies ?? {}),
