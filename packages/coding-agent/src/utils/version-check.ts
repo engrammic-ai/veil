@@ -1,6 +1,7 @@
 import { getVeilUserAgent } from "./veil-user-agent.ts";
 
-const LATEST_VERSION_URL = "https://pi.dev/api/latest-version";
+// TODO: Replace with engrammic.ai version check endpoint when available
+const LATEST_VERSION_URL = ""; // Disabled: was "https://pi.dev/api/latest-version"
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {
@@ -57,7 +58,8 @@ export async function getLatestPiRelease(
 	currentVersion: string,
 	options: { timeoutMs?: number } = {},
 ): Promise<LatestPiRelease | undefined> {
-	if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
+	// TODO: Re-enable when engrammic.ai endpoint is available
+	if (!LATEST_VERSION_URL || process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
 
 	const response = await fetch(LATEST_VERSION_URL, {
 		headers: {

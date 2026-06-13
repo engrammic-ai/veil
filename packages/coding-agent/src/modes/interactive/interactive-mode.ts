@@ -925,18 +925,9 @@ export class InteractiveMode {
 			return;
 		}
 
-		if (!isInstallTelemetryEnabled(this.settingsManager)) {
-			return;
-		}
-
-		void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
-			headers: {
-				"User-Agent": getVeilUserAgent(version),
-			},
-			signal: AbortSignal.timeout(5000),
-		})
-			.then(() => undefined)
-			.catch(() => undefined);
+		// TODO: Replace with engrammic.ai install reporting endpoint when available
+		// Disabled: was pi.dev/api/report-install
+		return;
 	}
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
@@ -3702,11 +3693,8 @@ export class InteractiveMode {
 	showNewVersionNotification(release: LatestPiRelease): void {
 		const action = theme.fg("accent", `${APP_NAME} update`);
 		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
-		const changelogUrl = "https://pi.dev/changelog";
-		const changelogLink = getCapabilities().hyperlinks
-			? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
-			: theme.fg("accent", changelogUrl);
-		const changelogLine = theme.fg("muted", "Changelog: ") + changelogLink;
+		// TODO: Replace with engrammic.ai changelog URL when available
+		const changelogLine = theme.fg("muted", "Run /changelog to view changes");
 		const note = release.note?.trim();
 
 		this.chatContainer.addChild(new Spacer(1));
