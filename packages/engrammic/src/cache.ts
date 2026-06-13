@@ -3,17 +3,17 @@
  * Fast local storage for recent/frequent items.
  */
 
-import Database from 'better-sqlite3'
-import type { ContextItem } from './types.js'
-import { createHash } from 'node:crypto'
+import { createHash } from "node:crypto";
+import Database from "better-sqlite3";
+import type { ContextItem } from "./types.ts";
 
 export class ContextCache {
-	private db: Database.Database
+	private db: Database.Database;
 
 	constructor(dbPath: string) {
-		this.db = new Database(dbPath)
-		this.db.pragma('journal_mode = WAL')
-		this.init()
+		this.db = new Database(dbPath);
+		this.db.pragma("journal_mode = WAL");
+		this.init();
 	}
 
 	private init(): void {
@@ -45,7 +45,7 @@ export class ContextCache {
 			CREATE INDEX IF NOT EXISTS idx_decay_score ON items(decay_score);
 			CREATE INDEX IF NOT EXISTS idx_type ON items(type);
 			CREATE INDEX IF NOT EXISTS idx_tags ON items(tags);
-		`)
+		`);
 	}
 
 	put(item: ContextItem): void {
@@ -65,7 +65,7 @@ export class ContextCache {
 				?, ?,
 				?, ?
 			)
-		`)
+		`);
 
 		stmt.run(
 			item.id,
@@ -82,42 +82,40 @@ export class ContextCache {
 			item.kgPointer ?? null,
 			item.dependsOn ? JSON.stringify(item.dependsOn) : null,
 			item.validFrom ?? null,
-			item.validUntil ?? null
-		)
+			item.validUntil ?? null,
+		);
 	}
 
 	get(id: string): ContextItem | null {
-		const row = this.db.prepare('SELECT * FROM items WHERE id = ?').get(id) as any
-		if (!row) return null
-		return this.rowToItem(row)
+		const row = this.db.prepare("SELECT * FROM items WHERE id = ?").get(id) as any;
+		if (!row) return null;
+		return this.rowToItem(row);
 	}
 
 	getAll(): ContextItem[] {
-		const rows = this.db.prepare('SELECT * FROM items').all() as any[]
-		return rows.map(row => this.rowToItem(row))
+		const rows = this.db.prepare("SELECT * FROM items").all() as any[];
+		return rows.map((row) => this.rowToItem(row));
 	}
 
 	getByTags(tags: string[], limit: number = 100): ContextItem[] {
 		// Simple tag matching - items containing any of the tags
-		const placeholders = tags.map(() => 'tags LIKE ?').join(' OR ')
-		const params = tags.map(t => `%"${t}"%`)
+		const placeholders = tags.map(() => "tags LIKE ?").join(" OR ");
+		const params = tags.map((t) => `%"${t}"%`);
 
 		const rows = this.db
 			.prepare(`SELECT * FROM items WHERE ${placeholders} ORDER BY last_access DESC LIMIT ?`)
-			.all(...params, limit) as any[]
+			.all(...params, limit) as any[];
 
-		return rows.map(row => this.rowToItem(row))
+		return rows.map((row) => this.rowToItem(row));
 	}
 
 	delete(id: string): void {
-		this.db.prepare('DELETE FROM items WHERE id = ?').run(id)
+		this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
 	}
 
 	touch(id: string): void {
-		const now = Date.now()
-		this.db
-			.prepare('UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?')
-			.run(now, id)
+		const now = Date.now();
+		this.db.prepare("UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?").run(now, id);
 	}
 
 	updateCognitiveWeight(id: string, delta: number): void {
@@ -127,35 +125,35 @@ export class ContextCache {
 				SET cognitive_weight = MAX(-1, MIN(1, cognitive_weight * 0.95 + ?))
 				WHERE id = ?
 			`)
-			.run(delta, id)
+			.run(delta, id);
 	}
 
 	applyDecay(decayFactor: number = 0.95): void {
-		this.db.prepare('UPDATE items SET decay_score = decay_score + (1 - ?) WHERE decay_score < 1').run(decayFactor)
+		this.db.prepare("UPDATE items SET decay_score = decay_score + (1 - ?) WHERE decay_score < 1").run(decayFactor);
 	}
 
 	pruneByDecay(threshold: number = 0.9): string[] {
-		const rows = this.db.prepare('SELECT id FROM items WHERE decay_score >= ?').all(threshold) as any[]
-		const ids = rows.map(r => r.id)
+		const rows = this.db.prepare("SELECT id FROM items WHERE decay_score >= ?").all(threshold) as any[];
+		const ids = rows.map((r) => r.id);
 
 		if (ids.length > 0) {
-			this.db.prepare(`DELETE FROM items WHERE decay_score >= ?`).run(threshold)
+			this.db.prepare(`DELETE FROM items WHERE decay_score >= ?`).run(threshold);
 		}
 
-		return ids
+		return ids;
 	}
 
 	getStale(maxAgeMs: number, maxAccessCount: number = 1): ContextItem[] {
-		const cutoff = Date.now() - maxAgeMs
+		const cutoff = Date.now() - maxAgeMs;
 		const rows = this.db
-			.prepare('SELECT * FROM items WHERE last_access < ? AND access_count <= ?')
-			.all(cutoff, maxAccessCount) as any[]
+			.prepare("SELECT * FROM items WHERE last_access < ? AND access_count <= ?")
+			.all(cutoff, maxAccessCount) as any[];
 
-		return rows.map(row => this.rowToItem(row))
+		return rows.map((row) => this.rowToItem(row));
 	}
 
 	close(): void {
-		this.db.close()
+		this.db.close();
 	}
 
 	private rowToItem(row: any): ContextItem {
@@ -175,21 +173,17 @@ export class ContextCache {
 			dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
 			validFrom: row.valid_from ?? undefined,
 			validUntil: row.valid_until ?? undefined,
-		}
+		};
 	}
 }
 
 export function hashContent(content: string): string {
-	return createHash('sha256').update(content).digest('hex').slice(0, 16)
+	return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
-export function createItem(
-	content: string,
-	type: ContextItem['type'],
-	tags: string[] = []
-): ContextItem {
-	const now = Date.now()
-	const hash = hashContent(content)
+export function createItem(content: string, type: ContextItem["type"], tags: string[] = []): ContextItem {
+	const now = Date.now();
+	const hash = hashContent(content);
 
 	return {
 		id: `${type}_${hash}_${now}`,
@@ -203,5 +197,5 @@ export function createItem(
 		type,
 		tags,
 		pinned: false,
-	}
+	};
 }
