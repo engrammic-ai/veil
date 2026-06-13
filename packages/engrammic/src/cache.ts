@@ -109,6 +109,12 @@ export class ContextCache {
 		return rows.map((row) => this.rowToItem(row));
 	}
 
+	getByHash(hash: string): ContextItem | null {
+		const row = this.db.prepare("SELECT * FROM items WHERE content_hash = ?").get(hash) as any;
+		if (!row) return null;
+		return this.rowToItem(row);
+	}
+
 	delete(id: string): void {
 		this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
 	}
