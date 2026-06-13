@@ -475,11 +475,15 @@ export function expandTildePath(path: string): string {
 	return normalizePath(path);
 }
 
-const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
+// TODO: Replace with engrammic.ai session viewer when available
+const DEFAULT_SHARE_VIEWER_URL = ""; // Disabled: was "https://pi.dev/session/"
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	const baseUrl = process.env.VEIL_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	if (!baseUrl) {
+		return `https://gist.github.com/${gistId}`; // Fallback to raw gist
+	}
 	return `${baseUrl}#${gistId}`;
 }
 

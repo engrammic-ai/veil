@@ -3,7 +3,18 @@
  */
 
 import chalk from "chalk";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import {
+	chmodSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "fs";
+import { homedir } from "os";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
@@ -434,6 +445,33 @@ export async function showDeprecationWarnings(warnings: string[]): Promise<void>
 }
 
 /**
+ * Migrate ~/.pi to ~/.veil if legacy exists and new doesn't.
+ * Copies the directory to preserve Pi installation.
+ */
+function migratePiToVeil(): boolean {
+	const legacyDir = join(homedir(), ".pi");
+	const newDir = join(homedir(), CONFIG_DIR_NAME);
+
+	// Only migrate if legacy exists and new doesn't
+	if (!existsSync(legacyDir) || existsSync(newDir)) {
+		return false;
+	}
+
+	console.log(chalk.cyan("\nMigrating from Pi to Veil..."));
+	console.log(chalk.dim(`   Copying ${legacyDir} -> ${newDir}`));
+
+	try {
+		cpSync(legacyDir, newDir, { recursive: true });
+		console.log(chalk.green("   Migration complete. Your Pi settings have been copied to Veil.\n"));
+		return true;
+	} catch (err) {
+		console.error(chalk.yellow(`   Migration failed: ${err instanceof Error ? err.message : String(err)}`));
+		console.log(chalk.dim(`   You can manually copy: cp -r ${legacyDir} ${newDir}\n`));
+		return false;
+	}
+}
+
+/**
  * Run all migrations. Called once on startup.
  *
  * @returns Object with migration results and deprecation warnings
@@ -442,6 +480,7 @@ export function runMigrations(cwd: string): {
 	migratedAuthProviders: string[];
 	deprecationWarnings: string[];
 } {
+	migratePiToVeil();
 	const migratedAuthProviders = migrateAuthToAuthJson();
 	migrateExplicitEnvVarConfigValues();
 	migrateSessionsFromAgentRoot();
