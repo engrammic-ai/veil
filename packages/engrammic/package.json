@@ -1,0 +1,35 @@
+{
+	"name": "@engrammic/veil",
+	"version": "0.0.1",
+	"description": "Context management for Veil - dynamic loading, heuristic eviction, episodic memory",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc",
+		"test": "node --test --experimental-strip-types src/**/*.test.ts"
+	},
+	"dependencies": {
+		"better-sqlite3": "^11.0.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.9.3"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": "workspace:*"
+	}
+}
