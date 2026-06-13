@@ -62,6 +62,25 @@ export interface ContextManagerConfig {
 	dbPath: string;
 }
 
+export interface CaptureRule {
+	type: "episodic" | "fact";
+	tags: string[];
+}
+
+export interface CaptureConfig {
+	maxItemsPerTurn: number;
+	maxItemsPerSession: number;
+	minChars: number;
+	maxChars: number;
+}
+
+export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
+	maxItemsPerTurn: 10,
+	maxItemsPerSession: 500,
+	minChars: 50,
+	maxChars: 8000,
+};
+
 export const DEFAULT_CONFIG: ContextManagerConfig = {
 	maxTokens: 128000,
 	reserveTokens: 16384,

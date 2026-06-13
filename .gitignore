@@ -21,11 +21,14 @@ packages/*/dist-firefox/
 *.swo
 *~
 
+docs/superpowers/
+
 # Package specific
 .npm/
 coverage/
 .nyc_output/
 .pi_config/
+.veil/
 tui-debug.log
 compaction-results/
 .opencode/
@@ -40,3 +43,4 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+docs/superpowers/

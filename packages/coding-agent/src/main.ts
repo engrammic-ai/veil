@@ -5,8 +5,11 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
+import { VeilHarness } from "@engrammic/veil";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
@@ -698,6 +701,26 @@ export async function main(args: string[], options?: MainOptions) {
 			}
 		}
 
+		// Create .veil directory for context DB
+		const veilDir = join(cwd, ".veil");
+		if (!existsSync(veilDir)) {
+			mkdirSync(veilDir, { recursive: true });
+		}
+
+		// Create VeilHarness with graceful degradation
+		const contextBudget = Math.floor((sessionOptions.model?.contextWindow ?? 128000) * 0.7);
+		let veilHarness: VeilHarness | undefined;
+		try {
+			veilHarness = new VeilHarness({
+				dbPath: join(veilDir, "context.db"),
+				maxTokens: contextBudget,
+				sessionId: sessionManager.getSessionId(),
+			});
+		} catch (err) {
+			console.error(`Failed to initialize context management: ${err instanceof Error ? err.message : String(err)}`);
+			console.error("Continuing without context management.");
+		}
+
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
@@ -709,10 +732,56 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			veilHarness,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
 			created.session.setThinkingLevel(created.session.thinkingLevel);
+		}
+
+		// Wire up VeilHarness auto-capture via subscribeToEvents.
+		// AgentSession doesn't expose AgentHarness directly, so we create a
+		// compatible adapter over session.agent's subscription API.
+		if (veilHarness) {
+			const pendingArgs = new Map<string, Record<string, unknown>>();
+			const agentHarnessAdapter = {
+				on: (
+					_type: "tool_result",
+					handler: (event: {
+						toolName: string;
+						input: Record<string, unknown>;
+						content: Array<{ type: string; text?: string }>;
+						isError: boolean;
+					}) => void,
+				): (() => void) => {
+					return created.session.agent.subscribe((event) => {
+						if (event.type === "turn_start") {
+							veilHarness.resetTurnCaptures();
+						} else if (event.type === "tool_execution_start") {
+							// Prune pendingArgs if it grows too large (guards against crash/abort leaks)
+							if (pendingArgs.size > 100) {
+								const entries = [...pendingArgs.entries()];
+								pendingArgs.clear();
+								for (const [k, v] of entries.slice(-50)) {
+									pendingArgs.set(k, v);
+								}
+							}
+							pendingArgs.set(event.toolCallId, event.args as Record<string, unknown>);
+						} else if (event.type === "tool_execution_end") {
+							const input = pendingArgs.get(event.toolCallId) ?? {};
+							pendingArgs.delete(event.toolCallId);
+							const result = event.result as { content?: Array<{ type: string; text?: string }> };
+							handler({
+								toolName: event.toolName,
+								input,
+								content: result.content ?? [],
+								isError: event.isError,
+							});
+						}
+					});
+				},
+			};
+			veilHarness.subscribeToEvents(agentHarnessAdapter);
 		}
 
 		return {
@@ -732,6 +801,20 @@ export async function main(args: string[], options?: MainOptions) {
 	const { settingsManager, modelRegistry, resourceLoader } = services;
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
+
+	// Cleanup VeilHarness on exit
+	if (session.veilHarness) {
+		let harnessCleanedUp = false;
+		const cleanupHarness = async () => {
+			if (harnessCleanedUp || !session.veilHarness) return;
+			harnessCleanedUp = true;
+			await session.veilHarness.close();
+		};
+		process.on("beforeExit", cleanupHarness);
+		process.on("SIGINT", async () => {
+			await cleanupHarness();
+		});
+	}
 
 	if (parsed.help) {
 		const extensionFlags = resourceLoader
