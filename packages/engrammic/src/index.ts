@@ -36,3 +36,4 @@ export {
 	type EvictionCandidate,
 	type TaskContext,
 } from "./types.ts";
+export { contentHash, estimateTokens, smartTruncate } from "./utils.ts";
