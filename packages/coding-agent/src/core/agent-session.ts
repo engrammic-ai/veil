@@ -23,6 +23,7 @@ import type {
 	AgentTool,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
+import type { VeilHarness } from "@engrammic/veil";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
 import {
 	clampThinkingLevel,
@@ -184,6 +185,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Optional Veil harness for context management */
+	veilHarness?: VeilHarness;
 }
 
 export interface ExtensionBindings {
@@ -258,6 +261,7 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
+	private _veilHarness: VeilHarness | undefined;
 	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
@@ -326,6 +330,7 @@ export class AgentSession {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
 		this.settingsManager = config.settingsManager;
+		this._veilHarness = config.veilHarness;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
@@ -352,6 +357,10 @@ export class AgentSession {
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	get veilHarness(): VeilHarness | undefined {
+		return this._veilHarness;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
