@@ -1,8 +1,9 @@
 # Phase 3: Eviction Mechanics Design
 
-**Status**: Approved  
+**Status**: Implemented  
 **Date**: 2026-06-14  
-**Branch**: `feat/engrammic-eviction`
+**Branch**: `feat/engrammic-eviction`  
+**PR**: #3
 
 ## Overview
 
@@ -318,3 +319,33 @@ All tests use vitest. Mock cold storage for circuit breaker tests.
 - `/context` command improvements
 - Eviction notifications
 - Debug mode tick visibility
+
+## Implementation Notes
+
+### Completed (2026-06-14)
+
+All components implemented and tested (145 tests passing):
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `scorer.ts` | Done | Source modifier (1.5x), per-item half-life |
+| `eviction.ts` | Done | EvictionController with adaptive threshold, cooldowns |
+| `circuit-breaker.ts` | Done | 3-failure threshold, 5min reset, half-open probe |
+| `cache.ts` | Done | Two-phase commit, evicting column, crash recovery |
+| `manager.ts` | Done | Integrated all components |
+| `tools.ts` | Done | setRecallCooldown on promote |
+| `cold/sqlite.ts` | Done | Added source field to schema |
+
+### Review Findings Addressed
+
+Post-implementation review identified and fixed:
+
+1. Stage 2/3 evictions now call `demoteToCold()` (was only unloading)
+2. Fresh controller threshold bug fixed (no raise when `lastEvictionTime=0`)
+3. `fetchFromCold()` and `forget()` now use circuit breaker
+4. `enforceItemSizeCap()` wired into `load()`
+
+### Deferred
+
+- `warmCacheMaxItems` enforcement (config exists, enforcement not specified)
+- SQLite try/catch hardening (better-sqlite3 is stable)
