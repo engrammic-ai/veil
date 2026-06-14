@@ -23,9 +23,18 @@ export {
 	ZepColdStore,
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
-export { VeilHarness, type VeilHarnessConfig } from "./harness.ts";
+export {
+	VeilHarness,
+	type VeilHarnessConfig,
+	type BeforeToolCallContext,
+	type AfterToolCallContext,
+	type BeforeToolCallResult,
+	type AfterToolCallResult,
+	type ToolResultEvent,
+} from "./harness.ts";
 // Core
 export { ContextManager } from "./manager.ts";
+export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export type { ScorerWeights } from "./scorer.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export {
@@ -35,7 +44,12 @@ export {
 	type ContextManagerConfig,
 	type ContextWindow,
 	DEFAULT_CONFIG,
+	DEFAULT_CAPTURE_CONFIG,
 	type EvictionCandidate,
 	type TaskContext,
 } from "./types.ts";
-export { contentHash, estimateTokens, smartTruncate } from "./utils.ts";
+export { estimateTokens, formatTokens, smartTruncate } from "./utils.ts";
+export { buildContextSection, formatStub, type ContextSectionItem, type ContextSectionOptions } from "./injection.ts";
+export { detectStubs, hydrateStub, parseStub, formatHydratedBlock, type ParsedStub, type HydrationResult, STUB_PATTERN } from "./hydration.ts";
+export { TOOL_SCHEMAS, executeVeilTool, type ToolDefinition, type ToolResult, type ToolContext } from "./tools.ts";
+export { renderContextCommand, type ContextCommandOutput } from "./commands/context.ts";
