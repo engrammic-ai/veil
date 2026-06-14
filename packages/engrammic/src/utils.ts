@@ -40,7 +40,8 @@ export function contentHash(content: string): string {
  */
 export function formatTokens(n: number): string {
 	if (n >= 1000) {
-		return `${(n / 1000).toFixed(1)}k`;
+		const val = n / 1000;
+		return `${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)}k`;
 	}
 	return `${n}`;
 }
