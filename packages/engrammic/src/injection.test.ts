@@ -86,4 +86,12 @@ describe("buildContextSection", () => {
 		expect(section).toContain("hydrate");
 		expect(section).toContain("recall");
 	});
+
+	test("uses singular 'item' for exactly one item", () => {
+		const items = [{ item: makeItem({ id: "solo", type: "episodic", content: "solo item" }), score: 0.9 }];
+		const section = buildContextSection({ items, budget: { usedTokens: 10, maxTokens: 128000 } });
+
+		expect(section).toContain("1 item,");
+		expect(section).not.toContain("1 items");
+	});
 });
