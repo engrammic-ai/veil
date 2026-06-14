@@ -34,3 +34,13 @@ export function smartTruncate(content: string, maxChars: number): string {
 export function contentHash(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
 }
+
+/**
+ * Format token count for display.
+ */
+export function formatTokens(n: number): string {
+	if (n >= 1000) {
+		return `${(n / 1000).toFixed(1)}k`;
+	}
+	return `${n}`;
+}
