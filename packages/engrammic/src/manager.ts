@@ -102,8 +102,10 @@ export class ContextManager {
 				continue;
 			}
 
-			const item = this.cache.get(id);
+			let item = this.cache.get(id);
 			if (item) {
+				// Enforce per-item size cap before loading
+				item = this.eviction.enforceItemSizeCap(item, this.budget.maxTokens);
 				this.cache.touch(id);
 				this.loaded.set(id, item);
 				this.budget.usedTokens += estimateTokens(item.content);
@@ -167,11 +169,7 @@ export class ContextManager {
 		// Stage 2: Soft evict low-score items if over threshold
 		const threshold = this.eviction.getThreshold();
 		if (this.budget.usedTokens > availableTokens * threshold) {
-			const candidates = findEvictionCandidates(
-				Array.from(this.loaded.values()),
-				taskCtx,
-				this.config,
-			);
+			const candidates = findEvictionCandidates(Array.from(this.loaded.values()), taskCtx, this.config);
 
 			for (const { item, score } of candidates) {
 				if (this.budget.usedTokens <= availableTokens * (threshold - 0.1)) break;
@@ -179,6 +177,7 @@ export class ContextManager {
 				if (this.eviction.isOnCooldown(item.id, currentTurn)) continue;
 
 				this.unload([item.id]);
+				await this.demoteToCold(item);
 				evicted.push({ item, score, reason: "low_score" });
 				this.eviction.recordEviction();
 			}
@@ -193,6 +192,7 @@ export class ContextManager {
 			const lowest = ranked[ranked.length - 1];
 
 			this.unload([lowest.item.id]);
+			await this.demoteToCold(lowest.item);
 			evicted.push({ item: lowest.item, score: lowest.score, reason: "budget" });
 			this.eviction.recordEviction();
 		}
@@ -206,9 +206,7 @@ export class ContextManager {
 	private async demoteToCold(item: ContextItem): Promise<void> {
 		this.cache.markEvicting(item.id);
 
-		const pointer = await this.circuitBreaker.execute(() =>
-			this.cold.demote(item),
-		);
+		const pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
 
 		if (pointer !== null) {
 			item.kgPointer = pointer;
@@ -223,7 +221,7 @@ export class ContextManager {
 	 * Automatically loads it into warm cache.
 	 */
 	async fetchFromCold(pointer: string): Promise<ContextItem | null> {
-		const item = await this.cold.fetch(pointer);
+		const item = await this.circuitBreaker.execute(() => this.cold.fetch(pointer));
 		if (!item) return null;
 
 		// Bring back to warm cache
@@ -266,7 +264,7 @@ export class ContextManager {
 
 		// Also delete from cold if it was demoted
 		if (item?.kgPointer) {
-			await this.cold.delete(item.kgPointer);
+			await this.circuitBreaker.execute(() => this.cold.delete(item.kgPointer!));
 		}
 	}
 

@@ -110,6 +110,27 @@ describe("EvictionController", () => {
 			vi.useRealTimers();
 		});
 
+		test("does not raise threshold on fresh controller (no prior evictions)", () => {
+			vi.useFakeTimers();
+
+			const controller = new EvictionController({
+				...DEFAULT_CONFIG,
+				evictionThresholdDefault: 0.7,
+				evictionThresholdMax: 0.85,
+			});
+
+			// Do NOT record any evictions - fresh controller
+
+			// Even after 5+ minutes, threshold should NOT raise
+			vi.advanceTimersByTime(300001);
+			controller.adjustThreshold();
+
+			// Threshold should remain at default because no evictions have occurred
+			expect(controller.getThreshold()).toBe(0.7);
+
+			vi.useRealTimers();
+		});
+
 		test("does not raise threshold above maximum", () => {
 			vi.useFakeTimers();
 

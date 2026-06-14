@@ -61,7 +61,8 @@ export class EvictionController {
 			this.threshold = Math.max(this.config.evictionThresholdMin, this.threshold - 0.05);
 		}
 		// If stable for 5+ minutes (300000ms), raise the threshold
-		else if (timeSinceLastEviction > 300000) {
+		// Only apply stability check if we've had at least one eviction
+		else if (this.lastEvictionTime > 0 && timeSinceLastEviction > 300000) {
 			this.threshold = Math.min(this.config.evictionThresholdMax, this.threshold + 0.05);
 		}
 	}
