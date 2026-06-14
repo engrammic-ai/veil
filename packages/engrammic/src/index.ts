@@ -26,6 +26,7 @@ export {
 export { VeilHarness, type VeilHarnessConfig } from "./harness.ts";
 // Core
 export { ContextManager } from "./manager.ts";
+export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export type { ScorerWeights } from "./scorer.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export {
