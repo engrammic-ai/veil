@@ -50,6 +50,7 @@ export interface AfterToolCallResult {
 
 export interface ToolResultEvent {
 	toolName: string;
+	toolCallId?: string;
 	input: Record<string, unknown>;
 	content: Array<{ type: string; text?: string }>;
 	isError: boolean;
@@ -73,6 +74,7 @@ export class VeilHarness {
 	private captureConfig: CaptureConfig;
 	private capturesThisTurn: number = 0;
 	private totalCaptures: number = 0;
+	private evictedToolCallIds: Set<string> = new Set();
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -132,8 +134,16 @@ export class VeilHarness {
 		// Check if eviction needed
 		const evicted = await this.manager.checkEviction(this.currentTaskContext);
 
-		if (evicted.length > 0 && this.config.onEviction) {
-			this.config.onEviction(evicted);
+		if (evicted.length > 0) {
+			// Track evicted tool call IDs for faded history
+			for (const candidate of evicted) {
+				if (candidate.item.sourceToolCallId) {
+					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
+				}
+			}
+			if (this.config.onEviction) {
+				this.config.onEviction(evicted);
+			}
 		}
 
 		// Don't block any tool calls - just manage context
@@ -173,13 +183,18 @@ export class VeilHarness {
 	 */
 	private handleToolResult(event: ToolResultEvent): void {
 		if (event.isError) return;
-		this.autoCapture(event.toolName, event.input, event.content);
+		this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
 	}
 
 	/**
 	 * Auto-capture a tool result into the warm cache, respecting rate limits and deduplication.
 	 */
-	private autoCapture(toolName: string, args: unknown, content: Array<{ type: string; text?: string }>): void {
+	private autoCapture(
+		toolName: string,
+		args: unknown,
+		content: Array<{ type: string; text?: string }>,
+		toolCallId?: string,
+	): void {
 		// Check rate limits
 		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
 		if (this.totalCaptures >= this.captureConfig.maxItemsPerSession) return;
@@ -206,8 +221,8 @@ export class VeilHarness {
 		// Generate tags
 		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
 
-		// Store in warm cache
-		this.manager.remember(truncated, rule.type, tags);
+		// Store in warm cache with tool call ID for faded history
+		this.manager.remember(truncated, rule.type, tags, toolCallId);
 		this.capturesThisTurn++;
 		this.totalCaptures++;
 	}
@@ -286,10 +301,20 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Get and clear evicted tool call IDs since last call.
+	 * Used by the Pi extension to dim corresponding messages.
+	 */
+	getAndClearEvictedToolCallIds(): string[] {
+		const ids = Array.from(this.evictedToolCallIds);
+		this.evictedToolCallIds.clear();
+		return ids;
+	}
+
+	/**
 	 * Remember something (store in warm cache).
 	 */
-	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = []) {
-		return this.manager.remember(content, type, tags);
+	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = [], toolCallId?: string) {
+		return this.manager.remember(content, type, tags, toolCallId);
 	}
 
 	/**

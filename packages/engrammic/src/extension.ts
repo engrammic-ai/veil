@@ -29,6 +29,7 @@ interface ExtensionAPI {
 interface ExtensionContext {
 	ui: {
 		setStatus(key: string, text: string | undefined): void;
+		setToolCallDimmed(toolCallId: string, dimmed: boolean): void;
 		theme: {
 			fg(color: string, text: string): string;
 		};
@@ -65,6 +66,12 @@ export function createVeilExtension(harness: VeilHarness): (pi: ExtensionAPI) =>
 				ctx.ui.setStatus("veil-tick", ctx.ui.theme.fg("dim", `tick:${turnCount}`));
 			} else {
 				ctx.ui.setStatus("veil-tick", undefined);
+			}
+
+			// Faded history: dim tool executions whose context was evicted
+			const evictedIds = harness.getAndClearEvictedToolCallIds();
+			for (const toolCallId of evictedIds) {
+				ctx.ui.setToolCallDimmed(toolCallId, true);
 			}
 		});
 	};

@@ -16,6 +16,7 @@ function makeHarness(overrides: Partial<ReturnType<VeilHarness["getUsage"]>> = {
 	return {
 		getUsage: vi.fn(() => ({ ...defaults, ...overrides })),
 		getTurnCount: vi.fn(() => 3),
+		getAndClearEvictedToolCallIds: vi.fn(() => []),
 	} as unknown as VeilHarness;
 }
 
@@ -30,6 +31,7 @@ interface MockPi {
 interface MockCtx {
 	ui: {
 		setStatus: ReturnType<typeof vi.fn>;
+		setToolCallDimmed: ReturnType<typeof vi.fn>;
 		theme: {
 			fg: (color: string, text: string) => string;
 		};
@@ -55,6 +57,7 @@ function makeCtx(): MockCtx {
 	return {
 		ui: {
 			setStatus: vi.fn(),
+			setToolCallDimmed: vi.fn(),
 			theme: {
 				fg: (color: string, text: string) => `[${color}]${text}`,
 			},

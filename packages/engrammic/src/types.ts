@@ -31,6 +31,7 @@ export interface ContextItem {
 
 	// Source tracking
 	source: "auto" | "explicit"; // auto-captured vs explicitly remembered
+	sourceToolCallId?: string; // links to Pi tool call for faded history
 }
 
 export interface TaskContext {
