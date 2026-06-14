@@ -166,6 +166,39 @@ describe("VeilHarness", () => {
 	});
 });
 
+describe("getUsage", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	it("returns usage stats", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Remember and load an item
+		const item = harness.remember("Test content for usage", "fact", ["test"]);
+		harness.load([item.id]);
+
+		const usage = harness.getUsage();
+
+		expect(usage.hotTokens).toBeGreaterThan(0);
+		expect(usage.hotItems).toBe(1);
+		expect(usage.budgetMax).toBeGreaterThan(0);
+		expect(usage.budgetUsed).toBe(usage.hotTokens);
+		expect(typeof usage.percent).toBe("number");
+
+		await harness.close();
+	});
+});
+
 describe("autoCapture integration", () => {
 	let tmpDir: string;
 
