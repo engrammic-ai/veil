@@ -7,9 +7,12 @@
 
 ## Overview
 
-Add user-facing UX for the engrammic memory system: status bar indicator, faded history, enhanced `/context` command, and optional eviction notifications.
+Add user-facing UX for the engrammic memory system: status bar indicator, enhanced `/context` command, and optional eviction notifications.
 
 This phase focuses on visibility and feedback. No changes to core eviction mechanics.
+
+**Implemented:** Status bar, `/context` command, debug tick, Pi extension factory.  
+**Deferred to future:** Faded history display (requires Pi core API changes).
 
 ## Components
 
@@ -164,7 +167,7 @@ interface ContextManagerConfig {
 
 ### Completed (2026-06-14)
 
-All core components implemented (171 tests passing):
+All core components implemented (181 tests passing):
 
 | Component | Status | Notes |
 |-----------|--------|-------|
@@ -173,14 +176,36 @@ All core components implemented (171 tests passing):
 | `harness.ts` | Done | getUsage() method |
 | `commands/context.ts` | Done | Box format with progress bar |
 | `index.ts` | Done | All UX exports |
+| `extension.ts` | Done | Pi extension factory with status bar + debug tick |
 
 ### Review Findings Addressed
 
 - Fixed percent calculation: `formatStatusBar()` now uses `available = max - reserve` consistent with `getUsage()`
 - Added test for formatBox edge case (oversized title)
 
-### Deferred (requires TUI integration)
+### TUI Integration Complete (2026-06-14)
 
-- Faded history display (`fadeOpacity`, `showEvictionMarker`)
-- Tick debug display (`tickDebugDisplay`)
-- Live status bar hook (`turn_end` event wiring to Pi's `ctx.ui.setStatus`)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Status bar hook | Done | `createVeilExtension()` subscribes to `turn_end`, calls `ctx.ui.setStatus()` |
+| Debug tick display | Done | `--debug-tick` flag shows turn counter in status bar |
+| Extension export | Done | `createVeilExtension` exported from index.ts |
+
+Usage:
+```typescript
+import { createVeilExtension, VeilHarness } from "@engrammic/veil";
+const harness = new VeilHarness({ ... });
+// In pi config:
+extensions: [createVeilExtension(harness)]
+```
+
+### Future: Requires Pi Core Changes
+
+These features need Pi extension API enhancements that don't exist yet:
+
+| Feature | Blocker | Proposed Pi API |
+|---------|---------|-----------------|
+| Faded history (`fadeOpacity`) | No hook to modify existing message rendering | `pi.wrapMessageRenderer(role, wrapper)` or message metadata |
+| Eviction marker (`showEvictionMarker`) | Same - can't annotate user/assistant messages | Message metadata visible to renderers |
+
+**Workaround implemented:** Eviction feedback shown via status bar (`ctx.ui.setStatus`) instead of fading messages. This is simpler and doesn't require Pi changes.
