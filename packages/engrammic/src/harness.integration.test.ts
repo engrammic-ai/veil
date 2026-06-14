@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { ContextManager } from "./manager.ts";
 import { VeilHarness } from "./harness.ts";
 
 describe("VeilHarness integration", () => {
@@ -96,6 +97,36 @@ describe("VeilHarness integration", () => {
 			expect(section).toContain("[FACT:");
 			expect(section).toContain("score:");
 			expect(section).toContain("1 item");
+		});
+	});
+
+	describe("eviction integration", () => {
+		test("circuit breaker protects against cold storage failures", async () => {
+			// Create manager with failing cold storage
+			const failingCold = {
+				capabilities: {
+					semantic: false,
+					temporal: false,
+					provenance: false,
+				},
+				demote: async () => {
+					throw new Error("Cold storage unavailable");
+				},
+				fetch: async () => null,
+				exists: async () => false,
+				delete: async () => {},
+				close: async () => {},
+			};
+
+			const manager = new ContextManager({ coldFailureThreshold: 2 }, failingCold);
+
+			// Create items
+			const _item = manager.remember("test", "episodic", ["tag"]);
+
+			// Force eviction should not throw even with failing cold storage
+			await expect(manager.checkEviction({ tags: [] })).resolves.not.toThrow();
+
+			await manager.close();
 		});
 	});
 });
