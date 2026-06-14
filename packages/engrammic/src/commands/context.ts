@@ -1,68 +1,70 @@
-// packages/engrammic/src/commands/context.ts
-
 import type { VeilHarness } from "../harness.ts";
+import type { ContextItem } from "../types.ts";
+import { formatBox, formatProgressBar } from "../ux.ts";
 import { estimateTokens, formatTokens } from "../utils.ts";
 
 export interface ContextCommandOutput {
 	lines: string[];
 }
 
-const typeMap: Record<string, string> = { episodic: "EPISODE", fact: "FACT", procedural: "PROC" };
+const BOX_WIDTH = 60;
+
+function formatItemLine(item: ContextItem): string {
+	const tokens = estimateTokens(item.content);
+	const tokStr = formatTokens(tokens).padEnd(6);
+	const source = item.source.padEnd(8);
+	const pinned = item.pinned ? " [pin]" : "";
+	const summary = item.content.slice(0, 20).replace(/\n/g, " ").trim();
+
+	return `  +- ${summary}...  ${tokStr} ${source}${pinned}`;
+}
 
 export function renderContextCommand(harness: VeilHarness): ContextCommandOutput {
 	const window = harness.getWindow();
 	const stats = harness.getManager().getStats();
-	const turnCount = harness.getTurnCount();
-	const checkpointInterval = harness.getManager().getConfig().checkpointIntervalTurns;
+	const config = harness.getManager().getConfig();
 
-	const lines: string[] = [];
+	const content: string[] = [];
 
-	// Header
-	lines.push("--- Veil Context ---");
-	lines.push("");
-
-	// Hot items
+	// Hot items section
 	const hotTokens = window.items.reduce((sum, i) => sum + estimateTokens(i.content), 0);
-	lines.push(`HOT (${window.items.length} items, ${formatTokens(hotTokens)})`);
+	content.push("");
+	content.push(`Hot (loaded):     ${window.items.length} items, ${formatTokens(hotTokens)} tokens`);
 
 	if (window.items.length === 0) {
-		lines.push("  (no items loaded)");
+		content.push("  (no items loaded)");
 	} else {
-		for (const item of window.items) {
-			const prefix = typeMap[item.type];
-			const summary = item.content.slice(0, 30).replace(/\n/g, " ").trim();
-			const tokens = estimateTokens(item.content);
-			const pinned = item.pinned ? " [P]" : "";
-			lines.push(`  [${prefix}:${item.id.slice(0, 8)}] ${summary}... ${formatTokens(tokens)}${pinned}`);
+		for (const item of window.items.slice(0, 5)) {
+			content.push(formatItemLine(item));
+		}
+		if (window.items.length > 5) {
+			content.push(`  ... and ${window.items.length - 5} more`);
 		}
 	}
 
-	lines.push("");
+	content.push("");
 
-	// Warm stats
+	// Warm/cold stats
 	const warmTotal = stats.warm.episodic + stats.warm.fact + stats.warm.procedural;
-	lines.push(
-		`WARM: ${warmTotal} items (${stats.warm.episodic} episodic, ${stats.warm.fact} fact, ${stats.warm.procedural} procedural)`,
-	);
+	content.push(`Warm (cached):    ${warmTotal} items`);
+	content.push(`Cold (storage):   ${stats.coldPointers} items`);
 
-	// Cold stats
-	lines.push(`COLD: ${stats.coldPointers} pointers`);
+	content.push("");
 
-	lines.push("");
-
-	// Budget
+	// Budget with progress bar
 	const budget = window.budget;
-	const usedPercent = ((budget.usedTokens / budget.maxTokens) * 100).toFixed(1);
-	lines.push(`Budget: ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent}% used)`);
-	lines.push(`Reserve: ${formatTokens(budget.reserveTokens)}`);
+	const usedPercent = budget.maxTokens > 0 ? (budget.usedTokens / budget.maxTokens) * 100 : 0;
+	const progressBar = formatProgressBar(usedPercent, 20);
+	content.push(`Budget: ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent.toFixed(0)}%)  ${progressBar}`);
 
-	// Checkpoint
-	const nextCheckpoint = (Math.floor(turnCount / checkpointInterval) + 1) * checkpointInterval;
-	const turnsUntil = nextCheckpoint - turnCount;
-	lines.push(`Next checkpoint: turn ${nextCheckpoint} (in ${turnsUntil} turns)`);
+	// Threshold
+	const thresholdPercent = (config.evictionThresholdDefault * 100).toFixed(0);
+	content.push(`Threshold: ${thresholdPercent}% (adaptive)`);
 
-	lines.push("");
-	lines.push("--------------------");
+	content.push("");
 
-	return { lines };
+	// Wrap in box
+	const boxed = formatBox(content, "Context Window", BOX_WIDTH);
+
+	return { lines: boxed };
 }

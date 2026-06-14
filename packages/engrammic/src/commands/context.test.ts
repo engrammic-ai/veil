@@ -1,5 +1,3 @@
-// packages/engrammic/src/commands/context.test.ts
-
 import { describe, expect, it } from "vitest";
 import type { VeilHarness } from "../harness.ts";
 import type { ContextBudget, ContextItem, ContextWindow } from "../types.ts";
@@ -18,6 +16,7 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		type: "fact",
 		tags: ["test"],
 		pinned: false,
+		source: "auto",
 		...overrides,
 	};
 }
@@ -28,6 +27,7 @@ function makeHarness(opts: {
 	turnCount?: number;
 	warmStats?: { episodic: number; fact: number; procedural: number };
 	coldPointers?: number;
+	threshold?: number;
 }): VeilHarness {
 	const budget: ContextBudget = {
 		maxTokens: 8000,
@@ -53,63 +53,80 @@ function makeHarness(opts: {
 			}),
 			getConfig: () => ({
 				checkpointIntervalTurns: 10,
+				evictionThresholdDefault: opts.threshold ?? 0.7,
 			}),
 		}),
 	} as unknown as VeilHarness;
 }
 
 describe("renderContextCommand", () => {
-	it("renders with empty context", () => {
+	it("renders box format with header", () => {
 		const harness = makeHarness({});
 		const { lines } = renderContextCommand(harness);
 
-		expect(lines).toContain("--- Veil Context ---");
-		expect(lines).toContain("  (no items loaded)");
-		expect(lines.some((l) => l.startsWith("HOT (0 items"))).toBe(true);
-		expect(lines.some((l) => l.startsWith("WARM:"))).toBe(true);
-		expect(lines.some((l) => l.startsWith("COLD:"))).toBe(true);
-		expect(lines.some((l) => l.startsWith("Budget:"))).toBe(true);
-		expect(lines).toContain("--------------------");
+		expect(lines[0]).toContain("+--");
+		expect(lines[0]).toContain("Context Window");
+		expect(lines[lines.length - 1]).toContain("+--");
 	});
 
-	it("renders loaded items correctly", () => {
+	it("shows hot items section", () => {
+		const harness = makeHarness({ items: [] });
+		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
+
+		expect(joined).toContain("Hot (loaded):");
+		expect(joined).toContain("0 items");
+	});
+
+	it("renders loaded items with details", () => {
 		const item = makeItem({
 			id: "aabbccdd11223344",
 			type: "episodic",
 			content: "Episodic memory item content here",
 			pinned: true,
+			source: "explicit",
 		});
 		const harness = makeHarness({ items: [item], warmStats: { episodic: 1, fact: 0, procedural: 0 } });
 		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
 
-		expect(lines.some((l) => l.startsWith("HOT (1 items"))).toBe(true);
-		// Should have an item line with EPISODE prefix and [P] for pinned
-		expect(lines.some((l) => l.includes("[EPISODE:aabbccdd]") && l.includes("[P]"))).toBe(true);
-		// Should not show "(no items loaded)"
-		expect(lines).not.toContain("  (no items loaded)");
+		expect(joined).toContain("1 items");
+		expect(joined).toContain("explicit");
+		expect(joined).toContain("[pin]");
 	});
 
-	it("checkpoint at turn 0 shows turn 10 (in 10 turns)", () => {
-		const harness = makeHarness({ turnCount: 0 });
+	it("shows warm and cold counts", () => {
+		const harness = makeHarness({
+			warmStats: { episodic: 10, fact: 20, procedural: 5 },
+			coldPointers: 100,
+		});
 		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
 
-		const checkpointLine = lines.find((l) => l.startsWith("Next checkpoint:"));
-		expect(checkpointLine).toBe("Next checkpoint: turn 10 (in 10 turns)");
+		expect(joined).toContain("Warm (cached):");
+		expect(joined).toContain("35 items");
+		expect(joined).toContain("Cold (storage):");
 	});
 
-	it("checkpoint at turn 5 shows turn 10 (in 5 turns)", () => {
-		const harness = makeHarness({ turnCount: 5 });
+	it("shows budget with progress bar", () => {
+		const harness = makeHarness({
+			budget: { usedTokens: 2000, maxTokens: 8000, reserveTokens: 1000 },
+		});
 		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
 
-		const checkpointLine = lines.find((l) => l.startsWith("Next checkpoint:"));
-		expect(checkpointLine).toBe("Next checkpoint: turn 10 (in 5 turns)");
+		expect(joined).toContain("Budget:");
+		expect(joined).toContain("2k");
+		expect(joined).toContain("8k");
+		expect(joined).toMatch(/[=.]+/);
 	});
 
-	it("checkpoint at turn 10 shows turn 20 (in 10 turns)", () => {
-		const harness = makeHarness({ turnCount: 10 });
+	it("shows adaptive threshold", () => {
+		const harness = makeHarness({ threshold: 0.75 });
 		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
 
-		const checkpointLine = lines.find((l) => l.startsWith("Next checkpoint:"));
-		expect(checkpointLine).toBe("Next checkpoint: turn 20 (in 10 turns)");
+		expect(joined).toContain("Threshold:");
+		expect(joined).toContain("75%");
 	});
 });
