@@ -1,7 +1,7 @@
 // packages/engrammic/src/commands/context.ts
 
 import type { VeilHarness } from "../harness.ts";
-import { estimateTokens } from "../utils.ts";
+import { estimateTokens, formatTokens } from "../utils.ts";
 
 export interface ContextCommandOutput {
   lines: string[];
@@ -13,7 +13,7 @@ export function renderContextCommand(harness: VeilHarness): ContextCommandOutput
   const window = harness.getWindow();
   const stats = harness.getManager().getStats();
   const turnCount = harness.getTurnCount();
-  const checkpointInterval = 10; // Could make configurable
+  const checkpointInterval = harness.getManager().getConfig().checkpointIntervalTurns;
 
   const lines: string[] = [];
 
@@ -63,11 +63,4 @@ export function renderContextCommand(harness: VeilHarness): ContextCommandOutput
   lines.push("--------------------");
 
   return { lines };
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(1)}k`;
-  }
-  return `${n}`;
 }

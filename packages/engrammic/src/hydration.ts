@@ -101,16 +101,22 @@ export function hydrateStub(parsed: ParsedStub, cache: { get: (id: string) => Co
 
 function validateFilePath(filePath: string): { safe: boolean; resolved: string; reason?: string } {
 	const resolved = resolve(filePath);
-	const normalized = normalize(resolved);
+	const cwd = process.cwd();
 
-	// Reject paths that contain traversal components after normalization
-	if (normalized.includes("..")) {
-		return { safe: false, resolved: normalized, reason: "path traversal detected" };
+	// Must be within CWD subtree - reject paths outside project root
+	if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
+		return { safe: false, resolved, reason: "path outside project root" };
 	}
 
-	// Restrict to cwd subtree by default; allow absolute paths that were explicitly provided
-	// (absolute paths are safe as long as they don't traverse upward — already covered above)
-	return { safe: true, resolved: normalized };
+	// Block sensitive directories even if within CWD (e.g., symlinked .ssh)
+	const sensitivePatterns = ["/.ssh/", "/.aws/", "/.gnupg/", "/.git/objects/"];
+	for (const pattern of sensitivePatterns) {
+		if (resolved.includes(pattern)) {
+			return { safe: false, resolved, reason: "sensitive path blocked" };
+		}
+	}
+
+	return { safe: true, resolved };
 }
 
 function hydrateFile(parsed: ParsedStub): HydrationResult {

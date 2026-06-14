@@ -51,6 +51,9 @@ function makeHarness(opts: {
         warm,
         coldPointers: opts.coldPointers ?? 0,
       }),
+      getConfig: () => ({
+        checkpointIntervalTurns: 10,
+      }),
     }),
   } as unknown as VeilHarness;
 }

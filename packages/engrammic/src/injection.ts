@@ -46,7 +46,7 @@ export function buildContextSection(options: ContextSectionOptions): string {
 	}
 
 	lines.push("");
-	lines.push('Use hydrate("[EPISODE:id]") to expand. Use recall(tags) to find more.');
+	lines.push('Use veil_hydrate({stub: "[EPISODE:id]"}) to expand. Use veil_recall({tags: [...]}) to find more.');
 	lines.push("</veil-context>");
 
 	return lines.join("\n");

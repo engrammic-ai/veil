@@ -1,7 +1,6 @@
 // packages/engrammic/src/hydration.test.ts
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { detectStubs, formatHydratedBlock, hydrateStub, parseStub } from "./hydration.ts";
@@ -85,18 +84,20 @@ describe("hydrateStub", () => {
 });
 
 describe("hydrateStub FILE", () => {
-	let tmpDir: string;
+	let testDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "hydration-test-"));
+		// Create temp dir within CWD to pass path validation
+		testDir = join(process.cwd(), ".test-hydration-" + Date.now());
+		mkdirSync(testDir, { recursive: true });
 	});
 
 	afterEach(() => {
-		rmSync(tmpDir, { recursive: true });
+		rmSync(testDir, { recursive: true });
 	});
 
 	test("hydrates file from disk", () => {
-		const filePath = join(tmpDir, "test.ts");
+		const filePath = join(testDir, "test.ts");
 		writeFileSync(filePath, "line 1\nline 2\nline 3\nline 4\nline 5");
 
 		const parsed = parseStub(`[FILE:${filePath}:2-4]`)!;
@@ -106,11 +107,11 @@ describe("hydrateStub FILE", () => {
 		expect(result.error).toBeUndefined();
 	});
 
-	test("returns error for missing file", () => {
-		const parsed = parseStub("[FILE:/nonexistent/file.ts]")!;
+	test("returns error for path outside project root", () => {
+		const parsed = parseStub("[FILE:/etc/passwd]")!;
 		const result = hydrateStub(parsed, { get: () => null });
 
-		expect(result.error).toContain("File not found");
+		expect(result.error).toContain("path outside project root");
 	});
 });
 
