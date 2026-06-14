@@ -162,8 +162,8 @@ function executeRecall(
   ctx: ToolContext
 ): ToolResult {
   const items = ctx.manager.recall(params.tags, params.limit ?? 10);
-  const stubs = items.map((item) => formatStub(item));
-  return { success: true, data: stubs };
+  const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
+  return { success: true, data: { items: result } };
 }
 
 function executePromote(params: { id: string }, ctx: ToolContext): ToolResult {
@@ -172,10 +172,15 @@ function executePromote(params: { id: string }, ctx: ToolContext): ToolResult {
     return { success: false, error: `Item not found: ${params.id}` };
   }
   const stub = formatStub(items[0]);
-  return { success: true, data: { stub } };
+  return { success: true, data: { id: items[0].id, stub } };
 }
 
 function executeDemote(params: { id: string }, ctx: ToolContext): ToolResult {
+  const window = ctx.manager.getWindow();
+  const exists = window.items.some((item) => item.id === params.id);
+  if (!exists) {
+    return { success: false, error: `Item not in active context: ${params.id}` };
+  }
   ctx.manager.unload([params.id]);
   return { success: true };
 }
@@ -190,11 +195,19 @@ function executeRemember(
 }
 
 function executePin(params: { id: string }, ctx: ToolContext): ToolResult {
+  const item = ctx.manager.getCache().get(params.id);
+  if (!item) {
+    return { success: false, error: `Item not found: ${params.id}` };
+  }
   ctx.manager.pin(params.id);
   return { success: true };
 }
 
 function executeUnpin(params: { id: string }, ctx: ToolContext): ToolResult {
+  const item = ctx.manager.getCache().get(params.id);
+  if (!item) {
+    return { success: false, error: `Item not found: ${params.id}` };
+  }
   ctx.manager.unpin(params.id);
   return { success: true };
 }

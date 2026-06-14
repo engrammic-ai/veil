@@ -56,13 +56,16 @@ describe("executeVeilTool", () => {
   });
 
   test("veil_recall finds stored items", async () => {
-    manager.remember("Test content", "episodic", ["test-tag"]);
+    const item = manager.remember("Test content", "episodic", ["test-tag"]);
 
     const result = await executeVeilTool("veil_recall", { tags: ["test-tag"] }, { manager });
 
     expect(result.success).toBe(true);
-    expect(Array.isArray(result.data)).toBe(true);
-    expect(result.data).toHaveLength(1);
+    const data = result.data as { items: Array<{ id: string; stub: string }> };
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].id).toBe(item.id);
+    expect(data.items[0].stub).toContain("[EPISODE:");
   });
 
   test("veil_promote loads item into context", async () => {
@@ -70,6 +73,9 @@ describe("executeVeilTool", () => {
     const result = await executeVeilTool("veil_promote", { id: item.id }, { manager });
 
     expect(result.success).toBe(true);
+    const data = result.data as { id: string; stub: string };
+    expect(data.id).toBe(item.id);
+    expect(data.stub).toContain("[FACT:");
     const window = manager.getWindow();
     expect(window.items).toHaveLength(1);
   });
@@ -127,5 +133,35 @@ describe("executeVeilTool", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Invalid stub");
+  });
+
+  test("veil_demote returns error if item not in active context", async () => {
+    const item = manager.remember("Not loaded", "fact", []);
+
+    const result = await executeVeilTool("veil_demote", { id: item.id }, { manager });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("not in active context");
+  });
+
+  test("veil_pin returns error if item not found", async () => {
+    const result = await executeVeilTool("veil_pin", { id: "nonexistent-id" }, { manager });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Item not found");
+  });
+
+  test("veil_unpin returns error if item not found", async () => {
+    const result = await executeVeilTool("veil_unpin", { id: "nonexistent-id" }, { manager });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Item not found");
+  });
+
+  test("unknown tool returns error", async () => {
+    const result = await executeVeilTool("veil_unknown", {}, { manager });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Unknown tool");
   });
 });
