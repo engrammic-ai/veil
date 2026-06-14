@@ -66,6 +66,14 @@ describe("formatBox", () => {
 		const lines = formatBox([], "Empty", 20);
 		expect(lines.length).toBe(2);
 	});
+
+	test("handles title longer than width gracefully", () => {
+		const lines = formatBox(["Content"], "This Title Is Way Too Long", 20);
+		// Should not crash, title truncated by Math.max(0, remaining)
+		expect(lines[0]).toContain("+--");
+		expect(lines[0]).toContain("This Title");
+		expect(lines[lines.length - 1]).toBe("+------------------+");
+	});
 });
 
 describe("formatStatusBar", () => {
@@ -83,6 +91,19 @@ describe("formatStatusBar", () => {
 	test("returns error color at 90%", () => {
 		const result = formatStatusBar(7200, 8000);
 		expect(result.color).toBe("error");
+	});
+
+	test("calculates percent against available (max - reserve)", () => {
+		// 2000 used / (8000 max - 2000 reserve) = 2000/6000 = 33%
+		const result = formatStatusBar(2000, 8000, 2000);
+		expect(result.text).toBe("Context: 2k/6k");
+		expect(result.color).toBe("success"); // 33% < 50%
+	});
+
+	test("shows warning when reserve shrinks available space", () => {
+		// 3500 used / (8000 max - 2000 reserve) = 3500/6000 = 58%
+		const result = formatStatusBar(3500, 8000, 2000);
+		expect(result.color).toBe("warning"); // 58% is in 50-70% range
 	});
 });
 

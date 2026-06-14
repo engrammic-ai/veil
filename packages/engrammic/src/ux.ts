@@ -47,9 +47,14 @@ export function formatBox(content: string[], title?: string, width: number = 60)
 	return lines;
 }
 
-export function formatStatusBar(usedTokens: number, maxTokens: number): StatusBarResult {
-	const percent = maxTokens > 0 ? (usedTokens / maxTokens) * 100 : 0;
-	const text = `Context: ${formatTokens(usedTokens)}/${formatTokens(maxTokens)}`;
+export function formatStatusBar(
+	usedTokens: number,
+	maxTokens: number,
+	reserveTokens: number = 0,
+): StatusBarResult {
+	const available = maxTokens - reserveTokens;
+	const percent = available > 0 ? (usedTokens / available) * 100 : 0;
+	const text = `Context: ${formatTokens(usedTokens)}/${formatTokens(available)}`;
 	const color = getHealthColor(percent);
 	return { text, color };
 }
