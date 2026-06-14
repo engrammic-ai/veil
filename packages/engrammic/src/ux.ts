@@ -2,7 +2,8 @@
  * UX formatters for Veil context display.
  */
 
-import { formatTokens } from "./utils.ts";
+import type { EvictionCandidate, EvictionNotifyConfig } from "./types.ts";
+import { estimateTokens, formatTokens } from "./utils.ts";
 
 export type HealthColor = "success" | "warning" | "accent" | "error";
 
@@ -51,4 +52,27 @@ export function formatStatusBar(usedTokens: number, maxTokens: number): StatusBa
 	const text = `Context: ${formatTokens(usedTokens)}/${formatTokens(maxTokens)}`;
 	const color = getHealthColor(percent);
 	return { text, color };
+}
+
+export function formatEvictionNotification(evicted: EvictionCandidate[], config: EvictionNotifyConfig): string | null {
+	if (!config.enabled) return null;
+	if (evicted.length < config.minItems) return null;
+
+	const count = evicted.length;
+
+	if (config.verbosity === "minimal") {
+		return `Evicted ${count} items`;
+	}
+
+	const summaries = evicted
+		.slice(0, 3)
+		.map((e) => e.item.content.slice(0, 20).replace(/\n/g, " ").trim())
+		.join(", ");
+
+	if (config.verbosity === "standard") {
+		return `Evicted ${count} items (${summaries}${count > 3 ? ", ..." : ""})`;
+	}
+
+	const freedTokens = evicted.reduce((sum, e) => sum + estimateTokens(e.item.content), 0);
+	return `Evicted ${count} items to free ${formatTokens(freedTokens)} tokens: ${summaries}${count > 3 ? ", ..." : ""}`;
 }

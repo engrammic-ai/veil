@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { getHealthColor, formatProgressBar, formatBox, formatStatusBar } from "./ux.ts";
+import type { EvictionCandidate, EvictionNotifyConfig } from "./types.ts";
+import { formatBox, formatEvictionNotification, formatProgressBar, formatStatusBar, getHealthColor } from "./ux.ts";
 
 describe("getHealthColor", () => {
 	test("returns success for < 50%", () => {
@@ -82,5 +83,60 @@ describe("formatStatusBar", () => {
 	test("returns error color at 90%", () => {
 		const result = formatStatusBar(7200, 8000);
 		expect(result.color).toBe("error");
+	});
+});
+
+function makeEvicted(count: number): EvictionCandidate[] {
+	return Array.from({ length: count }, (_, i) => ({
+		item: {
+			id: `item-${i}`,
+			content: `Content for item ${i}`,
+			contentHash: `hash-${i}`,
+			createdAt: Date.now(),
+			lastAccess: Date.now(),
+			accessCount: 1,
+			decayScore: 0.5,
+			cognitiveWeight: 0,
+			type: "fact" as const,
+			tags: [`tag-${i}`],
+			pinned: false,
+			source: "auto" as const,
+		},
+		score: 0.3,
+		reason: "low_score" as const,
+	}));
+}
+
+describe("formatEvictionNotification", () => {
+	test("returns null when disabled", () => {
+		const config: EvictionNotifyConfig = { enabled: false, minItems: 1, verbosity: "minimal" };
+		const result = formatEvictionNotification(makeEvicted(3), config);
+		expect(result).toBeNull();
+	});
+
+	test("returns null when below minItems", () => {
+		const config: EvictionNotifyConfig = { enabled: true, minItems: 5, verbosity: "minimal" };
+		const result = formatEvictionNotification(makeEvicted(3), config);
+		expect(result).toBeNull();
+	});
+
+	test("minimal verbosity shows count only", () => {
+		const config: EvictionNotifyConfig = { enabled: true, minItems: 1, verbosity: "minimal" };
+		const result = formatEvictionNotification(makeEvicted(3), config);
+		expect(result).toBe("Evicted 3 items");
+	});
+
+	test("standard verbosity shows item summaries", () => {
+		const config: EvictionNotifyConfig = { enabled: true, minItems: 1, verbosity: "standard" };
+		const result = formatEvictionNotification(makeEvicted(2), config);
+		expect(result).toContain("Evicted 2 items");
+		expect(result).toContain("Content for item 0");
+	});
+
+	test("verbose shows token counts", () => {
+		const config: EvictionNotifyConfig = { enabled: true, minItems: 1, verbosity: "verbose" };
+		const result = formatEvictionNotification(makeEvicted(2), config);
+		expect(result).toContain("to free");
+		expect(result).toContain("tokens");
 	});
 });
