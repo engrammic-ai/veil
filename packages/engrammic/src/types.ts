@@ -28,6 +28,9 @@ export interface ContextItem {
 	// Bi-temporal
 	validFrom?: number; // when true in world (e.g., git commit time)
 	validUntil?: number; // null if still valid
+
+	// Source tracking
+	source: "auto" | "explicit"; // auto-captured vs explicitly remembered
 }
 
 export interface TaskContext {
@@ -57,8 +60,16 @@ export interface ContextManagerConfig {
 	maxTokens: number;
 	reserveTokens: number;
 	evictionThreshold: number; // score below this triggers eviction
+	evictionThresholdMin: number;
+	evictionThresholdMax: number;
+	evictionThresholdDefault: number;
 	decayHalfLifeHours: number;
 	checkpointIntervalTurns: number;
+	recallCooldownTurns: number;
+	maxItemBudgetRatio: number;
+	warmCacheMaxItems: number;
+	coldFailureThreshold: number;
+	coldCircuitResetMs: number;
 	dbPath: string;
 }
 
@@ -85,7 +96,15 @@ export const DEFAULT_CONFIG: ContextManagerConfig = {
 	maxTokens: 128000,
 	reserveTokens: 16384,
 	evictionThreshold: 0.3,
+	evictionThresholdMin: 0.60,
+	evictionThresholdMax: 0.85,
+	evictionThresholdDefault: 0.70,
 	decayHalfLifeHours: 24,
 	checkpointIntervalTurns: 10,
+	recallCooldownTurns: 5,
+	maxItemBudgetRatio: 0.20,
+	warmCacheMaxItems: 1000,
+	coldFailureThreshold: 3,
+	coldCircuitResetMs: 300000,
 	dbPath: ".veil/context.db",
 };

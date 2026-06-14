@@ -37,14 +37,16 @@ export class ContextCache {
 				decay_score, cognitive_weight,
 				type, tags, pinned,
 				kg_pointer, depends_on,
-				valid_from, valid_until
+				valid_from, valid_until,
+				source
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
 				?, ?,
 				?, ?, ?,
 				?, ?,
-				?, ?
+				?, ?,
+				?
 			)
 		`);
 
@@ -113,7 +115,9 @@ export class ContextCache {
 				depends_on TEXT,
 
 				valid_from REAL,
-				valid_until REAL
+				valid_until REAL,
+
+				source TEXT CHECK(source IN ('auto', 'explicit')) DEFAULT 'auto'
 			);
 
 			CREATE INDEX IF NOT EXISTS idx_last_access ON items(last_access);
@@ -140,6 +144,7 @@ export class ContextCache {
 			item.dependsOn ? JSON.stringify(item.dependsOn) : null,
 			item.validFrom ?? null,
 			item.validUntil ?? null,
+			item.source,
 		);
 	}
 
@@ -270,6 +275,7 @@ export class ContextCache {
 			dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
 			validFrom: row.valid_from ?? undefined,
 			validUntil: row.valid_until ?? undefined,
+			source: row.source ?? "auto",
 		};
 	}
 }
@@ -278,7 +284,12 @@ export function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
 }
 
-export function createItem(content: string, type: ContextItem["type"], tags: string[] = []): ContextItem {
+export function createItem(
+	content: string,
+	type: ContextItem["type"],
+	tags: string[] = [],
+	source: "auto" | "explicit" = "auto",
+): ContextItem {
 	const now = Date.now();
 	const hash = hashContent(content);
 
@@ -294,5 +305,6 @@ export function createItem(content: string, type: ContextItem["type"], tags: str
 		type,
 		tags,
 		pinned: false,
+		source,
 	};
 }
