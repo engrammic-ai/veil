@@ -302,9 +302,9 @@ export class ContextManager {
 		const typeCounts = this.cache.getTypeCounts();
 		return {
 			warm: {
-				episodic: typeCounts["episodic"] ?? 0,
-				fact: typeCounts["fact"] ?? 0,
-				procedural: typeCounts["procedural"] ?? 0,
+				episodic: typeCounts.episodic ?? 0,
+				fact: typeCounts.fact ?? 0,
+				procedural: typeCounts.procedural ?? 0,
 			},
 			coldPointers: 0, // Cold store count not yet implemented
 		};

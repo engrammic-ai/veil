@@ -88,7 +88,7 @@ describe("hydrateStub FILE", () => {
 
 	beforeEach(() => {
 		// Create temp dir within CWD to pass path validation
-		testDir = join(process.cwd(), ".test-hydration-" + Date.now());
+		testDir = join(process.cwd(), `.test-hydration-${Date.now()}`);
 		mkdirSync(testDir, { recursive: true });
 	});
 
