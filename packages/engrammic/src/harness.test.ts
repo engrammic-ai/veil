@@ -321,9 +321,7 @@ describe("autoCapture integration", () => {
 		emit({
 			toolName: "Read",
 			input: { file_path: "/tmp/missing.ts" },
-			content: [
-				{ type: "text", text: "Error: file not found: /tmp/missing.ts — no such file or directory exists" },
-			],
+			content: [{ type: "text", text: "Error: file not found: /tmp/missing.ts — no such file or directory exists" }],
 			isError: true,
 		});
 

@@ -1,7 +1,7 @@
 // packages/engrammic/src/hydration.ts
 
 import { readFileSync, statSync } from "node:fs";
-import { normalize, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { ContextItem } from "./types.ts";
 
 export const STUB_PATTERN = /\[(EPISODE|FACT|PROC|FILE):([^\]]+)\]/g;
@@ -104,7 +104,7 @@ function validateFilePath(filePath: string): { safe: boolean; resolved: string; 
 	const cwd = process.cwd();
 
 	// Must be within CWD subtree - reject paths outside project root
-	if (!resolved.startsWith(cwd + "/") && resolved !== cwd) {
+	if (!resolved.startsWith(`${cwd}/`) && resolved !== cwd) {
 		return { safe: false, resolved, reason: "path outside project root" };
 	}
 
