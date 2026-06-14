@@ -26,6 +26,7 @@ export {
 } from "./cold/index.ts";
 export { type ContextCommandOutput, renderContextCommand } from "./commands/context.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
+export { createVeilExtension } from "./extension.ts";
 export {
 	type AfterToolCallContext,
 	type AfterToolCallResult,
