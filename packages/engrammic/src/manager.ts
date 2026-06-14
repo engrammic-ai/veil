@@ -11,8 +11,10 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ContextCache, createItem } from "./cache.ts";
+import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { SqliteColdStore } from "./cold/sqlite.ts";
+import { EvictionController } from "./eviction.ts";
 import { findEvictionCandidates, rankItems } from "./scorer.ts";
 import type {
 	ContextBudget,
@@ -32,6 +34,8 @@ export class ContextManager {
 	private loaded: Map<string, ContextItem> = new Map();
 	private budget: ContextBudget;
 	private turnCount: number = 0;
+	private eviction: EvictionController;
+	private circuitBreaker: CircuitBreaker;
 
 	constructor(config: Partial<ContextManagerConfig> = {}, coldStore?: ColdStore) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
@@ -53,6 +57,18 @@ export class ContextManager {
 			usedTokens: 0,
 			reserveTokens: this.config.reserveTokens,
 		};
+
+		this.eviction = new EvictionController(this.config);
+		this.circuitBreaker = new CircuitBreaker({
+			failureThreshold: this.config.coldFailureThreshold,
+			resetTimeout: this.config.coldCircuitResetMs,
+		});
+
+		// Recover any items stuck in evicting state
+		const stuck = this.cache.recoverEvicting();
+		for (const item of stuck) {
+			this.cache.unmarkEvicting(item.id);
+		}
 	}
 
 	/**
@@ -130,29 +146,41 @@ export class ContextManager {
 	async checkEviction(taskCtx: TaskContext): Promise<EvictionCandidate[]> {
 		const availableTokens = this.budget.maxTokens - this.budget.reserveTokens;
 		const evicted: EvictionCandidate[] = [];
+		const currentTurn = this.turnCount;
+
+		// Adjust adaptive threshold
+		this.eviction.adjustThreshold();
+		this.eviction.clearExpiredCooldowns(currentTurn);
 
 		// Stage 1: Hard evict stale single-access items (>2h, accessed once)
-		const staleMs = 2 * 60 * 60 * 1000; // 2 hours
+		const staleMs = 2 * 60 * 60 * 1000;
 		const stale = this.cache.getStale(staleMs, 1);
 		for (const item of stale) {
 			if (this.loaded.has(item.id)) {
 				this.unload([item.id]);
 				evicted.push({ item, score: 0, reason: "age" });
+				this.eviction.recordEviction();
 			}
-			// Demote to cold storage instead of deleting
 			await this.demoteToCold(item);
 		}
 
-		// Stage 2: Soft evict low-score items if over budget
-		if (this.budget.usedTokens > availableTokens * 0.7) {
-			const candidates = findEvictionCandidates(Array.from(this.loaded.values()), taskCtx, this.config);
+		// Stage 2: Soft evict low-score items if over threshold
+		const threshold = this.eviction.getThreshold();
+		if (this.budget.usedTokens > availableTokens * threshold) {
+			const candidates = findEvictionCandidates(
+				Array.from(this.loaded.values()),
+				taskCtx,
+				this.config,
+			);
 
 			for (const { item, score } of candidates) {
-				if (this.budget.usedTokens <= availableTokens * 0.6) break;
+				if (this.budget.usedTokens <= availableTokens * (threshold - 0.1)) break;
 				if (item.pinned) continue;
+				if (this.eviction.isOnCooldown(item.id, currentTurn)) continue;
 
 				this.unload([item.id]);
 				evicted.push({ item, score, reason: "low_score" });
+				this.eviction.recordEviction();
 			}
 		}
 
@@ -166,6 +194,7 @@ export class ContextManager {
 
 			this.unload([lowest.item.id]);
 			evicted.push({ item: lowest.item, score: lowest.score, reason: "budget" });
+			this.eviction.recordEviction();
 		}
 
 		return evicted;
@@ -175,9 +204,18 @@ export class ContextManager {
 	 * Demote an item from warm cache to cold storage.
 	 */
 	private async demoteToCold(item: ContextItem): Promise<void> {
-		const pointer = await this.cold.demote(item);
-		item.kgPointer = pointer;
-		this.cache.delete(item.id);
+		this.cache.markEvicting(item.id);
+
+		const pointer = await this.circuitBreaker.execute(() =>
+			this.cold.demote(item),
+		);
+
+		if (pointer !== null) {
+			item.kgPointer = pointer;
+			this.cache.deleteEvicting(item.id);
+		} else {
+			this.cache.unmarkEvicting(item.id);
+		}
 	}
 
 	/**
@@ -254,6 +292,13 @@ export class ContextManager {
 	 */
 	getTurnCount(): number {
 		return this.turnCount;
+	}
+
+	/**
+	 * Set a recall cooldown on an item to prevent immediate re-eviction.
+	 */
+	setRecallCooldown(itemId: string): void {
+		this.eviction.setRecallCooldown(itemId, this.turnCount);
 	}
 
 	/**
