@@ -3,6 +3,7 @@
  * Context management for Veil - dynamic loading, heuristic eviction, episodic memory
  */
 
+export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 // Cold storage adapters
