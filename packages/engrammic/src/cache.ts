@@ -98,6 +98,14 @@ export class ContextCache {
 	}
 
 	getByTags(tags: string[], limit: number = 100): ContextItem[] {
+		// With no tags, return all items up to limit ordered by recency
+		if (tags.length === 0) {
+			const rows = this.db
+				.prepare("SELECT * FROM items ORDER BY last_access DESC LIMIT ?")
+				.all(limit) as any[];
+			return rows.map((row) => this.rowToItem(row));
+		}
+
 		// Simple tag matching - items containing any of the tags
 		const placeholders = tags.map(() => "tags LIKE ?").join(" OR ");
 		const params = tags.map((t) => `%"${t}"%`);

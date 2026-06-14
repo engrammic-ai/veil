@@ -118,3 +118,102 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
     },
   },
 ];
+
+// Tool implementations
+
+export interface ToolContext {
+  manager: ContextManager;
+}
+
+export type ToolResult = { success: boolean; data?: unknown; error?: string };
+
+export async function executeVeilTool(
+  name: string,
+  params: Record<string, unknown>,
+  ctx: ToolContext
+): Promise<ToolResult> {
+  switch (name) {
+    case "veil_recall":
+      return executeRecall(params as { tags: string[]; limit?: number }, ctx);
+    case "veil_promote":
+      return executePromote(params as { id: string }, ctx);
+    case "veil_demote":
+      return executeDemote(params as { id: string }, ctx);
+    case "veil_remember":
+      return executeRemember(
+        params as { content: string; type: ContextItem["type"]; tags?: string[] },
+        ctx
+      );
+    case "veil_pin":
+      return executePin(params as { id: string }, ctx);
+    case "veil_unpin":
+      return executeUnpin(params as { id: string }, ctx);
+    case "veil_forget":
+      return await executeForget(params as { id: string }, ctx);
+    case "veil_hydrate":
+      return executeHydrate(params as { stub: string }, ctx);
+    default:
+      return { success: false, error: `Unknown tool: ${name}` };
+  }
+}
+
+function executeRecall(
+  params: { tags: string[]; limit?: number },
+  ctx: ToolContext
+): ToolResult {
+  const items = ctx.manager.recall(params.tags, params.limit ?? 10);
+  const stubs = items.map((item) => formatStub(item));
+  return { success: true, data: stubs };
+}
+
+function executePromote(params: { id: string }, ctx: ToolContext): ToolResult {
+  const items = ctx.manager.load([params.id]);
+  if (items.length === 0) {
+    return { success: false, error: `Item not found: ${params.id}` };
+  }
+  const stub = formatStub(items[0]);
+  return { success: true, data: { stub } };
+}
+
+function executeDemote(params: { id: string }, ctx: ToolContext): ToolResult {
+  ctx.manager.unload([params.id]);
+  return { success: true };
+}
+
+function executeRemember(
+  params: { content: string; type: ContextItem["type"]; tags?: string[] },
+  ctx: ToolContext
+): ToolResult {
+  const item = ctx.manager.remember(params.content, params.type, params.tags ?? []);
+  const stub = formatStub(item);
+  return { success: true, data: { id: item.id, stub } };
+}
+
+function executePin(params: { id: string }, ctx: ToolContext): ToolResult {
+  ctx.manager.pin(params.id);
+  return { success: true };
+}
+
+function executeUnpin(params: { id: string }, ctx: ToolContext): ToolResult {
+  ctx.manager.unpin(params.id);
+  return { success: true };
+}
+
+async function executeForget(params: { id: string }, ctx: ToolContext): Promise<ToolResult> {
+  await ctx.manager.forget(params.id);
+  return { success: true };
+}
+
+function executeHydrate(params: { stub: string }, ctx: ToolContext): ToolResult {
+  const parsed = parseStub(params.stub);
+  if (!parsed) {
+    return { success: false, error: `Invalid stub format: ${params.stub}` };
+  }
+
+  const result = hydrateStub(parsed, ctx.manager.getCache());
+  if (result.error) {
+    return { success: false, error: result.error };
+  }
+
+  return { success: true, data: { content: result.content } };
+}
