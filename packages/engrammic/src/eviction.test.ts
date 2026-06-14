@@ -2,9 +2,9 @@
  * Unit tests for EvictionController
  */
 
-import { describe, expect, test, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { EvictionController } from "./eviction.ts";
-import { DEFAULT_CONFIG, type ContextItem, type ContextManagerConfig } from "./types.ts";
+import { type ContextItem, type ContextManagerConfig, DEFAULT_CONFIG } from "./types.ts";
 
 function createMockItem(overrides?: Partial<ContextItem>): ContextItem {
 	return {
@@ -36,25 +36,25 @@ describe("EvictionController", () => {
 
 	describe("threshold management", () => {
 		test("starts at default threshold (0.70)", () => {
-			expect(controller.getThreshold()).toBe(0.70);
+			expect(controller.getThreshold()).toBe(0.7);
 		});
 
 		test("stays within min/max bounds", () => {
 			const controller = new EvictionController({
 				...DEFAULT_CONFIG,
-				evictionThresholdMin: 0.60,
+				evictionThresholdMin: 0.6,
 				evictionThresholdMax: 0.85,
-				evictionThresholdDefault: 0.70,
+				evictionThresholdDefault: 0.7,
 			});
 
-			expect(controller.getThreshold()).toBe(0.70);
+			expect(controller.getThreshold()).toBe(0.7);
 		});
 
 		test("lowers threshold when thrashing (3+ evictions in 60s)", () => {
 			const controller = new EvictionController({
 				...DEFAULT_CONFIG,
-				evictionThresholdDefault: 0.70,
-				evictionThresholdMin: 0.60,
+				evictionThresholdDefault: 0.7,
+				evictionThresholdMin: 0.6,
 			});
 
 			const initialThreshold = controller.getThreshold();
@@ -72,8 +72,8 @@ describe("EvictionController", () => {
 		test("does not lower threshold below minimum", () => {
 			const controller = new EvictionController({
 				...DEFAULT_CONFIG,
-				evictionThresholdDefault: 0.60,
-				evictionThresholdMin: 0.60,
+				evictionThresholdDefault: 0.6,
+				evictionThresholdMin: 0.6,
 			});
 
 			// Try to thrash
@@ -81,7 +81,7 @@ describe("EvictionController", () => {
 			controller.recordEviction();
 			controller.recordEviction();
 
-			expect(controller.getThreshold()).toBe(0.60); // Should not go below min
+			expect(controller.getThreshold()).toBe(0.6); // Should not go below min
 		});
 
 		test("raises threshold after 5+ minutes of stability", () => {
@@ -89,13 +89,13 @@ describe("EvictionController", () => {
 
 			const controller = new EvictionController({
 				...DEFAULT_CONFIG,
-				evictionThresholdDefault: 0.70,
+				evictionThresholdDefault: 0.7,
 				evictionThresholdMax: 0.85,
 			});
 
 			// First, record an eviction at time 0
 			controller.recordEviction();
-			expect(controller.getThreshold()).toBe(0.70);
+			expect(controller.getThreshold()).toBe(0.7);
 
 			// Advance 5+ minutes (300001ms)
 			vi.advanceTimersByTime(300001);
@@ -104,7 +104,7 @@ describe("EvictionController", () => {
 			controller.adjustThreshold();
 
 			const newThreshold = controller.getThreshold();
-			expect(newThreshold).toBeGreaterThan(0.70);
+			expect(newThreshold).toBeGreaterThan(0.7);
 			expect(newThreshold).toBe(0.75); // 0.70 + 0.05
 
 			vi.useRealTimers();
@@ -135,8 +135,8 @@ describe("EvictionController", () => {
 
 			const controller = new EvictionController({
 				...DEFAULT_CONFIG,
-				evictionThresholdDefault: 0.70,
-				evictionThresholdMin: 0.60,
+				evictionThresholdDefault: 0.7,
+				evictionThresholdMin: 0.6,
 			});
 
 			// Record eviction at t=0
@@ -153,7 +153,7 @@ describe("EvictionController", () => {
 
 			// At this point we have 2 evictions in the current window, not 3
 			// So threshold shouldn't trigger the thrash threshold
-			expect(controller.getThreshold()).toBe(0.70);
+			expect(controller.getThreshold()).toBe(0.7);
 
 			vi.useRealTimers();
 		});
@@ -216,7 +216,7 @@ describe("EvictionController", () => {
 		test("truncates items exceeding 20% of budget", () => {
 			const config: ContextManagerConfig = {
 				...DEFAULT_CONFIG,
-				maxItemBudgetRatio: 0.20,
+				maxItemBudgetRatio: 0.2,
 			};
 			const controller = new EvictionController(config);
 
@@ -238,7 +238,7 @@ describe("EvictionController", () => {
 		test("leaves small items unchanged", () => {
 			const config: ContextManagerConfig = {
 				...DEFAULT_CONFIG,
-				maxItemBudgetRatio: 0.20,
+				maxItemBudgetRatio: 0.2,
 			};
 			const controller = new EvictionController(config);
 
@@ -259,7 +259,7 @@ describe("EvictionController", () => {
 		test("does not add duplicate 'truncated' tags", () => {
 			const config: ContextManagerConfig = {
 				...DEFAULT_CONFIG,
-				maxItemBudgetRatio: 0.20,
+				maxItemBudgetRatio: 0.2,
 			};
 			const controller = new EvictionController(config);
 
@@ -280,7 +280,7 @@ describe("EvictionController", () => {
 		test("preserves other tags while truncating", () => {
 			const config: ContextManagerConfig = {
 				...DEFAULT_CONFIG,
-				maxItemBudgetRatio: 0.20,
+				maxItemBudgetRatio: 0.2,
 			};
 			const controller = new EvictionController(config);
 

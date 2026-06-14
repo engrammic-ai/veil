@@ -2,7 +2,7 @@
  * Unit tests for circuit-breaker.ts
  */
 
-import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 
 describe("CircuitBreaker", () => {

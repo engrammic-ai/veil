@@ -7,8 +7,7 @@
  * - Item size caps: truncate oversized items to prevent budget bloat
  */
 
-import type { ContextItem, ContextManagerConfig, TaskContext } from "./types.ts";
-import { computeRelevance } from "./scorer.ts";
+import type { ContextItem, ContextManagerConfig } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
 
 export interface EvictionResult {
