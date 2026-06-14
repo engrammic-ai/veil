@@ -16,7 +16,7 @@ import { buildContextSection } from "./injection.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
-import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition } from "./tools.ts";
+import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
 import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { smartTruncate } from "./utils.ts";
@@ -322,7 +322,7 @@ export class VeilHarness {
 	/**
 	 * Execute a veil tool by name.
 	 */
-	async executeTool(name: string, params: Record<string, unknown>): Promise<{ success: boolean; data?: unknown; error?: string }> {
+	async executeTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
 		return executeVeilTool(name, params, { manager: this.manager });
 	}
 
@@ -331,7 +331,7 @@ export class VeilHarness {
 	 */
 	getContextSection(): string {
 		const window = this.manager.getWindow();
-		const rankedItems = rankItems(window.items, this.currentTaskContext, this.config);
+		const rankedItems = rankItems(window.items, this.currentTaskContext, this.manager.getConfig());
 		return buildContextSection({
 			items: rankedItems.map(({ item, score }) => ({ item, score })),
 			budget: window.budget,
@@ -343,10 +343,18 @@ export class VeilHarness {
 	 * Returns hydrated block to inject, or empty string if none.
 	 */
 	processAutoHydration(agentOutput: string): string {
+		const MAX_STUBS_PER_CALL = 5;
 		const stubs = detectStubs(agentOutput);
 		if (stubs.length === 0) return "";
 
-		const results = stubs.map((stub) => ({
+		const cappedStubs = stubs.slice(0, MAX_STUBS_PER_CALL);
+		if (stubs.length > MAX_STUBS_PER_CALL) {
+			console.warn(
+				`[veil] processAutoHydration: ${stubs.length} stubs detected, capping at ${MAX_STUBS_PER_CALL}`,
+			);
+		}
+
+		const results = cappedStubs.map((stub) => ({
 			stub,
 			result: hydrateStub(stub, this.manager.getCache()),
 		}));

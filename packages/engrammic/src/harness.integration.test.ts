@@ -95,7 +95,7 @@ describe("VeilHarness integration", () => {
 
       expect(section).toContain("[FACT:");
       expect(section).toContain("score:");
-      expect(section).toContain("1 items");
+      expect(section).toContain("1 item");
     });
   });
 });
