@@ -12,7 +12,11 @@
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
+import { buildContextSection } from "./injection.ts";
+import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { ContextManager } from "./manager.ts";
+import { rankItems } from "./scorer.ts";
+import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition } from "./tools.ts";
 import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { smartTruncate } from "./utils.ts";
@@ -306,6 +310,48 @@ export class VeilHarness {
 	 */
 	async fetchFromCold(pointer: string) {
 		return this.manager.fetchFromCold(pointer);
+	}
+
+	/**
+	 * Get tool definitions for agent registration.
+	 */
+	getTools(): ToolDefinition[] {
+		return TOOL_SCHEMAS;
+	}
+
+	/**
+	 * Execute a veil tool by name.
+	 */
+	async executeTool(name: string, params: Record<string, unknown>): Promise<{ success: boolean; data?: unknown; error?: string }> {
+		return executeVeilTool(name, params, { manager: this.manager });
+	}
+
+	/**
+	 * Build context section for system prompt injection.
+	 */
+	getContextSection(): string {
+		const window = this.manager.getWindow();
+		const rankedItems = rankItems(window.items, this.currentTaskContext, this.config);
+		return buildContextSection({
+			items: rankedItems.map(({ item, score }) => ({ item, score })),
+			budget: window.budget,
+		});
+	}
+
+	/**
+	 * Detect and hydrate stubs mentioned in agent output.
+	 * Returns hydrated block to inject, or empty string if none.
+	 */
+	processAutoHydration(agentOutput: string): string {
+		const stubs = detectStubs(agentOutput);
+		if (stubs.length === 0) return "";
+
+		const results = stubs.map((stub) => ({
+			stub,
+			result: hydrateStub(stub, this.manager.getCache()),
+		}));
+
+		return formatHydratedBlock(results);
 	}
 
 	/**
