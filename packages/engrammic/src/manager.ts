@@ -238,9 +238,7 @@ export class ContextManager {
 	 */
 	recordOutcome(success: boolean): void {
 		const delta = success ? 0.1 : -0.1;
-		for (const id of this.loaded.keys()) {
-			this.cache.updateCognitiveWeight(id, delta);
-		}
+		this.cache.updateCognitiveWeightBatch(Array.from(this.loaded.keys()), delta);
 	}
 
 	/**
@@ -288,18 +286,25 @@ export class ContextManager {
 	}
 
 	/**
+	 * Get the merged configuration for use by the harness.
+	 */
+	getConfig(): ContextManagerConfig {
+		return { ...this.config };
+	}
+
+	/**
 	 * Get statistics for context display.
 	 */
 	getStats(): {
 		warm: { episodic: number; fact: number; procedural: number };
 		coldPointers: number;
 	} {
-		const all = this.cache.getAll();
+		const typeCounts = this.cache.getTypeCounts();
 		return {
 			warm: {
-				episodic: all.filter((i) => i.type === "episodic").length,
-				fact: all.filter((i) => i.type === "fact").length,
-				procedural: all.filter((i) => i.type === "procedural").length,
+				episodic: typeCounts["episodic"] ?? 0,
+				fact: typeCounts["fact"] ?? 0,
+				procedural: typeCounts["procedural"] ?? 0,
 			},
 			coldPointers: 0, // Cold store count not yet implemented
 		};

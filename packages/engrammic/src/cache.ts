@@ -10,10 +10,85 @@ import type { ContextItem } from "./types.ts";
 export class ContextCache {
 	private db: Database.Database;
 
+	// Prepared statements (initialised once in constructor, reused on every call)
+	private stmtPut: Database.Statement;
+	private stmtGet: Database.Statement;
+	private stmtGetByHash: Database.Statement;
+	private stmtTouch: Database.Statement;
+	private stmtUpdateCognitiveWeight: Database.Statement;
+	private stmtDelete: Database.Statement;
+	private stmtGetAll: Database.Statement;
+	private stmtGetStale: Database.Statement;
+	private stmtApplyDecay: Database.Statement;
+	private stmtPruneByDecaySelect: Database.Statement;
+	private stmtPruneByDecayDelete: Database.Statement;
+	private stmtGetAllByRecency: Database.Statement;
+	private stmtGetTypeCounts: Database.Statement;
+
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
 		this.db.pragma("journal_mode = WAL");
 		this.init();
+
+		this.stmtPut = this.db.prepare(`
+			INSERT OR REPLACE INTO items (
+				id, content, content_hash,
+				created_at, last_access, access_count,
+				decay_score, cognitive_weight,
+				type, tags, pinned,
+				kg_pointer, depends_on,
+				valid_from, valid_until
+			) VALUES (
+				?, ?, ?,
+				?, ?, ?,
+				?, ?,
+				?, ?, ?,
+				?, ?,
+				?, ?
+			)
+		`);
+
+		this.stmtGet = this.db.prepare("SELECT * FROM items WHERE id = ?");
+
+		this.stmtGetByHash = this.db.prepare("SELECT * FROM items WHERE content_hash = ?");
+
+		this.stmtTouch = this.db.prepare(
+			"UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?",
+		);
+
+		this.stmtUpdateCognitiveWeight = this.db.prepare(`
+			UPDATE items
+			SET cognitive_weight = MAX(-1, MIN(1, cognitive_weight * 0.95 + ?))
+			WHERE id = ?
+		`);
+
+		this.stmtDelete = this.db.prepare("DELETE FROM items WHERE id = ?");
+
+		this.stmtGetAll = this.db.prepare("SELECT * FROM items");
+
+		this.stmtGetAllByRecency = this.db.prepare(
+			"SELECT * FROM items ORDER BY last_access DESC LIMIT ?",
+		);
+
+		this.stmtGetStale = this.db.prepare(
+			"SELECT * FROM items WHERE last_access < ? AND access_count <= ?",
+		);
+
+		this.stmtApplyDecay = this.db.prepare(
+			"UPDATE items SET decay_score = decay_score + (1 - ?) WHERE decay_score < 1",
+		);
+
+		this.stmtPruneByDecaySelect = this.db.prepare(
+			"SELECT id FROM items WHERE decay_score >= ?",
+		);
+
+		this.stmtPruneByDecayDelete = this.db.prepare(
+			"DELETE FROM items WHERE decay_score >= ?",
+		);
+
+		this.stmtGetTypeCounts = this.db.prepare(
+			"SELECT type, COUNT(*) AS count FROM items GROUP BY type",
+		);
 	}
 
 	private init(): void {
@@ -49,25 +124,7 @@ export class ContextCache {
 	}
 
 	put(item: ContextItem): void {
-		const stmt = this.db.prepare(`
-			INSERT OR REPLACE INTO items (
-				id, content, content_hash,
-				created_at, last_access, access_count,
-				decay_score, cognitive_weight,
-				type, tags, pinned,
-				kg_pointer, depends_on,
-				valid_from, valid_until
-			) VALUES (
-				?, ?, ?,
-				?, ?, ?,
-				?, ?,
-				?, ?, ?,
-				?, ?,
-				?, ?
-			)
-		`);
-
-		stmt.run(
+		this.stmtPut.run(
 			item.id,
 			item.content,
 			item.contentHash,
@@ -87,28 +144,43 @@ export class ContextCache {
 	}
 
 	get(id: string): ContextItem | null {
-		const row = this.db.prepare("SELECT * FROM items WHERE id = ?").get(id) as any;
+		const row = this.stmtGet.get(id) as any;
 		if (!row) return null;
 		return this.rowToItem(row);
 	}
 
 	getAll(): ContextItem[] {
-		const rows = this.db.prepare("SELECT * FROM items").all() as any[];
+		const rows = this.stmtGetAll.all() as any[];
 		return rows.map((row) => this.rowToItem(row));
+	}
+
+	/**
+	 * Returns a map of type → count using a single aggregated SQL query.
+	 * Much cheaper than getAll() when only counts are needed.
+	 */
+	getTypeCounts(): Record<string, number> {
+		const rows = this.stmtGetTypeCounts.all() as Array<{ type: string; count: number }>;
+		const result: Record<string, number> = {};
+		for (const row of rows) {
+			result[row.type] = row.count;
+		}
+		return result;
 	}
 
 	getByTags(tags: string[], limit: number = 100): ContextItem[] {
 		// With no tags, return all items up to limit ordered by recency
 		if (tags.length === 0) {
-			const rows = this.db
-				.prepare("SELECT * FROM items ORDER BY last_access DESC LIMIT ?")
-				.all(limit) as any[];
+			const rows = this.stmtGetAllByRecency.all(limit) as any[];
 			return rows.map((row) => this.rowToItem(row));
 		}
 
-		// Simple tag matching - items containing any of the tags
-		const placeholders = tags.map(() => "tags LIKE ?").join(" OR ");
-		const params = tags.map((t) => `%"${t}"%`);
+		// Escape LIKE special characters (%, _) in each tag to prevent wildcard injection.
+		// SQLite ESCAPE clause uses '\' as the escape character.
+		const escapedTags = tags.map((t) => t.replace(/[%_\\]/g, "\\$&"));
+
+		// Simple tag matching — items containing any of the tags
+		const placeholders = escapedTags.map(() => "tags LIKE ? ESCAPE '\\'").join(" OR ");
+		const params = escapedTags.map((t) => `%"${t}"%`);
 
 		const rows = this.db
 			.prepare(`SELECT * FROM items WHERE ${placeholders} ORDER BY last_access DESC LIMIT ?`)
@@ -118,40 +190,54 @@ export class ContextCache {
 	}
 
 	getByHash(hash: string): ContextItem | null {
-		const row = this.db.prepare("SELECT * FROM items WHERE content_hash = ?").get(hash) as any;
+		const row = this.stmtGetByHash.get(hash) as any;
 		if (!row) return null;
 		return this.rowToItem(row);
 	}
 
 	delete(id: string): void {
-		this.db.prepare("DELETE FROM items WHERE id = ?").run(id);
+		this.stmtDelete.run(id);
 	}
 
 	touch(id: string): void {
 		const now = Date.now();
-		this.db.prepare("UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?").run(now, id);
+		this.stmtTouch.run(now, id);
 	}
 
 	updateCognitiveWeight(id: string, delta: number): void {
+		this.stmtUpdateCognitiveWeight.run(delta, id);
+	}
+
+	/**
+	 * Batch update cognitive weight for multiple items in a single SQL statement.
+	 * Significantly faster than N individual UPDATE calls when the loaded set is large.
+	 */
+	updateCognitiveWeightBatch(ids: string[], delta: number): void {
+		if (ids.length === 0) return;
+		if (ids.length === 1) {
+			this.stmtUpdateCognitiveWeight.run(delta, ids[0]);
+			return;
+		}
+		const placeholders = ids.map(() => "?").join(", ");
 		this.db
-			.prepare(`
-				UPDATE items
+			.prepare(
+				`UPDATE items
 				SET cognitive_weight = MAX(-1, MIN(1, cognitive_weight * 0.95 + ?))
-				WHERE id = ?
-			`)
-			.run(delta, id);
+				WHERE id IN (${placeholders})`,
+			)
+			.run(delta, ...ids);
 	}
 
 	applyDecay(decayFactor: number = 0.95): void {
-		this.db.prepare("UPDATE items SET decay_score = decay_score + (1 - ?) WHERE decay_score < 1").run(decayFactor);
+		this.stmtApplyDecay.run(decayFactor);
 	}
 
 	pruneByDecay(threshold: number = 0.9): string[] {
-		const rows = this.db.prepare("SELECT id FROM items WHERE decay_score >= ?").all(threshold) as any[];
+		const rows = this.stmtPruneByDecaySelect.all(threshold) as any[];
 		const ids = rows.map((r) => r.id);
 
 		if (ids.length > 0) {
-			this.db.prepare(`DELETE FROM items WHERE decay_score >= ?`).run(threshold);
+			this.stmtPruneByDecayDelete.run(threshold);
 		}
 
 		return ids;
@@ -159,10 +245,7 @@ export class ContextCache {
 
 	getStale(maxAgeMs: number, maxAccessCount: number = 1): ContextItem[] {
 		const cutoff = Date.now() - maxAgeMs;
-		const rows = this.db
-			.prepare("SELECT * FROM items WHERE last_access < ? AND access_count <= ?")
-			.all(cutoff, maxAccessCount) as any[];
-
+		const rows = this.stmtGetStale.all(cutoff, maxAccessCount) as any[];
 		return rows.map((row) => this.rowToItem(row));
 	}
 
