@@ -74,8 +74,8 @@ export class ContextManager {
 	/**
 	 * Store a new context item.
 	 */
-	remember(content: string, type: ContextItem["type"], tags: string[] = []): ContextItem {
-		const item = createItem(content, type, tags);
+	remember(content: string, type: ContextItem["type"], tags: string[] = [], toolCallId?: string): ContextItem {
+		const item = createItem(content, type, tags, toolCallId);
 		this.cache.put(item);
 		return item;
 	}
@@ -338,18 +338,19 @@ export class ContextManager {
 	/**
 	 * Get statistics for context display.
 	 */
-	getStats(): {
+	async getStats(): Promise<{
 		warm: { episodic: number; fact: number; procedural: number };
 		coldPointers: number;
-	} {
+	}> {
 		const typeCounts = this.cache.getTypeCounts();
+		const coldCount = await this.cold.count();
 		return {
 			warm: {
 				episodic: typeCounts.episodic ?? 0,
 				fact: typeCounts.fact ?? 0,
 				procedural: typeCounts.procedural ?? 0,
 			},
-			coldPointers: 0, // Cold store count not yet implemented
+			coldPointers: coldCount,
 		};
 	}
 

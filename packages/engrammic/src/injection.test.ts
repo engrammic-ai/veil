@@ -17,6 +17,7 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		type: "episodic",
 		tags: ["test"],
 		pinned: false,
+		source: "auto",
 		...overrides,
 	};
 }

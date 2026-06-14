@@ -52,6 +52,10 @@ export class LanceDBColdStore implements ColdStore {
 		throw new Error("Not implemented");
 	}
 
+	async count(): Promise<number> {
+		throw new Error("Not implemented");
+	}
+
 	async query(_text: string, _tags: string[], _limit: number): Promise<ContextItem[]> {
 		// TODO: Vector similarity search
 		throw new Error("Not implemented");

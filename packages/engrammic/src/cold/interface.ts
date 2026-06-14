@@ -38,6 +38,11 @@ export interface ColdStore {
 	exists(pointer: string): Promise<boolean>;
 
 	/**
+	 * Get total count of items in cold storage.
+	 */
+	count(): Promise<number>;
+
+	/**
 	 * Optional: Query cold storage by text/tags.
 	 * Only available if capabilities.semantic is true.
 	 */
