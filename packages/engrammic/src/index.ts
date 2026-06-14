@@ -36,11 +36,12 @@ export {
 	type ContextManagerConfig,
 	type ContextWindow,
 	DEFAULT_CONFIG,
+	DEFAULT_CAPTURE_CONFIG,
 	type EvictionCandidate,
 	type TaskContext,
 } from "./types.ts";
-export { contentHash, estimateTokens, smartTruncate } from "./utils.ts";
+export { contentHash, estimateTokens, formatTokens, smartTruncate } from "./utils.ts";
 export { buildContextSection, formatStub, type ContextSectionItem, type ContextSectionOptions } from "./injection.ts";
-export { detectStubs, hydrateStub, parseStub, formatHydratedBlock } from "./hydration.ts";
-export { TOOL_SCHEMAS, executeVeilTool, type ToolDefinition, type ToolResult } from "./tools.ts";
-export { renderContextCommand } from "./commands/context.ts";
+export { detectStubs, hydrateStub, parseStub, formatHydratedBlock, type ParsedStub, type HydrationResult, STUB_PATTERN } from "./hydration.ts";
+export { TOOL_SCHEMAS, executeVeilTool, type ToolDefinition, type ToolResult, type ToolContext } from "./tools.ts";
+export { renderContextCommand, type ContextCommandOutput } from "./commands/context.ts";
