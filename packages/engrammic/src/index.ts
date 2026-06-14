@@ -4,6 +4,7 @@
  */
 
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
+export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 // Cold storage adapters
