@@ -1,0 +1,53 @@
+diff --git a/packages/coding-agent/src/modes/interactive/components/assistant-message.ts b/packages/coding-agent/src/modes/interactive/components/assistant-message.ts
+index 32276467..4400d613 100644
+--- a/packages/coding-agent/src/modes/interactive/components/assistant-message.ts
++++ b/packages/coding-agent/src/modes/interactive/components/assistant-message.ts
+@@ -6,6 +6,10 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
+ const OSC133_ZONE_END = "\x1b]133;B\x07";
+ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+ 
++// ANSI escape for dim text (used for evicted context messages)
++const ANSI_DIM = "\x1b[2m";
++const ANSI_RESET = "\x1b[0m";
++
+ /**
+  * Component that renders a complete assistant message
+  */
+@@ -16,6 +20,7 @@ export class AssistantMessageComponent extends Container {
+ 	private hiddenThinkingLabel: string;
+ 	private lastMessage?: AssistantMessage;
+ 	private hasToolCalls = false;
++	private _dimmed = false;
+ 
+ 	constructor(
+ 		message?: AssistantMessage,
+@@ -59,14 +64,27 @@ export class AssistantMessageComponent extends Container {
+ 		}
+ 	}
+ 
++	/** Set whether this message renders dimmed (for evicted context). */
++	setDimmed(dimmed: boolean): void {
++		this._dimmed = dimmed;
++	}
++
++	isDimmed(): boolean {
++		return this._dimmed;
++	}
++
+ 	override render(width: number): string[] {
+-		const lines = super.render(width);
++		let lines = super.render(width);
+ 		if (this.hasToolCalls || lines.length === 0) {
+-			return lines;
++			return this._dimmed ? lines.map((line) => ANSI_DIM + line + ANSI_RESET) : lines;
+ 		}
+ 
+ 		lines[0] = OSC133_ZONE_START + lines[0];
+ 		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
++
++		if (this._dimmed) {
++			lines = lines.map((line) => ANSI_DIM + line + ANSI_RESET);
++		}
+ 		return lines;
+ 	}
+ 
