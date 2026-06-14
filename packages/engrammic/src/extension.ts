@@ -17,8 +17,13 @@ import { formatStatusBar } from "./ux.ts";
  * Minimal subset of the Pi ExtensionAPI used here.
  * The full type lives in @earendil-works/pi-coding-agent.
  */
+interface UserMessageEvent {
+	content: string;
+}
+
 interface ExtensionAPI {
 	on(event: "turn_end", handler: (event: unknown, ctx: ExtensionContext) => Promise<void>): void;
+	on(event: "user_message", handler: (event: UserMessageEvent, ctx: ExtensionContext) => Promise<void>): void;
 	registerFlag(
 		name: string,
 		opts: { description?: string; type: "boolean" | "string"; default?: boolean | string },
@@ -34,6 +39,7 @@ interface ExtensionContext {
 			fg(color: string, text: string): string;
 		};
 	};
+	injectContext(key: string, content: string): void;
 }
 
 /**
@@ -53,6 +59,13 @@ export function createVeilExtension(harness: VeilHarness): (pi: ExtensionAPI) =>
 			description: "Show Veil turn counter in the status bar",
 			type: "boolean",
 			default: false,
+		});
+
+		pi.on("user_message", async (event, ctx) => {
+			const manifest = await harness.processUserMessage(event.content);
+			if (manifest) {
+				ctx.injectContext("veil-anticipate", manifest);
+			}
 		});
 
 		pi.on("turn_end", async (_event, ctx) => {

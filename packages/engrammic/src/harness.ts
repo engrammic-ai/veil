@@ -20,6 +20,8 @@ import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } f
 import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
+import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import type { ContextManifest, Trigger } from "./types.ts";
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
@@ -75,6 +77,8 @@ export class VeilHarness {
 	private capturesThisTurn: number = 0;
 	private totalCaptures: number = 0;
 	private evictedToolCallIds: Set<string> = new Set();
+	private triggers: Trigger[] = DEFAULT_TRIGGERS;
+	private manifestItemIds: Set<string> = new Set();  // For Phase 6 learning
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -412,6 +416,64 @@ export class VeilHarness {
 		}));
 
 		return formatHydratedBlock(results);
+	}
+
+	/**
+	 * Process user message for anticipatory loading.
+	 * Returns formatted manifest string if triggers match, null otherwise.
+	 */
+	async processUserMessage(message: string): Promise<string | null> {
+		const triggers = matchTriggers(message, this.triggers);
+		if (triggers.length === 0) return null;
+
+		const budget = this.getUsage();
+		if (budget.percent > 70) return null;
+
+		let manifest: ContextManifest | null;
+		try {
+			manifest = await buildManifest(triggers, this.manager.getCache(), { percent: budget.percent });
+		} catch (err) {
+			// Log error, don't block agent flow
+			console.error("[veil] manifest build failed:", err);
+			return null;
+		}
+
+		if (!manifest) return null;
+
+		// Track for Phase 6 learning
+		this.trackManifestItems(manifest);
+
+		// Eager preload if budget allows
+		if (budget.percent < 50) {
+			this.preloadTopItems(manifest, 3);
+		}
+
+		return formatManifest(manifest);
+	}
+
+	/**
+	 * Track manifest items for future learning (Phase 6).
+	 */
+	private trackManifestItems(manifest: ContextManifest): void {
+		this.manifestItemIds.clear();
+		for (const item of manifest.items) {
+			this.manifestItemIds.add(item.id);
+		}
+	}
+
+	/**
+	 * Preload top N manifest items into hot context.
+	 */
+	private preloadTopItems(manifest: ContextManifest, limit: number): void {
+		const ids = manifest.items.slice(0, limit).map(i => i.id);
+		this.load(ids);  // Existing method, handles dedup
+	}
+
+	/**
+	 * Check if an item ID was in the last manifest (for Phase 6 learning).
+	 */
+	wasInManifest(id: string): boolean {
+		return this.manifestItemIds.has(id);
 	}
 
 	/**
