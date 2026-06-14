@@ -53,6 +53,10 @@ export class Mem0ColdStore implements ColdStore {
 		throw new Error("Not implemented");
 	}
 
+	async count(): Promise<number> {
+		throw new Error("Not implemented");
+	}
+
 	async query(_text: string, _tags: string[], _limit: number): Promise<ContextItem[]> {
 		// TODO: await this.client.search(text, { user_id: this.namespace, limit })
 		throw new Error("Not implemented");

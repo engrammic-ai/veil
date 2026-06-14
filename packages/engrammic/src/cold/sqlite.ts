@@ -141,6 +141,13 @@ export class SqliteColdStore implements ColdStore {
 		return row !== undefined;
 	}
 
+	async count(): Promise<number> {
+		const row = this.db.prepare("SELECT COUNT(*) as cnt FROM cold_items WHERE namespace = ?").get(this.namespace) as {
+			cnt: number;
+		};
+		return row?.cnt ?? 0;
+	}
+
 	async close(): Promise<void> {
 		this.db.close();
 	}

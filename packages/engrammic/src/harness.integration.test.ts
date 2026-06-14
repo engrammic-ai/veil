@@ -122,6 +122,7 @@ describe("VeilHarness integration", () => {
 				exists: async () => false,
 				delete: async () => {},
 				close: async () => {},
+				count: async () => 0,
 			};
 
 			const manager = new ContextManager({ coldFailureThreshold: 2 }, failingCold);
@@ -166,7 +167,7 @@ describe("UX integration", () => {
 		const item = harness.remember("Test content for context display", "fact", ["display"]);
 		harness.load([item.id]);
 
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("Context Window");

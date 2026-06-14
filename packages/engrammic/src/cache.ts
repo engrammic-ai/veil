@@ -42,7 +42,7 @@ export class ContextCache {
 				type, tags, pinned,
 				kg_pointer, depends_on,
 				valid_from, valid_until,
-				source
+				source, source_tool_call_id
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
@@ -50,7 +50,7 @@ export class ContextCache {
 				?, ?, ?,
 				?, ?,
 				?, ?,
-				?
+				?, ?
 			)
 		`);
 
@@ -120,6 +120,7 @@ export class ContextCache {
 				valid_until REAL,
 
 				source TEXT CHECK(source IN ('auto', 'explicit')) DEFAULT 'auto',
+				source_tool_call_id TEXT,
 
 				evicting INTEGER DEFAULT 0
 			);
@@ -130,6 +131,16 @@ export class ContextCache {
 			CREATE INDEX IF NOT EXISTS idx_tags ON items(tags);
 			CREATE INDEX IF NOT EXISTS idx_evicting ON items(evicting);
 		`);
+
+		// Migration: add source_tool_call_id column if it doesn't exist
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN source_tool_call_id TEXT");
+		} catch {
+			// Column already exists
+		}
+
+		// Index must be created after migration adds the column
+		this.db.exec("CREATE INDEX IF NOT EXISTS idx_source_tool_call_id ON items(source_tool_call_id)");
 	}
 
 	put(item: ContextItem): void {
@@ -150,6 +161,7 @@ export class ContextCache {
 			item.validFrom ?? null,
 			item.validUntil ?? null,
 			item.source,
+			item.sourceToolCallId ?? null,
 		);
 	}
 
@@ -298,6 +310,7 @@ export class ContextCache {
 			validFrom: row.valid_from ?? undefined,
 			validUntil: row.valid_until ?? undefined,
 			source: row.source ?? "auto",
+			sourceToolCallId: row.source_tool_call_id ?? undefined,
 		};
 	}
 }
@@ -310,7 +323,7 @@ export function createItem(
 	content: string,
 	type: ContextItem["type"],
 	tags: string[] = [],
-	source: "auto" | "explicit" = "auto",
+	toolCallId?: string,
 ): ContextItem {
 	const now = Date.now();
 	const hash = hashContent(content);
@@ -327,6 +340,7 @@ export function createItem(
 		type,
 		tags,
 		pinned: false,
-		source,
+		source: "auto",
+		sourceToolCallId: toolCallId,
 	};
 }

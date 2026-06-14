@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import { VeilHarness } from "./harness.ts";
 
@@ -28,6 +28,7 @@ describe("MemoryColdStore", () => {
 			type: "fact" as const,
 			tags: ["test"],
 			pinned: false,
+			source: "auto" as const,
 		};
 
 		const pointer = await store.demote(item);
