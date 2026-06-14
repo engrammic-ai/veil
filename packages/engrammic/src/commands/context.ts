@@ -19,9 +19,9 @@ function formatItemLine(item: ContextItem): string {
 	return `  +- ${summary}...  ${tokStr} ${source}${pinned}`;
 }
 
-export function renderContextCommand(harness: VeilHarness): ContextCommandOutput {
+export async function renderContextCommand(harness: VeilHarness): Promise<ContextCommandOutput> {
 	const window = harness.getWindow();
-	const stats = harness.getManager().getStats();
+	const stats = await harness.getManager().getStats();
 	const config = harness.getManager().getConfig();
 
 	const content: string[] = [];

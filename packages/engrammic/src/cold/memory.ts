@@ -41,6 +41,10 @@ export class MemoryColdStore implements ColdStore {
 		return this.items.has(pointer);
 	}
 
+	async count(): Promise<number> {
+		return this.items.size;
+	}
+
 	async close(): Promise<void> {
 		this.items.clear();
 	}

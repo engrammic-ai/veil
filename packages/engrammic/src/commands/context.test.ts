@@ -47,7 +47,7 @@ function makeHarness(opts: {
 		getWindow: () => window,
 		getTurnCount: () => opts.turnCount ?? 0,
 		getManager: () => ({
-			getStats: () => ({
+			getStats: async () => ({
 				warm,
 				coldPointers: opts.coldPointers ?? 0,
 			}),
@@ -60,25 +60,25 @@ function makeHarness(opts: {
 }
 
 describe("renderContextCommand", () => {
-	it("renders box format with header", () => {
+	it("renders box format with header", async () => {
 		const harness = makeHarness({});
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 
 		expect(lines[0]).toContain("+--");
 		expect(lines[0]).toContain("Context Window");
 		expect(lines[lines.length - 1]).toContain("+--");
 	});
 
-	it("shows hot items section", () => {
+	it("shows hot items section", async () => {
 		const harness = makeHarness({ items: [] });
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("Hot (loaded):");
 		expect(joined).toContain("0 items");
 	});
 
-	it("renders loaded items with details", () => {
+	it("renders loaded items with details", async () => {
 		const item = makeItem({
 			id: "aabbccdd11223344",
 			type: "episodic",
@@ -87,7 +87,7 @@ describe("renderContextCommand", () => {
 			source: "explicit",
 		});
 		const harness = makeHarness({ items: [item], warmStats: { episodic: 1, fact: 0, procedural: 0 } });
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("1 items");
@@ -95,12 +95,12 @@ describe("renderContextCommand", () => {
 		expect(joined).toContain("[pin]");
 	});
 
-	it("shows warm and cold counts", () => {
+	it("shows warm and cold counts", async () => {
 		const harness = makeHarness({
 			warmStats: { episodic: 10, fact: 20, procedural: 5 },
 			coldPointers: 100,
 		});
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("Warm (cached):");
@@ -108,11 +108,11 @@ describe("renderContextCommand", () => {
 		expect(joined).toContain("Cold (storage):");
 	});
 
-	it("shows budget with progress bar", () => {
+	it("shows budget with progress bar", async () => {
 		const harness = makeHarness({
 			budget: { usedTokens: 2000, maxTokens: 8000, reserveTokens: 1000 },
 		});
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("Budget:");
@@ -121,9 +121,9 @@ describe("renderContextCommand", () => {
 		expect(joined).toMatch(/[=.]+/);
 	});
 
-	it("shows adaptive threshold", () => {
+	it("shows adaptive threshold", async () => {
 		const harness = makeHarness({ threshold: 0.75 });
-		const { lines } = renderContextCommand(harness);
+		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("Threshold:");
