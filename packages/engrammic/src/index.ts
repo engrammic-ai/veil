@@ -5,6 +5,7 @@
 
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
 // Cold storage adapters
 export {
 	ChromaColdStore,
@@ -23,33 +24,42 @@ export {
 	ZepColdStore,
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
+export { type ContextCommandOutput, renderContextCommand } from "./commands/context.ts";
+export { EvictionController, type EvictionResult } from "./eviction.ts";
 export {
+	type AfterToolCallContext,
+	type AfterToolCallResult,
+	type BeforeToolCallContext,
+	type BeforeToolCallResult,
+	type ToolResultEvent,
 	VeilHarness,
 	type VeilHarnessConfig,
-	type BeforeToolCallContext,
-	type AfterToolCallContext,
-	type BeforeToolCallResult,
-	type AfterToolCallResult,
-	type ToolResultEvent,
 } from "./harness.ts";
+export {
+	detectStubs,
+	formatHydratedBlock,
+	type HydrationResult,
+	hydrateStub,
+	type ParsedStub,
+	parseStub,
+	STUB_PATTERN,
+} from "./hydration.ts";
+export { buildContextSection, type ContextSectionItem, type ContextSectionOptions, formatStub } from "./injection.ts";
 // Core
 export { ContextManager } from "./manager.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export type { ScorerWeights } from "./scorer.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
+export { executeVeilTool, TOOL_SCHEMAS, type ToolContext, type ToolDefinition, type ToolResult } from "./tools.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,
 	type ContextItem,
 	type ContextManagerConfig,
 	type ContextWindow,
-	DEFAULT_CONFIG,
 	DEFAULT_CAPTURE_CONFIG,
+	DEFAULT_CONFIG,
 	type EvictionCandidate,
 	type TaskContext,
 } from "./types.ts";
 export { estimateTokens, formatTokens, smartTruncate } from "./utils.ts";
-export { buildContextSection, formatStub, type ContextSectionItem, type ContextSectionOptions } from "./injection.ts";
-export { detectStubs, hydrateStub, parseStub, formatHydratedBlock, type ParsedStub, type HydrationResult, STUB_PATTERN } from "./hydration.ts";
-export { TOOL_SCHEMAS, executeVeilTool, type ToolDefinition, type ToolResult, type ToolContext } from "./tools.ts";
-export { renderContextCommand, type ContextCommandOutput } from "./commands/context.ts";

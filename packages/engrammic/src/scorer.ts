@@ -28,14 +28,18 @@ export const DEFAULT_WEIGHTS: ScorerWeights = {
 export function computeRelevance(
 	item: ContextItem,
 	taskCtx: TaskContext,
-	config: ContextManagerConfig,
+	_config: ContextManagerConfig,
 	weights: ScorerWeights = DEFAULT_WEIGHTS,
 ): number {
 	const now = Date.now();
 
+	// Per-item half-life: explicit items decay slower than auto items
+	const halfLifeMinutes = item.source === "explicit" ? 240 : 30;
+	const halfLifeHours = halfLifeMinutes / 60;
+
 	// Recency: exponential decay
 	const ageHours = (now - item.lastAccess) / (1000 * 60 * 60);
-	const recency = Math.exp(-ageHours / config.decayHalfLifeHours);
+	const recency = Math.exp(-ageHours / halfLifeHours);
 
 	// Frequency: log scale (diminishing returns)
 	const frequency = Math.log1p(item.accessCount) / Math.log(10);
@@ -73,8 +77,11 @@ export function computeRelevance(
 	// Apply decay penalty
 	const withDecay = base - item.decayScore * 0.2;
 
-	// Apply type modifier and clamp
-	return Math.min(1.0, Math.max(0.0, withDecay * typeMod));
+	// Source modifier (explicit items score higher)
+	const sourceMod = item.source === "explicit" ? 1.5 : 1.0;
+
+	// Apply type modifier, source modifier, and clamp
+	return Math.min(1.0, Math.max(0.0, withDecay * typeMod * sourceMod));
 }
 
 /**
