@@ -43,3 +43,4 @@ export { contentHash, estimateTokens, smartTruncate } from "./utils.ts";
 export { buildContextSection, formatStub, type ContextSectionItem, type ContextSectionOptions } from "./injection.ts";
 export { detectStubs, hydrateStub, parseStub, formatHydratedBlock } from "./hydration.ts";
 export { TOOL_SCHEMAS, executeVeilTool, type ToolDefinition, type ToolResult } from "./tools.ts";
+export { renderContextCommand } from "./commands/context.ts";
