@@ -3,9 +3,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ContextManager } from "./manager.ts";
+import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import { renderContextCommand } from "./commands/context.ts";
 import { VeilHarness } from "./harness.ts";
+import { ContextManager } from "./manager.ts";
+
+function tmpDbPath(): string {
+	const dir = mkdtempSync(join(tmpdir(), "harness-ux-"));
+	return join(dir, "context.db");
+}
 
 describe("VeilHarness integration", () => {
 	let tmpDir: string;
@@ -128,5 +134,45 @@ describe("VeilHarness integration", () => {
 
 			await manager.close();
 		});
+	});
+});
+
+describe("UX integration", () => {
+	it("getUsage reflects loaded items", async () => {
+		const harness = new VeilHarness({ dbPath: tmpDbPath() });
+
+		// Initially empty
+		let usage = harness.getUsage();
+		expect(usage.hotItems).toBe(0);
+		expect(usage.hotTokens).toBe(0);
+
+		// Add and load items
+		const item1 = harness.remember("First context item with some content", "fact", ["test"]);
+		const item2 = harness.remember("Second context item with more content", "episodic", ["test"]);
+		harness.load([item1.id, item2.id]);
+
+		// Check updated usage
+		usage = harness.getUsage();
+		expect(usage.hotItems).toBe(2);
+		expect(usage.hotTokens).toBeGreaterThan(0);
+		expect(usage.percent).toBeGreaterThan(0);
+
+		await harness.close();
+	});
+
+	it("renderContextCommand shows loaded items", async () => {
+		const harness = new VeilHarness({ dbPath: tmpDbPath() });
+
+		const item = harness.remember("Test content for context display", "fact", ["display"]);
+		harness.load([item.id]);
+
+		const { lines } = renderContextCommand(harness);
+		const joined = lines.join("\n");
+
+		expect(joined).toContain("Context Window");
+		expect(joined).toContain("1 items");
+		expect(joined).toContain("Test content");
+
+		await harness.close();
 	});
 });

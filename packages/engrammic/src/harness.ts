@@ -19,7 +19,7 @@ import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
 import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
-import { smartTruncate } from "./utils.ts";
+import { estimateTokens, smartTruncate } from "./utils.ts";
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
@@ -53,6 +53,15 @@ export interface ToolResultEvent {
 	input: Record<string, unknown>;
 	content: Array<{ type: string; text?: string }>;
 	isError: boolean;
+}
+
+export interface UsageStats {
+	hotTokens: number;
+	hotItems: number;
+	budgetMax: number;
+	budgetUsed: number;
+	budgetReserve: number;
+	percent: number;
 }
 
 export class VeilHarness {
@@ -254,6 +263,29 @@ export class VeilHarness {
 	 */
 	getBudget() {
 		return this.manager.getBudget();
+	}
+
+	/**
+	 * Get usage statistics for status bar display.
+	 */
+	getUsage(): UsageStats {
+		const window = this.manager.getWindow();
+		const budget = window.budget;
+		const hotTokens = window.items.reduce(
+			(sum, item) => sum + estimateTokens(item.content),
+			0,
+		);
+		const available = budget.maxTokens - budget.reserveTokens;
+		const percent = available > 0 ? (hotTokens / available) * 100 : 0;
+
+		return {
+			hotTokens,
+			hotItems: window.items.length,
+			budgetMax: budget.maxTokens,
+			budgetUsed: budget.usedTokens,
+			budgetReserve: budget.reserveTokens,
+			percent,
+		};
 	}
 
 	/**

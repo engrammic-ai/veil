@@ -51,6 +51,18 @@ export interface EvictionCandidate {
 	reason: "age" | "low_score" | "budget" | "manual";
 }
 
+export interface EvictionNotifyConfig {
+	enabled: boolean;
+	minItems: number;
+	verbosity: "minimal" | "standard" | "verbose";
+}
+
+export const DEFAULT_EVICTION_NOTIFY_CONFIG: EvictionNotifyConfig = {
+	enabled: false,
+	minItems: 3,
+	verbosity: "minimal",
+};
+
 export interface ContextWindow {
 	items: ContextItem[];
 	budget: ContextBudget;
@@ -71,6 +83,10 @@ export interface ContextManagerConfig {
 	coldFailureThreshold: number;
 	coldCircuitResetMs: number;
 	dbPath: string;
+	// UX
+	statusBarEnabled: boolean;
+	fadeEvicted: boolean;
+	evictionNotify: EvictionNotifyConfig;
 }
 
 export interface CaptureRule {
@@ -107,4 +123,8 @@ export const DEFAULT_CONFIG: ContextManagerConfig = {
 	coldFailureThreshold: 3,
 	coldCircuitResetMs: 300000,
 	dbPath: ".veil/context.db",
+	// UX
+	statusBarEnabled: true,
+	fadeEvicted: true,
+	evictionNotify: DEFAULT_EVICTION_NOTIFY_CONFIG,
 };

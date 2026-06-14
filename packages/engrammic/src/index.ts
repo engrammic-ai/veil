@@ -59,7 +59,18 @@ export {
 	type ContextWindow,
 	DEFAULT_CAPTURE_CONFIG,
 	DEFAULT_CONFIG,
+	DEFAULT_EVICTION_NOTIFY_CONFIG,
 	type EvictionCandidate,
+	type EvictionNotifyConfig,
 	type TaskContext,
 } from "./types.ts";
 export { estimateTokens, formatTokens, smartTruncate } from "./utils.ts";
+export {
+	formatBox,
+	formatEvictionNotification,
+	formatProgressBar,
+	formatStatusBar,
+	getHealthColor,
+	type HealthColor,
+	type StatusBarResult,
+} from "./ux.ts";
