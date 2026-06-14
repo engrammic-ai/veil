@@ -161,6 +161,7 @@ function executePromote(params: { id: string }, ctx: ToolContext): ToolResult {
 	if (items.length === 0) {
 		return { success: false, error: `Item not found: ${params.id}` };
 	}
+	ctx.manager.setRecallCooldown(params.id);
 	const stub = formatStub(items[0]);
 	return { success: true, data: { id: items[0].id, stub } };
 }
