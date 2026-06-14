@@ -1,8 +1,9 @@
 # Phase 4: UX Enhancements
 
-**Status**: Draft  
+**Status**: Implemented  
 **Date**: 2026-06-14  
-**Branch**: `feat/engrammic-ux`
+**Branch**: `feat/engrammic-ux`  
+**PR**: #4
 
 ## Overview
 
@@ -158,3 +159,28 @@ interface ContextManagerConfig {
 
 - Pi TUI primitives (`ctx.ui.setStatus`, `ctx.ui.notify`, theme system)
 - Existing harness and manager APIs
+
+## Implementation Notes
+
+### Completed (2026-06-14)
+
+All core components implemented (171 tests passing):
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `ux.ts` | Done | getHealthColor, formatProgressBar, formatBox, formatStatusBar, formatEvictionNotification |
+| `types.ts` | Done | EvictionNotifyConfig, statusBarEnabled, fadeEvicted |
+| `harness.ts` | Done | getUsage() method |
+| `commands/context.ts` | Done | Box format with progress bar |
+| `index.ts` | Done | All UX exports |
+
+### Review Findings Addressed
+
+- Fixed percent calculation: `formatStatusBar()` now uses `available = max - reserve` consistent with `getUsage()`
+- Added test for formatBox edge case (oversized title)
+
+### Deferred (requires TUI integration)
+
+- Faded history display (`fadeOpacity`, `showEvictionMarker`)
+- Tick debug display (`tickDebugDisplay`)
+- Live status bar hook (`turn_end` event wiring to Pi's `ctx.ui.setStatus`)
