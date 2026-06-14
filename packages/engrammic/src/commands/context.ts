@@ -1,7 +1,7 @@
 import type { VeilHarness } from "../harness.ts";
 import type { ContextItem } from "../types.ts";
-import { formatBox, formatProgressBar } from "../ux.ts";
 import { estimateTokens, formatTokens } from "../utils.ts";
+import { formatBox, formatProgressBar } from "../ux.ts";
 
 export interface ContextCommandOutput {
 	lines: string[];
@@ -55,7 +55,9 @@ export function renderContextCommand(harness: VeilHarness): ContextCommandOutput
 	const budget = window.budget;
 	const usedPercent = budget.maxTokens > 0 ? (budget.usedTokens / budget.maxTokens) * 100 : 0;
 	const progressBar = formatProgressBar(usedPercent, 20);
-	content.push(`Budget: ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent.toFixed(0)}%)  ${progressBar}`);
+	content.push(
+		`Budget: ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent.toFixed(0)}%)  ${progressBar}`,
+	);
 
 	// Threshold
 	const thresholdPercent = (config.evictionThresholdDefault * 100).toFixed(0);

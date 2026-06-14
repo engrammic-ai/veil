@@ -271,10 +271,7 @@ export class VeilHarness {
 	getUsage(): UsageStats {
 		const window = this.manager.getWindow();
 		const budget = window.budget;
-		const hotTokens = window.items.reduce(
-			(sum, item) => sum + estimateTokens(item.content),
-			0,
-		);
+		const hotTokens = window.items.reduce((sum, item) => sum + estimateTokens(item.content), 0);
 		const available = budget.maxTokens - budget.reserveTokens;
 		const percent = available > 0 ? (hotTokens / available) * 100 : 0;
 
