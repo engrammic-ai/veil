@@ -58,6 +58,8 @@ export class SqliteColdStore implements ColdStore {
 				valid_from REAL,
 				valid_until REAL,
 
+				source TEXT CHECK(source IN ('auto', 'explicit')) DEFAULT 'auto',
+
 				demoted_at REAL NOT NULL
 			);
 
@@ -77,7 +79,7 @@ export class SqliteColdStore implements ColdStore {
 				decay_score, cognitive_weight,
 				type, tags, pinned,
 				depends_on, valid_from, valid_until,
-				demoted_at
+				source, demoted_at
 			) VALUES (
 				?, ?,
 				?, ?, ?,
@@ -85,7 +87,7 @@ export class SqliteColdStore implements ColdStore {
 				?, ?,
 				?, ?, ?,
 				?, ?, ?,
-				?
+				?, ?
 			)
 		`);
 
@@ -106,6 +108,7 @@ export class SqliteColdStore implements ColdStore {
 			item.dependsOn ? JSON.stringify(item.dependsOn) : null,
 			item.validFrom ?? null,
 			item.validUntil ?? null,
+			item.source,
 			Date.now(),
 		);
 
@@ -159,6 +162,7 @@ export class SqliteColdStore implements ColdStore {
 			dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
 			validFrom: row.valid_from ?? undefined,
 			validUntil: row.valid_until ?? undefined,
+			source: row.source ?? "auto",
 		};
 	}
 }

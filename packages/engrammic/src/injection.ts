@@ -36,7 +36,9 @@ export function buildContextSection(options: ContextSectionOptions): string {
 	const lines: string[] = [];
 
 	lines.push("<veil-context>");
-	lines.push(`Loaded context (${items.length} ${items.length === 1 ? 'item' : 'items'}, ${formatTokens(totalTokens)}):`);
+	lines.push(
+		`Loaded context (${items.length} ${items.length === 1 ? "item" : "items"}, ${formatTokens(totalTokens)}):`,
+	);
 
 	for (const { item, score } of items) {
 		const stub = formatStub(item);

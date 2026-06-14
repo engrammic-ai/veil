@@ -12,8 +12,8 @@
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
-import { buildContextSection } from "./injection.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
+import { buildContextSection } from "./injection.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
@@ -349,9 +349,7 @@ export class VeilHarness {
 
 		const cappedStubs = stubs.slice(0, MAX_STUBS_PER_CALL);
 		if (stubs.length > MAX_STUBS_PER_CALL) {
-			console.warn(
-				`[veil] processAutoHydration: ${stubs.length} stubs detected, capping at ${MAX_STUBS_PER_CALL}`,
-			);
+			console.warn(`[veil] processAutoHydration: ${stubs.length} stubs detected, capping at ${MAX_STUBS_PER_CALL}`);
 		}
 
 		const results = cappedStubs.map((stub) => ({
