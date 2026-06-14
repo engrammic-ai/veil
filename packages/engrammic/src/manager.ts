@@ -288,6 +288,24 @@ export class ContextManager {
 	}
 
 	/**
+	 * Get statistics for context display.
+	 */
+	getStats(): {
+		warm: { episodic: number; fact: number; procedural: number };
+		coldPointers: number;
+	} {
+		const all = this.cache.getAll();
+		return {
+			warm: {
+				episodic: all.filter((i) => i.type === "episodic").length,
+				fact: all.filter((i) => i.type === "fact").length,
+				procedural: all.filter((i) => i.type === "procedural").length,
+			},
+			coldPointers: 0, // Cold store count not yet implemented
+		};
+	}
+
+	/**
 	 * Close all connections.
 	 */
 	async close(): Promise<void> {
