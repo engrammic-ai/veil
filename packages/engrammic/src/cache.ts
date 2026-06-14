@@ -24,6 +24,10 @@ export class ContextCache {
 	private stmtPruneByDecayDelete: Database.Statement;
 	private stmtGetAllByRecency: Database.Statement;
 	private stmtGetTypeCounts: Database.Statement;
+	private stmtMarkEvicting: Database.Statement;
+	private stmtUnmarkEvicting: Database.Statement;
+	private stmtDeleteEvicting: Database.Statement;
+	private stmtRecoverEvicting: Database.Statement;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -37,14 +41,16 @@ export class ContextCache {
 				decay_score, cognitive_weight,
 				type, tags, pinned,
 				kg_pointer, depends_on,
-				valid_from, valid_until
+				valid_from, valid_until,
+				source
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
 				?, ?,
 				?, ?, ?,
 				?, ?,
-				?, ?
+				?, ?,
+				?
 			)
 		`);
 
@@ -66,29 +72,27 @@ export class ContextCache {
 
 		this.stmtGetAll = this.db.prepare("SELECT * FROM items");
 
-		this.stmtGetAllByRecency = this.db.prepare(
-			"SELECT * FROM items ORDER BY last_access DESC LIMIT ?",
-		);
+		this.stmtGetAllByRecency = this.db.prepare("SELECT * FROM items ORDER BY last_access DESC LIMIT ?");
 
-		this.stmtGetStale = this.db.prepare(
-			"SELECT * FROM items WHERE last_access < ? AND access_count <= ?",
-		);
+		this.stmtGetStale = this.db.prepare("SELECT * FROM items WHERE last_access < ? AND access_count <= ?");
 
 		this.stmtApplyDecay = this.db.prepare(
 			"UPDATE items SET decay_score = decay_score + (1 - ?) WHERE decay_score < 1",
 		);
 
-		this.stmtPruneByDecaySelect = this.db.prepare(
-			"SELECT id FROM items WHERE decay_score >= ?",
-		);
+		this.stmtPruneByDecaySelect = this.db.prepare("SELECT id FROM items WHERE decay_score >= ?");
 
-		this.stmtPruneByDecayDelete = this.db.prepare(
-			"DELETE FROM items WHERE decay_score >= ?",
-		);
+		this.stmtPruneByDecayDelete = this.db.prepare("DELETE FROM items WHERE decay_score >= ?");
 
-		this.stmtGetTypeCounts = this.db.prepare(
-			"SELECT type, COUNT(*) AS count FROM items GROUP BY type",
-		);
+		this.stmtGetTypeCounts = this.db.prepare("SELECT type, COUNT(*) AS count FROM items GROUP BY type");
+
+		this.stmtMarkEvicting = this.db.prepare("UPDATE items SET evicting = 1 WHERE id = ?");
+
+		this.stmtUnmarkEvicting = this.db.prepare("UPDATE items SET evicting = 0 WHERE id = ?");
+
+		this.stmtDeleteEvicting = this.db.prepare("DELETE FROM items WHERE id = ? AND evicting = 1");
+
+		this.stmtRecoverEvicting = this.db.prepare("SELECT * FROM items WHERE evicting = 1");
 	}
 
 	private init(): void {
@@ -113,13 +117,18 @@ export class ContextCache {
 				depends_on TEXT,
 
 				valid_from REAL,
-				valid_until REAL
+				valid_until REAL,
+
+				source TEXT CHECK(source IN ('auto', 'explicit')) DEFAULT 'auto',
+
+				evicting INTEGER DEFAULT 0
 			);
 
 			CREATE INDEX IF NOT EXISTS idx_last_access ON items(last_access);
 			CREATE INDEX IF NOT EXISTS idx_decay_score ON items(decay_score);
 			CREATE INDEX IF NOT EXISTS idx_type ON items(type);
 			CREATE INDEX IF NOT EXISTS idx_tags ON items(tags);
+			CREATE INDEX IF NOT EXISTS idx_evicting ON items(evicting);
 		`);
 	}
 
@@ -140,6 +149,7 @@ export class ContextCache {
 			item.dependsOn ? JSON.stringify(item.dependsOn) : null,
 			item.validFrom ?? null,
 			item.validUntil ?? null,
+			item.source,
 		);
 	}
 
@@ -249,6 +259,23 @@ export class ContextCache {
 		return rows.map((row) => this.rowToItem(row));
 	}
 
+	markEvicting(id: string): void {
+		this.stmtMarkEvicting.run(id);
+	}
+
+	unmarkEvicting(id: string): void {
+		this.stmtUnmarkEvicting.run(id);
+	}
+
+	deleteEvicting(id: string): void {
+		this.stmtDeleteEvicting.run(id);
+	}
+
+	recoverEvicting(): ContextItem[] {
+		const rows = this.stmtRecoverEvicting.all() as any[];
+		return rows.map((row) => this.rowToItem(row));
+	}
+
 	close(): void {
 		this.db.close();
 	}
@@ -270,6 +297,7 @@ export class ContextCache {
 			dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
 			validFrom: row.valid_from ?? undefined,
 			validUntil: row.valid_until ?? undefined,
+			source: row.source ?? "auto",
 		};
 	}
 }
@@ -278,7 +306,12 @@ export function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
 }
 
-export function createItem(content: string, type: ContextItem["type"], tags: string[] = []): ContextItem {
+export function createItem(
+	content: string,
+	type: ContextItem["type"],
+	tags: string[] = [],
+	source: "auto" | "explicit" = "auto",
+): ContextItem {
 	const now = Date.now();
 	const hash = hashContent(content);
 
@@ -294,5 +327,6 @@ export function createItem(content: string, type: ContextItem["type"], tags: str
 		type,
 		tags,
 		pinned: false,
+		source,
 	};
 }

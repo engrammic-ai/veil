@@ -1,11 +1,7 @@
 // packages/engrammic/src/prompts.test.ts
 
 import { describe, expect, it } from "vitest";
-import {
-	CONTEXT_MANAGEMENT_PROMPT,
-	buildCheckpointPrompt,
-	type CheckpointPromptOptions,
-} from "./prompts.ts";
+import { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 
 describe("CONTEXT_MANAGEMENT_PROMPT", () => {
 	it("is a non-empty string", () => {
@@ -71,9 +67,7 @@ describe("buildCheckpointPrompt", () => {
 		expect(result).toContain("Low-scoring candidates");
 
 		// Extract just the Low-scoring candidates line to verify ID format
-		const candidatesLine = result
-			.split("\n")
-			.find((line) => line.startsWith("Low-scoring candidates:"));
+		const candidatesLine = result.split("\n").find((line) => line.startsWith("Low-scoring candidates:"));
 		expect(candidatesLine).toBeDefined();
 
 		// IDs must appear without surrounding brackets in the candidates line
