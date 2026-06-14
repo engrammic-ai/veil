@@ -30,7 +30,10 @@ export interface CheckpointPromptOptions {
 export function buildCheckpointPrompt(options: CheckpointPromptOptions): string {
 	const { turnCount, items, budget } = options;
 	const totalTokens = items.reduce((sum, i) => sum + i.tokens, 0);
-	const budgetFree = Math.round((1 - budget.usedTokens / budget.maxTokens) * 100);
+	const budgetFree =
+		budget.maxTokens === 0
+			? 0
+			: Math.round((1 - budget.usedTokens / budget.maxTokens) * 100);
 
 	const lines: string[] = [];
 	lines.push(`<context-checkpoint turn="${turnCount}">`);
@@ -45,7 +48,9 @@ export function buildCheckpointPrompt(options: CheckpointPromptOptions): string 
 	if (lowScoring.length > 0) {
 		lines.push("");
 		lines.push(`Review: Does each item affect your next action? If not, demote it.`);
-		lines.push(`Low-scoring candidates: ${lowScoring.map((i) => i.stub.split(":")[1]).join(", ")}`);
+		lines.push(
+			`Low-scoring candidates: ${lowScoring.map((i) => i.stub.split(":")[1].replace(/[\[\]]/g, "")).join(", ")}`,
+		);
 	}
 
 	lines.push("</context-checkpoint>");
