@@ -303,8 +303,19 @@ export const RETRY_MARKERS: RegExp[] = [
 	/still (?:failing|broken|not working)/i,
 	/same error/i,
 	/didn['']t (?:fix|solve|help)/i,
-	/back to/i,
+	/back to (?:the )?(?:previous|original|earlier)/i,
 	/previous approach/i,
+	/one more time/i,
+	/no luck/i,
+	/keeps? failing/i,
+	/reverting/i,
+	/circling back/i,
+	/stuck (?:in a|on|here)/i,
+	/lost in the weeds/i,
+	/going in circles/i,
+	/hitting a wall/i,
+	/dead end/i,
+	/spinning (?:my )?wheels/i,
 ];
 
 /**
