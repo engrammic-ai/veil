@@ -2,6 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { type HydrationEvent, ContextCache, createItem } from "./cache.ts";
+import type { Trigger } from "./types.ts";
 
 describe("ContextCache two-phase commit", () => {
 	let testDir: string;
@@ -135,5 +136,159 @@ describe("ContextCache hydration events", () => {
 		const stats = cache.getHydrationStats("nonexistent");
 		expect(stats.count).toBe(0);
 		expect(stats.avgLatency).toBe(0);
+	});
+});
+
+describe("ContextCache custom triggers", () => {
+	let testDir: string;
+	let cache: ContextCache;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-cache-triggers-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		cache = new ContextCache(join(testDir, "test.db"));
+	});
+
+	afterEach(() => {
+		cache.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("persistTrigger stores a trigger and loadCustomTriggers retrieves it", () => {
+		const trigger: Trigger = {
+			id: "trigger-1",
+			pattern: /typescript/,
+			type: "keyword",
+			action: { tags: ["ts", "types"] },
+			priority: 5,
+			enabled: true,
+			learned: false,
+		};
+		cache.persistTrigger(trigger);
+
+		const results = cache.loadCustomTriggers();
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe("trigger-1");
+		expect(results[0].pattern.source).toBe("typescript");
+		expect(results[0].type).toBe("keyword");
+		expect(results[0].action.tags).toEqual(["ts", "types"]);
+		expect(results[0].priority).toBe(5);
+		expect(results[0].enabled).toBe(true);
+		expect(results[0].learned).toBe(false);
+	});
+
+	test("persistTrigger stores negative pattern and confidence", () => {
+		const trigger: Trigger = {
+			id: "trigger-2",
+			pattern: /deploy/,
+			negative: /staging/,
+			type: "command",
+			action: { type: "procedural" },
+			priority: 10,
+			enabled: true,
+			learned: true,
+			confidence: 0.87,
+		};
+		cache.persistTrigger(trigger);
+
+		const results = cache.loadCustomTriggers();
+		expect(results).toHaveLength(1);
+		expect(results[0].negative).toBeDefined();
+		expect(results[0].negative!.source).toBe("staging");
+		expect(results[0].action.type).toBe("procedural");
+		expect(results[0].learned).toBe(true);
+		expect(results[0].confidence).toBeCloseTo(0.87);
+	});
+
+	test("persistTrigger uses INSERT OR REPLACE to update existing trigger", () => {
+		const trigger: Trigger = {
+			id: "trigger-3",
+			pattern: /git/,
+			type: "command",
+			action: { tags: ["vcs"] },
+			priority: 3,
+			enabled: true,
+		};
+		cache.persistTrigger(trigger);
+
+		const updated: Trigger = { ...trigger, priority: 7 };
+		cache.persistTrigger(updated);
+
+		const results = cache.loadCustomTriggers();
+		expect(results).toHaveLength(1);
+		expect(results[0].priority).toBe(7);
+	});
+
+	test("loadCustomTriggers only returns enabled triggers", () => {
+		const enabled: Trigger = {
+			id: "trigger-enabled",
+			pattern: /active/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		const disabled: Trigger = {
+			id: "trigger-disabled",
+			pattern: /inactive/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: false,
+		};
+		cache.persistTrigger(enabled);
+		cache.persistTrigger(disabled);
+
+		const results = cache.loadCustomTriggers();
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe("trigger-enabled");
+	});
+
+	test("deleteTrigger removes the trigger", () => {
+		const trigger: Trigger = {
+			id: "trigger-to-delete",
+			pattern: /remove-me/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		cache.persistTrigger(trigger);
+		expect(cache.loadCustomTriggers()).toHaveLength(1);
+
+		cache.deleteTrigger("trigger-to-delete");
+		expect(cache.loadCustomTriggers()).toHaveLength(0);
+	});
+
+	test("deleteTrigger is a no-op for nonexistent id", () => {
+		const trigger: Trigger = {
+			id: "trigger-x",
+			pattern: /hello/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		cache.persistTrigger(trigger);
+		cache.deleteTrigger("nonexistent-id");
+
+		expect(cache.loadCustomTriggers()).toHaveLength(1);
+	});
+
+	test("pattern is reconstructed with case-insensitive flag", () => {
+		const trigger: Trigger = {
+			id: "trigger-flags",
+			pattern: /React/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		cache.persistTrigger(trigger);
+
+		const results = cache.loadCustomTriggers();
+		expect(results[0].pattern.flags).toContain("i");
+		expect(results[0].pattern.test("react")).toBe(true);
+		expect(results[0].pattern.test("REACT")).toBe(true);
 	});
 });

@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
-import type { ContextItem } from "./types.ts";
+import type { ContextItem, Trigger } from "./types.ts";
 
 export interface HydrationEvent {
 	sessionId: string;
@@ -42,6 +42,11 @@ export class ContextCache {
 	private stmtLogHydration: Database.Statement;
 	private stmtGetRecentHydrations: Database.Statement;
 	private stmtGetHydrationStats: Database.Statement;
+
+	// Custom trigger statements
+	private stmtPersistTrigger: Database.Statement;
+	private stmtLoadCustomTriggers: Database.Statement;
+	private stmtDeleteTrigger: Database.Statement;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -123,6 +128,21 @@ export class ContextCache {
 			SELECT COUNT(*) as count, AVG(latency_ms) as avg_latency
 			FROM hydration_events WHERE item_id = ?
 		`);
+
+		this.stmtPersistTrigger = this.db.prepare(`
+			INSERT OR REPLACE INTO custom_triggers
+			(id, pattern, negative_pattern, type, action_tags, action_type,
+			 priority, enabled, learned, confidence, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+
+		this.stmtLoadCustomTriggers = this.db.prepare(`
+			SELECT * FROM custom_triggers WHERE enabled = 1
+		`);
+
+		this.stmtDeleteTrigger = this.db.prepare(`
+			DELETE FROM custom_triggers WHERE id = ?
+		`);
 	}
 
 	private init(): void {
@@ -187,6 +207,27 @@ export class ContextCache {
 
 			CREATE INDEX IF NOT EXISTS idx_hydration_item ON hydration_events(item_id);
 			CREATE INDEX IF NOT EXISTS idx_hydration_session ON hydration_events(session_id);
+		`);
+
+		// Custom triggers table for Phase 6 learning
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS custom_triggers (
+				id TEXT PRIMARY KEY,
+				pattern TEXT NOT NULL,
+				negative_pattern TEXT,
+				type TEXT NOT NULL DEFAULT 'keyword',
+				action_tags TEXT,
+				action_type TEXT,
+				priority INTEGER DEFAULT 10,
+				enabled INTEGER DEFAULT 1,
+				learned INTEGER DEFAULT 0,
+				confidence REAL,
+				created_at REAL NOT NULL,
+				updated_at REAL NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON custom_triggers(enabled);
+			CREATE INDEX IF NOT EXISTS idx_triggers_type ON custom_triggers(type);
 		`);
 	}
 
@@ -362,6 +403,46 @@ export class ContextCache {
 		const row = this.stmtGetHydrationStats.get(itemId) as any;
 		if (!row) return { count: 0, avgLatency: 0 };
 		return { count: row.count, avgLatency: row.avg_latency ?? 0 };
+	}
+
+	persistTrigger(trigger: Trigger): void {
+		const now = Date.now();
+		this.stmtPersistTrigger.run(
+			trigger.id,
+			trigger.pattern.source,
+			trigger.negative?.source ?? null,
+			trigger.type,
+			JSON.stringify(trigger.action.tags ?? []),
+			trigger.action.type ?? null,
+			trigger.priority,
+			trigger.enabled ? 1 : 0,
+			trigger.learned ? 1 : 0,
+			trigger.confidence ?? null,
+			now,
+			now,
+		);
+	}
+
+	loadCustomTriggers(): Trigger[] {
+		const rows = this.stmtLoadCustomTriggers.all() as any[];
+		return rows.map((row) => ({
+			id: row.id,
+			pattern: new RegExp(row.pattern, "i"),
+			negative: row.negative_pattern ? new RegExp(row.negative_pattern, "i") : undefined,
+			type: row.type as "keyword" | "file" | "command",
+			action: {
+				tags: row.action_tags ? JSON.parse(row.action_tags) : undefined,
+				type: row.action_type ?? undefined,
+			},
+			priority: row.priority,
+			enabled: true,
+			learned: row.learned === 1,
+			confidence: row.confidence ?? undefined,
+		}));
+	}
+
+	deleteTrigger(id: string): void {
+		this.stmtDeleteTrigger.run(id);
 	}
 
 	close(): void {
