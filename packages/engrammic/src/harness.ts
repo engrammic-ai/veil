@@ -387,7 +387,14 @@ export class VeilHarness {
 	 * Execute a veil tool by name.
 	 */
 	async executeTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
-		return executeVeilTool(name, params, { manager: this.manager });
+		return executeVeilTool(name, params, { manager: this.manager, onRecall: (ids) => this.onRecall(ids) });
+	}
+
+	/**
+	 * Called when items are recalled via veil_recall. Stub — will be implemented in Task 4.
+	 */
+	onRecall(_ids: string[]): void {
+		// stub: hydration logic will be wired here in Task 4
 	}
 
 	/**

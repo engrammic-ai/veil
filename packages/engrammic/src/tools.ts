@@ -119,6 +119,7 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 
 export interface ToolContext {
 	manager: ContextManager;
+	onRecall?: (ids: string[]) => void;
 }
 
 export type ToolResult = { success: boolean; data?: unknown; error?: string };
@@ -153,6 +154,7 @@ export async function executeVeilTool(
 function executeRecall(params: { tags: string[]; limit?: number }, ctx: ToolContext): ToolResult {
 	const items = ctx.manager.recall(params.tags, params.limit ?? 10);
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
+	ctx.onRecall?.(items.map((i) => i.id));
 	return { success: true, data: { items: result } };
 }
 
