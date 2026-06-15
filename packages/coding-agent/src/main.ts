@@ -733,16 +733,19 @@ export async function main(args: string[], options?: MainOptions) {
 			noTools: sessionOptions.noTools,
 			customTools: [
 				...(sessionOptions.customTools ?? []),
-				...(veilHarness?.getTools().map((tool) => ({
-					...tool,
-					execute: async (_toolCallId: string, params: Record<string, unknown>) => {
-						const result = await veilHarness!.executeTool(tool.name, params);
-						return {
-							content: result.success ? JSON.stringify(result.data) : (result.error ?? "Unknown error"),
-							isError: !result.success,
-						};
-					},
-				} as any)) ?? []),
+				...(veilHarness?.getTools().map(
+					(tool) =>
+						({
+							...tool,
+							execute: async (_toolCallId: string, params: Record<string, unknown>) => {
+								const result = await veilHarness!.executeTool(tool.name, params);
+								return {
+									content: result.success ? JSON.stringify(result.data) : (result.error ?? "Unknown error"),
+									isError: !result.success,
+								};
+							},
+						}) as any,
+				) ?? []),
 			],
 			veilHarness,
 		});
