@@ -77,6 +77,14 @@ export class ContextManager {
 	remember(content: string, type: ContextItem["type"], tags: string[] = [], toolCallId?: string): ContextItem {
 		const item = createItem(content, type, tags, toolCallId);
 		this.cache.put(item);
+
+		// Re-request miss: this content was recently evicted and is being re-captured.
+		const prior = this.cache.findRecentEviction(item.contentHash, this.config.reRequestWindowMs);
+		if (prior) {
+			this.eviction.recordReRequest();
+			this.cache.clearEvictionForHash(item.contentHash);
+		}
+
 		return item;
 	}
 
@@ -224,6 +232,9 @@ export class ContextManager {
 	async fetchFromCold(pointer: string): Promise<ContextItem | null> {
 		const item = await this.circuitBreaker.execute(() => this.cold.fetch(pointer));
 		if (!item) return null;
+
+		// Re-request miss: we demoted this to cold and now need it back.
+		this.eviction.recordReRequest();
 
 		// Bring back to warm cache
 		this.cache.put(item);
