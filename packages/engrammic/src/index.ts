@@ -4,6 +4,16 @@
  */
 
 export { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+// Phase D: Failure-memory
+export {
+	type AttemptDetection,
+	type AttemptOutcome,
+	type AttemptRecord,
+	AttemptStore,
+	detectFailure,
+	extractFailedTestNames,
+	normalizeError,
+} from "./attempts.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
@@ -26,8 +36,31 @@ export {
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
 export { type ContextCommandOutput, renderContextCommand } from "./commands/context.ts";
+// Phase D: Convergence monitor
+export {
+	buildConvergenceWarning,
+	ConvergenceMonitor,
+	type ConvergenceState,
+	type ConvergenceThresholds,
+	DEFAULT_THRESHOLDS,
+	type EscalationLevel,
+	type EscalationResult,
+	isProgress,
+} from "./convergence.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { createVeilExtension } from "./extension.ts";
+export {
+	advanceGoalState,
+	createGoalInferenceState,
+	extractTarget,
+	extractTestSuite,
+	type GoalInferenceState,
+	inferGoalId,
+	isTestRunner,
+	normalizeCommand,
+	normalizeFilePath,
+	shouldMergeGoals,
+} from "./goal-inference.ts";
 export {
 	type AfterToolCallContext,
 	type AfterToolCallResult,
@@ -46,7 +79,15 @@ export {
 	parseStub,
 	STUB_PATTERN,
 } from "./hydration.ts";
-export { buildContextSection, type ContextSectionItem, type ContextSectionOptions, formatStub } from "./injection.ts";
+export {
+	buildContextSection,
+	buildFailureSection,
+	type ContextSectionItem,
+	type ContextSectionOptions,
+	type FailureSectionOptions,
+	formatStub,
+	formatTurnAge,
+} from "./injection.ts";
 // Core
 export { ContextManager } from "./manager.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";

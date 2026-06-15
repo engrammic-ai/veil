@@ -747,3 +747,182 @@ describe("processUserMessage buildManifest exception handling", () => {
 		await harness.close();
 	});
 });
+
+// ─── D.2 — Failure Surfacing ──────────────────────────────────────────────────
+
+describe("getFailureSection", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns empty string when no current goal", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const section = harness.getFailureSection();
+		expect(section).toBe("");
+
+		await harness.close();
+	});
+
+	test("returns empty string when no failures for goal", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Simulate a goal being set without failures
+		const state = harness.getGoalState();
+		state.currentGoalId = "file:test.ts";
+
+		const section = harness.getFailureSection();
+		expect(section).toBe("");
+
+		await harness.close();
+	});
+
+	test("returns failure section when failures exist", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const store = harness.getAttemptStore();
+		store.put({
+			id: "attempt-1",
+			sessionId: "session-1",
+			goalId: "file:auth.ts",
+			iteration: 1,
+			action: "bash",
+			target: "npm test",
+			outcome: "fail",
+			evidence: "Test failed",
+			errorPattern: "test-failure",
+			createdAt: Date.now(),
+			turn: 1,
+			goalOpen: true,
+			pinned: false,
+		});
+
+		// Set the current goal
+		const state = harness.getGoalState();
+		state.currentGoalId = "file:auth.ts";
+
+		const section = harness.getFailureSection();
+		expect(section).toContain("<veil-failures");
+		expect(section).toContain("Already tried");
+		expect(section).toContain("bash: npm test");
+		expect(section).toContain("FAILED: Test failed");
+
+		await harness.close();
+	});
+});
+
+// ─── D.3 — Convergence Monitor Integration ────────────────────────────────────
+
+describe("getConvergenceState", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns null for unknown goal", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const state = harness.getConvergenceState("unknown-goal");
+		expect(state).toBeNull();
+
+		await harness.close();
+	});
+
+	test("getConvergenceMonitor returns monitor instance", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const monitor = harness.getConvergenceMonitor();
+		expect(monitor).toBeDefined();
+		expect(typeof monitor.getState).toBe("function");
+
+		await harness.close();
+	});
+
+	test("convergenceThresholds config is applied", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			convergenceThresholds: { maxConsecutiveFailures: 10 },
+		});
+
+		const monitor = harness.getConvergenceMonitor();
+		const thresholds = monitor.getThresholds();
+		expect(thresholds.maxConsecutiveFailures).toBe(10);
+
+		await harness.close();
+	});
+
+	test("convergence monitor tracks failures via direct update", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			convergenceThresholds: { maxConsecutiveFailures: 2 },
+		});
+
+		const monitor = harness.getConvergenceMonitor();
+
+		monitor.update(
+			{
+				id: "a1",
+				sessionId: "s1",
+				goalId: "test",
+				iteration: 1,
+				action: "bash",
+				outcome: "fail",
+				createdAt: Date.now(),
+				turn: 1,
+				goalOpen: true,
+				pinned: false,
+			},
+			1,
+		);
+
+		monitor.update(
+			{
+				id: "a2",
+				sessionId: "s1",
+				goalId: "test",
+				iteration: 2,
+				action: "bash",
+				outcome: "fail",
+				createdAt: Date.now(),
+				turn: 2,
+				goalOpen: true,
+				pinned: false,
+			},
+			2,
+		);
+
+		const state = harness.getConvergenceState("test");
+		expect(state).not.toBeNull();
+		expect(state?.consecutiveFailures).toBe(2);
+
+		await harness.close();
+	});
+});

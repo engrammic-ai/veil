@@ -10,11 +10,26 @@
  */
 
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
+import {
+	buildConvergenceWarning,
+	ConvergenceMonitor,
+	type ConvergenceState,
+	type ConvergenceThresholds,
+	type EscalationResult,
+} from "./convergence.ts";
+import {
+	advanceGoalState,
+	createGoalInferenceState,
+	extractTarget,
+	type GoalInferenceState,
+	inferGoalId,
+} from "./goal-inference.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
-import { buildContextSection } from "./injection.ts";
+import { buildContextSection, buildFailureSection } from "./injection.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
@@ -44,6 +59,10 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	sessionId?: string; // Tag context items with session
 	captureConfig?: Partial<CaptureConfig>;
 	learningConfig?: Partial<LearningConfig>;
+	// Phase D.3: Convergence callbacks
+	convergenceThresholds?: Partial<ConvergenceThresholds>;
+	onConvergenceWarning?: (state: ConvergenceState, result: EscalationResult) => void;
+	onConvergenceHalt?: (state: ConvergenceState, result: EscalationResult) => void;
 }
 
 export interface BeforeToolCallContext {
@@ -107,6 +126,11 @@ export class VeilHarness {
 	};
 	private lastLearnTime: number = 0;
 
+	// Phase D: Failure-memory
+	private attemptStore: AttemptStore;
+	private convergenceMonitor: ConvergenceMonitor;
+	private goalState: GoalInferenceState;
+
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
@@ -115,6 +139,11 @@ export class VeilHarness {
 		this.manager = new ContextManager(config, config.coldStore);
 		const customTriggers = this.manager.getCache().loadCustomTriggers();
 		this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
+
+		// Phase D: Initialize failure-memory
+		this.attemptStore = new AttemptStore(this.manager.getCache().getDb());
+		this.goalState = createGoalInferenceState();
+		this.convergenceMonitor = new ConvergenceMonitor(config.convergenceThresholds);
 	}
 
 	/**
@@ -216,8 +245,56 @@ export class VeilHarness {
 	 * Handle a tool_result event from Pi's agent loop.
 	 */
 	private handleToolResult(event: ToolResultEvent): void {
-		if (event.isError) return;
-		this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
+		const turn = this.manager.getTurnCount();
+
+		// Phase D: Detect failures and record attempts
+		const detection = detectFailure(event);
+		if (detection.outcome === "fail" || detection.outcome === "uncertain") {
+			const goalId = inferGoalId(event, this.goalState);
+			const target = extractTarget(event);
+
+			const attempt: AttemptRecord = {
+				id: `attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+				sessionId: this.sessionId ?? "unknown",
+				goalId,
+				iteration: this.attemptStore.countByGoal(goalId) + 1,
+				action: event.toolName,
+				target: target ?? undefined,
+				rationale: undefined,
+				outcome: detection.outcome,
+				evidence: detection.evidence,
+				errorPattern: detection.errorPattern,
+				createdAt: Date.now(),
+				turn,
+				goalOpen: true,
+				pinned: false,
+			};
+			this.attemptStore.put(attempt);
+
+			// Phase D.3: Update convergence monitor and fire callbacks
+			const escalation = this.convergenceMonitor.update(attempt, turn);
+			if (escalation.level >= 2 && this.config.onConvergenceWarning) {
+				const state = this.convergenceMonitor.getState(goalId);
+				if (state) this.config.onConvergenceWarning(state, escalation);
+			}
+			if (escalation.level >= 3 && this.config.onConvergenceHalt) {
+				const state = this.convergenceMonitor.getState(goalId);
+				if (state) this.config.onConvergenceHalt(state, escalation);
+			}
+
+			// Update goal state
+			this.goalState = advanceGoalState(this.goalState, goalId, target, turn);
+		} else if (detection.outcome === "pass") {
+			// Update goal state on success (goal closure handled in D.4.7)
+			const goalId = inferGoalId(event, this.goalState);
+			const target = extractTarget(event);
+			this.goalState = advanceGoalState(this.goalState, goalId, target, turn);
+		}
+
+		// Continue with auto-capture for non-errors
+		if (!event.isError) {
+			this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
+		}
 	}
 
 	/**
@@ -266,6 +343,67 @@ export class VeilHarness {
 	 */
 	resetTurnCaptures(): void {
 		this.capturesThisTurn = 0;
+		// Phase D: Update goal state turn counter
+		this.goalState.turn = this.manager.getTurnCount();
+	}
+
+	/**
+	 * Get the AttemptStore for failure-memory queries.
+	 */
+	getAttemptStore(): AttemptStore {
+		return this.attemptStore;
+	}
+
+	/**
+	 * Get current goal inference state.
+	 */
+	getGoalState(): GoalInferenceState {
+		return this.goalState;
+	}
+
+	/**
+	 * Build the failure section for context injection.
+	 * Returns empty string if no relevant failures exist for the current goal.
+	 * Includes convergence warnings when applicable.
+	 */
+	getFailureSection(): string {
+		const goalId = this.goalState.currentGoalId;
+		if (!goalId) return "";
+
+		const attempts = this.attemptStore.getOpenByGoal(goalId);
+		if (attempts.length === 0) return "";
+
+		const failureBlock = buildFailureSection({
+			attempts,
+			currentTurn: this.manager.getTurnCount(),
+		});
+
+		// D.3.5: Add convergence warning if applicable
+		const state = this.convergenceMonitor.getState(goalId);
+		if (state) {
+			const lastAttempt = attempts[attempts.length - 1];
+			const escalation = this.convergenceMonitor.checkConvergence(state, lastAttempt);
+			if (escalation.level >= 1) {
+				const warning = buildConvergenceWarning(state, escalation);
+				return `${failureBlock}\n\n${warning}`;
+			}
+		}
+
+		return failureBlock;
+	}
+
+	/**
+	 * Get convergence state for a goal.
+	 */
+	getConvergenceState(goalId: string): ConvergenceState | null {
+		return this.convergenceMonitor.getState(goalId);
+	}
+
+	/**
+	 * Get convergence monitor for direct access (testing/debugging).
+	 */
+	getConvergenceMonitor(): ConvergenceMonitor {
+		return this.convergenceMonitor;
 	}
 
 	/**
