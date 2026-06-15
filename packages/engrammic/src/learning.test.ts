@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import { analyzePatterns, patternToTrigger } from "./learning.ts";
-import type { LearnedPattern } from "./learning.ts";
-import type { ContextItem, Trigger } from "./types.ts";
 import type { HydrationEvent } from "./cache.ts";
+import type { LearnedPattern } from "./learning.ts";
+import { analyzePatterns, patternToTrigger } from "./learning.ts";
+import type { ContextItem, Trigger } from "./types.ts";
 
 // Minimal mock cache
 function makeCache(items: ContextItem[] = []) {
@@ -148,8 +148,8 @@ describe("analyzePatterns", () => {
 		const patterns = analyzePatterns(events, cache, [], 0.5, 3);
 
 		// Should have patterns for both tags (or at least one of them)
-		const tagsCovered = patterns.flatMap(p => p.tags);
-		expect(tagsCovered.some(t => t === "deploy" || t === "build")).toBe(true);
+		const tagsCovered = patterns.flatMap((p) => p.tags);
+		expect(tagsCovered.some((t) => t === "deploy" || t === "build")).toBe(true);
 	});
 });
 
@@ -279,7 +279,7 @@ describe("escapeRegex (via pattern generation)", () => {
 		const patterns = analyzePatterns(events, cache, [], 0.5, 3);
 
 		for (const p of patterns) {
-			expect(() => new RegExp(p.pattern, 'i')).not.toThrow();
+			expect(() => new RegExp(p.pattern, "i")).not.toThrow();
 		}
 	});
 });
