@@ -345,3 +345,93 @@ describe("ContextCache custom triggers", () => {
 		expect(results[0].priority).toBe(99);
 	});
 });
+
+describe("ContextCache episode links", () => {
+	let testDir: string;
+	let cache: ContextCache;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-cache-episodes-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		cache = new ContextCache(join(testDir, "test.db"));
+	});
+
+	afterEach(() => {
+		cache.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("linkEpisodes creates a link and getRelatedEpisodes returns the linked item", () => {
+		const source = createItem("source episode", "episodic", ["a"]);
+		const target = createItem("target episode", "episodic", ["b"]);
+		cache.put(source);
+		cache.put(target);
+
+		cache.linkEpisodes(source.id, target.id, "continues");
+
+		const related = cache.getRelatedEpisodes(source.id);
+		expect(related).toHaveLength(1);
+		expect(related[0].item.id).toBe(target.id);
+		expect(related[0].relation).toBe("continues");
+	});
+
+	test("getRelatedEpisodes returns linked item when queried from the target side", () => {
+		const source = createItem("source episode", "episodic", ["a"]);
+		const target = createItem("target episode", "episodic", ["b"]);
+		cache.put(source);
+		cache.put(target);
+
+		cache.linkEpisodes(source.id, target.id, "relates");
+
+		const related = cache.getRelatedEpisodes(target.id);
+		expect(related).toHaveLength(1);
+		expect(related[0].item.id).toBe(source.id);
+		expect(related[0].relation).toBe("relates");
+	});
+
+	test("linkEpisodes is idempotent for same triple", () => {
+		const a = createItem("episode a", "episodic", []);
+		const b = createItem("episode b", "episodic", []);
+		cache.put(a);
+		cache.put(b);
+
+		cache.linkEpisodes(a.id, b.id, "supersedes");
+		cache.linkEpisodes(a.id, b.id, "supersedes"); // duplicate — should be ignored
+
+		const related = cache.getRelatedEpisodes(a.id);
+		expect(related).toHaveLength(1);
+	});
+
+	test("linkEpisodes allows different relations between the same pair", () => {
+		const a = createItem("episode a", "episodic", []);
+		const b = createItem("episode b", "episodic", []);
+		cache.put(a);
+		cache.put(b);
+
+		cache.linkEpisodes(a.id, b.id, "continues");
+		cache.linkEpisodes(a.id, b.id, "relates");
+
+		const related = cache.getRelatedEpisodes(a.id);
+		expect(related).toHaveLength(2);
+		const relations = related.map((r) => r.relation).sort();
+		expect(relations).toEqual(["continues", "relates"]);
+	});
+
+	test("getRelatedEpisodes returns empty array when no links exist", () => {
+		const item = createItem("lonely episode", "episodic", []);
+		cache.put(item);
+
+		expect(cache.getRelatedEpisodes(item.id)).toEqual([]);
+	});
+
+	test("getRelatedEpisodes omits links whose target item does not exist in cache", () => {
+		const source = createItem("source episode", "episodic", []);
+		cache.put(source);
+
+		// Link to a non-existent item
+		cache.linkEpisodes(source.id, "ghost-id-xyz", "relates");
+
+		const related = cache.getRelatedEpisodes(source.id);
+		expect(related).toHaveLength(0);
+	});
+});

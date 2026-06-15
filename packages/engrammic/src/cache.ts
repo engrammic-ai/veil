@@ -48,6 +48,10 @@ export class ContextCache {
 	private stmtLoadCustomTriggers: Database.Statement;
 	private stmtDeleteTrigger: Database.Statement;
 
+	// Episode link statements
+	private stmtLinkEpisodes: Database.Statement;
+	private stmtGetRelatedEpisodes: Database.Statement;
+
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
 		this.db.pragma("journal_mode = WAL");
@@ -157,6 +161,17 @@ export class ContextCache {
 		this.stmtDeleteTrigger = this.db.prepare(`
 			DELETE FROM custom_triggers WHERE id = ?
 		`);
+
+		this.stmtLinkEpisodes = this.db.prepare(`
+			INSERT OR IGNORE INTO episode_links (source_id, target_id, relation, created_at)
+			VALUES (?, ?, ?, ?)
+		`);
+
+		this.stmtGetRelatedEpisodes = this.db.prepare(`
+			SELECT target_id, relation FROM episode_links WHERE source_id = ?
+			UNION
+			SELECT source_id, relation FROM episode_links WHERE target_id = ?
+		`);
 	}
 
 	private init(): void {
@@ -257,6 +272,21 @@ export class ContextCache {
 		} catch {
 			// Column already exists
 		}
+
+		// Episode links table for Part 5 schema
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS episode_links (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				source_id TEXT NOT NULL,
+				target_id TEXT NOT NULL,
+				relation TEXT NOT NULL,
+				created_at REAL NOT NULL,
+				UNIQUE(source_id, target_id, relation)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_episode_source ON episode_links(source_id);
+			CREATE INDEX IF NOT EXISTS idx_episode_target ON episode_links(target_id);
+		`);
 	}
 
 	put(item: ContextItem): void {
@@ -475,6 +505,29 @@ export class ContextCache {
 
 	deleteTrigger(id: string): void {
 		this.stmtDeleteTrigger.run(id);
+	}
+
+	linkEpisodes(
+		sourceId: string,
+		targetId: string,
+		relation: "continues" | "relates" | "supersedes",
+	): void {
+		this.stmtLinkEpisodes.run(sourceId, targetId, relation, Date.now());
+	}
+
+	getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
+		const rows = this.stmtGetRelatedEpisodes.all(itemId, itemId) as Array<{
+			target_id?: string;
+			source_id?: string;
+			relation: string;
+		}>;
+
+		return rows
+			.map((row) => {
+				const item = this.get(row.target_id ?? row.source_id!);
+				return item ? { item, relation: row.relation } : null;
+			})
+			.filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
 	}
 
 	close(): void {
