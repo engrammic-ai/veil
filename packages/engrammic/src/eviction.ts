@@ -47,6 +47,14 @@ export class EvictionController {
 		}
 	}
 
+	/**
+	 * Record a re-request (miss): an evicted item was needed again.
+	 * AIMD back-off — raise the threshold so Stage-2 eviction triggers later (keep more).
+	 */
+	recordReRequest(): void {
+		this.threshold = Math.min(this.config.evictionThresholdMax, this.threshold + this.config.reRequestBackoffStep);
+	}
+
 	adjustThreshold(): void {
 		const now = Date.now();
 		const timeSinceLastEviction = now - this.lastEvictionTime;
