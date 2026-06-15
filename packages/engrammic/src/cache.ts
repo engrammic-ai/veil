@@ -7,6 +7,15 @@ import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import type { ContextItem } from "./types.ts";
 
+export interface HydrationEvent {
+	sessionId: string;
+	itemId: string;
+	triggerIds: string[];
+	userMessage: string;
+	hydratedAt: number;
+	latencyMs: number;
+}
+
 export class ContextCache {
 	private db: Database.Database;
 
@@ -28,6 +37,11 @@ export class ContextCache {
 	private stmtUnmarkEvicting: Database.Statement;
 	private stmtDeleteEvicting: Database.Statement;
 	private stmtRecoverEvicting: Database.Statement;
+
+	// Hydration event statements
+	private stmtLogHydration: Database.Statement;
+	private stmtGetRecentHydrations: Database.Statement;
+	private stmtGetHydrationStats: Database.Statement;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -93,6 +107,22 @@ export class ContextCache {
 		this.stmtDeleteEvicting = this.db.prepare("DELETE FROM items WHERE id = ? AND evicting = 1");
 
 		this.stmtRecoverEvicting = this.db.prepare("SELECT * FROM items WHERE evicting = 1");
+
+		this.stmtLogHydration = this.db.prepare(`
+			INSERT OR IGNORE INTO hydration_events
+			(session_id, item_id, trigger_ids, user_message, hydrated_at, latency_ms)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`);
+
+		this.stmtGetRecentHydrations = this.db.prepare(`
+			SELECT * FROM hydration_events
+			ORDER BY hydrated_at DESC LIMIT ?
+		`);
+
+		this.stmtGetHydrationStats = this.db.prepare(`
+			SELECT COUNT(*) as count, AVG(latency_ms) as avg_latency
+			FROM hydration_events WHERE item_id = ?
+		`);
 	}
 
 	private init(): void {
@@ -141,6 +171,24 @@ export class ContextCache {
 
 		// Index must be created after migration adds the column
 		this.db.exec("CREATE INDEX IF NOT EXISTS idx_source_tool_call_id ON items(source_tool_call_id)");
+
+		// Hydration events table for Phase 6 learning
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS hydration_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				session_id TEXT NOT NULL,
+				item_id TEXT NOT NULL,
+				trigger_ids TEXT NOT NULL,
+				user_message TEXT NOT NULL,
+				hydrated_at INTEGER NOT NULL,
+				latency_ms INTEGER,
+				UNIQUE(session_id, item_id, hydrated_at)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_hydration_item ON hydration_events(item_id);
+			CREATE INDEX IF NOT EXISTS idx_hydration_trigger ON hydration_events(trigger_ids);
+			CREATE INDEX IF NOT EXISTS idx_hydration_session ON hydration_events(session_id);
+		`);
 	}
 
 	put(item: ContextItem): void {
@@ -286,6 +334,34 @@ export class ContextCache {
 	recoverEvicting(): ContextItem[] {
 		const rows = this.stmtRecoverEvicting.all() as any[];
 		return rows.map((row) => this.rowToItem(row));
+	}
+
+	logHydration(event: HydrationEvent): void {
+		this.stmtLogHydration.run(
+			event.sessionId,
+			event.itemId,
+			JSON.stringify(event.triggerIds),
+			event.userMessage,
+			event.hydratedAt,
+			event.latencyMs,
+		);
+	}
+
+	getRecentHydrations(limit: number): HydrationEvent[] {
+		const rows = this.stmtGetRecentHydrations.all(limit) as any[];
+		return rows.map((row) => ({
+			sessionId: row.session_id,
+			itemId: row.item_id,
+			triggerIds: JSON.parse(row.trigger_ids),
+			userMessage: row.user_message,
+			hydratedAt: row.hydrated_at,
+			latencyMs: row.latency_ms,
+		}));
+	}
+
+	getHydrationStats(itemId: string): { count: number; avgLatency: number } {
+		const row = this.stmtGetHydrationStats.get(itemId) as any;
+		return { count: row.count, avgLatency: row.avg_latency ?? 0 };
 	}
 
 	close(): void {
