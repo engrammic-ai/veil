@@ -180,13 +180,12 @@ export class ContextCache {
 				item_id TEXT NOT NULL,
 				trigger_ids TEXT NOT NULL,
 				user_message TEXT NOT NULL,
-				hydrated_at INTEGER NOT NULL,
-				latency_ms INTEGER,
+				hydrated_at REAL NOT NULL,
+				latency_ms REAL,
 				UNIQUE(session_id, item_id, hydrated_at)
 			);
 
 			CREATE INDEX IF NOT EXISTS idx_hydration_item ON hydration_events(item_id);
-			CREATE INDEX IF NOT EXISTS idx_hydration_trigger ON hydration_events(trigger_ids);
 			CREATE INDEX IF NOT EXISTS idx_hydration_session ON hydration_events(session_id);
 		`);
 	}
@@ -361,6 +360,7 @@ export class ContextCache {
 
 	getHydrationStats(itemId: string): { count: number; avgLatency: number } {
 		const row = this.stmtGetHydrationStats.get(itemId) as any;
+		if (!row) return { count: 0, avgLatency: 0 };
 		return { count: row.count, avgLatency: row.avg_latency ?? 0 };
 	}
 
