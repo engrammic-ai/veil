@@ -1,7 +1,8 @@
 # Learning & Cross-Session Episodes (Phase 6)
 
-**Status**: Draft  
+**Status**: Implemented  
 **Date**: 2026-06-15  
+**Implemented**: 2026-06-15  
 **Depends on**: Phase 5 Anticipatory Loading  
 **Package**: `packages/engrammic`
 
@@ -13,15 +14,15 @@ Learn from agent behavior to improve anticipatory loading over time, and enable 
 
 Phase 6 addresses items deferred from Phase 5:
 
-| Feature | Priority | Description |
-|---------|----------|-------------|
-| Hydration learning | P0 | Track which manifest items get hydrated |
-| Trigger generation | P1 | Auto-create triggers from learned patterns |
-| Custom trigger persistence | P1 | Save user-defined triggers to SQLite |
-| Cold storage queries | P2 | Include cold items in manifest |
-| Cross-session episodes | P2 | "What did I try last time?" queries |
-| File/command triggers | P3 | Trigger on paths or shell commands |
-| Observability events | P3 | SQLite events for debugging |
+| Feature | Priority | Status | Description |
+|---------|----------|--------|-------------|
+| Hydration learning | P0 | Done | Track which manifest items get hydrated |
+| Trigger generation | P1 | Done | Auto-create triggers from learned patterns |
+| Custom trigger persistence | P1 | Done | Save user-defined triggers to SQLite |
+| Cold storage queries | P2 | Done | Include cold items in manifest |
+| Cross-session episodes | P2 | Done | "What did I try last time?" queries |
+| File/command triggers | P3 | Deferred | Trigger on paths or shell commands |
+| Observability events | P3 | Deferred | SQLite events for debugging |
 
 ## Dependencies
 
@@ -760,3 +761,34 @@ async function executeVeilHistory(
 - Trigger confidence decay over time
 - Stop word filtering / stemming in pattern analysis
 - Episode relation types beyond continues/relates/supersedes
+- File/command triggers (P3)
+- Observability events (P3)
+
+## Implementation Notes
+
+**PR**: #5 (phase6-learning branch)  
+**Tests**: 278 passing across 17 test files
+
+### Key Implementation Decisions
+
+1. **ManifestContext bundling**: Replaced separate temporal state fields with a bundled `ManifestContext` object to prevent stale data issues. Added 5-minute staleness guard.
+
+2. **Regex flag preservation**: Added `pattern_flags` and `negative_pattern_flags` columns to `custom_triggers` table to preserve original regex flags on reload.
+
+3. **created_at preservation**: Used `INSERT ... ON CONFLICT DO UPDATE` instead of `INSERT OR REPLACE` to preserve original creation timestamps on trigger updates.
+
+4. **SQL column aliasing**: Episode links query uses explicit `AS linked_id` alias in UNION for clarity.
+
+5. **Learning algorithm**: Simple v1 using word frequency. Future iterations may add stopwords, stemming, or TF-IDF.
+
+### Schema Additions
+
+- `hydration_events` - tracks manifest item recalls with latency
+- `custom_triggers` - persists learned and user-defined triggers  
+- `episode_links` - cross-session context relationships
+
+### New APIs
+
+- `veil_history` tool - search past sessions
+- `ContextManager.linkEpisodes()` / `getRelatedEpisodes()` / `searchHistory()`
+- `VeilHarness.maybeLearn()` - periodic pattern analysis (1hr interval)
