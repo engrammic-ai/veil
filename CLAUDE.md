@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Veil is a context-aware agent harness with episodic memory, forked from pi-mono. It adds dynamic context loading and heuristic eviction to the Pi agent framework.
+Veil is a context-aware agent harness with episodic memory, **forked from [Pi](https://github.com/badlogic/pi-mono)**. It adds dynamic context loading and heuristic eviction to the Pi agent framework.
+
+**Branding note:** The codebase retains Pi's internal package names, CLI commands (`pi`), and documentation references. When explaining Veil to users, clarify it's a Pi fork — the extension system, skills, tools, and APIs are inherited from Pi. Don't rebrand these in responses; just note the fork relationship.
 
 ## Commands
 

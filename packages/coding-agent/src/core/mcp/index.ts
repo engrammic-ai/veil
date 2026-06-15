@@ -20,6 +20,6 @@
  */
 
 export { McpClientManager } from "./client-manager.ts";
-export { loadMcpConfig, getEnabledServers } from "./config.ts";
+export { getEnabledServers, loadMcpConfig } from "./config.ts";
 export { default as mcpExtension } from "./extension.ts";
 export type { McpConfig, McpServerConfig, McpToolInfo, McpToolResult } from "./types.ts";

@@ -6,8 +6,8 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { McpConfig, McpServerConfig, McpToolInfo, McpToolResult } from "./types.ts";
 import { getEnabledServers } from "./config.ts";
+import type { McpConfig, McpServerConfig, McpToolInfo, McpToolResult } from "./types.ts";
 
 interface ConnectedServer {
 	client: Client;
@@ -76,16 +76,11 @@ export class McpClientManager {
 			cwd: config.cwd,
 		});
 
-		const client = new Client(
-			{ name: "veil", version: "1.0.0" },
-			{ capabilities: {} },
-		);
+		const client = new Client({ name: "veil", version: "1.0.0" }, { capabilities: {} });
 
 		await Promise.race([
 			client.connect(transport),
-			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("Connection timeout")), this.connectionTimeout),
-			),
+			new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), this.connectionTimeout)),
 		]);
 
 		const toolsResult = await client.listTools();
@@ -123,9 +118,7 @@ export class McpClientManager {
 
 		const result = await server.client.callTool({ name: toolName, arguments: args });
 
-		const contentArray = Array.isArray(result.content)
-			? result.content
-			: [];
+		const contentArray = Array.isArray(result.content) ? result.content : [];
 
 		return {
 			content: contentArray.map((c: { type: string; text?: string; data?: string; mimeType?: string }) => {
@@ -159,10 +152,7 @@ export class McpClientManager {
 	 * Check if MCP is enabled and has any servers configured.
 	 */
 	isEnabled(): boolean {
-		return (
-			this.config.settings?.enabled !== false &&
-			Object.keys(this.config.mcpServers ?? {}).length > 0
-		);
+		return this.config.settings?.enabled !== false && Object.keys(this.config.mcpServers ?? {}).length > 0;
 	}
 
 	/**

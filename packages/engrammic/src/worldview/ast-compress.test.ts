@@ -272,7 +272,7 @@ describe("compressFunction", () => {
 	});
 
 	it("different bodies produce different hashes", () => {
-		const makeCompressed = (bodyText: string, sigEnd: number) => {
+		const makeCompressed = (bodyText: string, _sigEnd: number) => {
 			const content = `function f() ${bodyText}`;
 			const body = makeNode("statement_block", bodyText, 0, 13, 0, 13 + bodyText.length);
 			const fn = withFieldMap(makeNode("function_declaration", content, 0, 0, 0, content.length, [body]), { body });

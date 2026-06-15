@@ -2,8 +2,7 @@
  * Tests for unified-anticipate.ts
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
-import type { ScoredSuggestion } from "./unified-anticipate.ts";
+import { describe, expect, it } from "vitest";
 import { UnifiedAnticipator } from "./unified-anticipate.ts";
 
 // ---------------------------------------------------------------------------

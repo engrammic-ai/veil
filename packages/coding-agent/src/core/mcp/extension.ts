@@ -8,7 +8,7 @@
  * or via CLI: --mcp / --no-mcp
  */
 
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import type { ExtensionAPI } from "../../index.ts";
 import { McpClientManager } from "./client-manager.ts";
 import { loadMcpConfig } from "./config.ts";
@@ -24,13 +24,16 @@ function mcpSchemaToTypebox(inputSchema: Record<string, unknown>): ReturnType<ty
 	const properties = (inputSchema.properties ?? {}) as Record<string, { type?: string; description?: string }>;
 	const required = (inputSchema.required ?? []) as string[];
 
-	const typeboxProps: Record<string, ReturnType<typeof Type.String | typeof Type.Number | typeof Type.Boolean | typeof Type.Unknown>> = {};
+	const typeboxProps: Record<
+		string,
+		ReturnType<typeof Type.String | typeof Type.Number | typeof Type.Boolean | typeof Type.Unknown>
+	> = {};
 
 	for (const [key, prop] of Object.entries(properties)) {
 		const desc = prop.description ? { description: prop.description } : {};
 		const isOptional = !required.includes(key);
 
-		let typeDef;
+		let typeDef: ReturnType<typeof Type.String | typeof Type.Number | typeof Type.Boolean | typeof Type.Unknown>;
 		switch (prop.type) {
 			case "string":
 				typeDef = Type.String(desc);
@@ -173,7 +176,7 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 					);
 					break;
 
-				case "list":
+				case "list": {
 					if (!manager) {
 						ctx.ui.notify("MCP not initialized", "info");
 						return;
@@ -198,8 +201,9 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 					}
 					ctx.ui.notify(lines.join("\n"), "info");
 					break;
+				}
 
-				case "reconnect":
+				case "reconnect": {
 					const config = loadMcpConfig();
 					if (manager) {
 						await manager.disconnectAll();
@@ -215,9 +219,9 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 						ctx.ui.notify(`MCP reconnect failed: ${err}`, "error");
 					}
 					break;
+				}
 
-				case "status":
-				default:
+				default: {
 					if (!manager) {
 						ctx.ui.notify("MCP not initialized (no mcp.json or disabled)", "info");
 						return;
@@ -240,6 +244,7 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 						"info",
 					);
 					break;
+				}
 			}
 		},
 	});

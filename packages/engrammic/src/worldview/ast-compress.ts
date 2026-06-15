@@ -15,7 +15,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import type { SyntaxNode, Tree } from "./parser.ts";
 import { getLanguageForFile, type TreeSitterParser } from "./parser.ts";
 

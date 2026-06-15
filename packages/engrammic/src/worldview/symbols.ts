@@ -126,7 +126,7 @@ function walkDefs(
 		if (pattern.nameField !== null) {
 			// Find named child by field name
 			const nameNode = getFieldChild(node, pattern.nameField);
-			if (nameNode && nameNode.text.trim()) {
+			if (nameNode?.text.trim()) {
 				results.push({ symbol: nameNode.text.trim(), line });
 			}
 		} else if (nodeType === "decorated_definition" && language === "python") {
@@ -138,7 +138,7 @@ function walkDefs(
 					child.type === "async_function_definition"
 				) {
 					const nameNode = getFieldChild(child, "name");
-					if (nameNode && nameNode.text.trim()) {
+					if (nameNode?.text.trim()) {
 						results.push({ symbol: nameNode.text.trim(), line: child.startPosition.row + 1 });
 					}
 				}
@@ -148,7 +148,7 @@ function walkDefs(
 			for (const child of node.namedChildren) {
 				if (child.type === "type_spec") {
 					const nameNode = getFieldChild(child, "name");
-					if (nameNode && nameNode.text.trim()) {
+					if (nameNode?.text.trim()) {
 						results.push({ symbol: nameNode.text.trim(), line: child.startPosition.row + 1 });
 					}
 				}
