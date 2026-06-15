@@ -17,13 +17,22 @@ import { formatStatusBar } from "./ux.ts";
  * Minimal subset of the Pi ExtensionAPI used here.
  * The full type lives in @earendil-works/pi-coding-agent.
  */
-interface UserMessageEvent {
-	content: string;
+interface BeforeAgentStartEvent {
+	type: "before_agent_start";
+	prompt: string;
+	systemPrompt: string;
+}
+
+interface BeforeAgentStartResult {
+	systemPrompt?: string;
 }
 
 interface ExtensionAPI {
 	on(event: "turn_end", handler: (event: unknown, ctx: ExtensionContext) => Promise<void>): void;
-	on(event: "user_message", handler: (event: UserMessageEvent, ctx: ExtensionContext) => Promise<void>): void;
+	on(
+		event: "before_agent_start",
+		handler: (event: BeforeAgentStartEvent, ctx: ExtensionContext) => Promise<BeforeAgentStartResult | void>,
+	): void;
 	registerFlag(
 		name: string,
 		opts: { description?: string; type: "boolean" | "string"; default?: boolean | string },
@@ -39,7 +48,6 @@ interface ExtensionContext {
 			fg(color: string, text: string): string;
 		};
 	};
-	injectContext(key: string, content: string): void;
 }
 
 /**
@@ -61,10 +69,10 @@ export function createVeilExtension(harness: VeilHarness): (pi: ExtensionAPI) =>
 			default: false,
 		});
 
-		pi.on("user_message", async (event, ctx) => {
-			const manifest = await harness.processUserMessage(event.content);
+		pi.on("before_agent_start", async (event) => {
+			const manifest = await harness.processUserMessage(event.prompt);
 			if (manifest) {
-				ctx.injectContext("veil-anticipate", manifest);
+				return { systemPrompt: `${event.systemPrompt}\n\n${manifest}` };
 			}
 		});
 
