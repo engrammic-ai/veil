@@ -451,6 +451,7 @@ export class VeilHarness {
 	 * Returns formatted manifest string if triggers match, null otherwise.
 	 */
 	async processUserMessage(message: string): Promise<string | null> {
+		const startTime = Date.now(); // Capture at start to measure full latency
 		const triggers = matchTriggers(message, this.triggers);
 		if (triggers.length === 0) return null;
 
@@ -469,7 +470,7 @@ export class VeilHarness {
 		if (!manifest) return null;
 
 		// Track for Phase 6 learning
-		this.trackManifestItems(manifest, message);
+		this.trackManifestItems(manifest, message, startTime);
 
 		// Eager preload if budget allows
 		if (budget.percent < 50) {
@@ -482,13 +483,13 @@ export class VeilHarness {
 	/**
 	 * Track manifest items for future learning (Phase 6).
 	 */
-	private trackManifestItems(manifest: ContextManifest, userMessage: string): void {
+	private trackManifestItems(manifest: ContextManifest, userMessage: string, startTime: number): void {
 		this.manifestItemIds.clear();
 		for (const item of manifest.items) {
 			this.manifestItemIds.add(item.id);
 		}
 		// Track for hydration learning
-		this.lastManifestTime = Date.now();
+		this.lastManifestTime = startTime; // Use startTime to capture full latency from message receipt
 		this.lastManifestTriggers = manifest.triggers;
 		this.lastUserMessage = userMessage;
 	}

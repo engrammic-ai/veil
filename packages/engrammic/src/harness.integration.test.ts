@@ -138,6 +138,62 @@ describe("VeilHarness integration", () => {
 	});
 });
 
+describe("onRecall hydration logging", () => {
+	let tmpDir: string;
+	let harness: VeilHarness;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "harness-recall-"));
+		harness = new VeilHarness({ dbPath: join(tmpDir, "context.db"), sessionId: "test-session" });
+	});
+
+	afterEach(async () => {
+		await harness.close();
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("logs hydration event when manifest item is recalled via veil_recall", async () => {
+		// Store an item with tags that the "debug" trigger will surface
+		const item = harness.getManager().remember("Debug info about the error", "episodic", ["debug", "error"]);
+
+		// Build manifest via processUserMessage - "debugging" matches DEFAULT_TRIGGERS "debug" trigger
+		const manifestResult = await harness.processUserMessage("I am debugging a crash");
+		expect(manifestResult).not.toBeNull();
+		expect(harness.wasInManifest(item.id)).toBe(true);
+
+		// Recall the item via executeTool
+		const result = await harness.executeTool("veil_recall", { tags: ["debug"], limit: 10 });
+		expect(result.success).toBe(true);
+
+		// Verify a hydration event was logged for this item
+		const hydrations = harness.getManager().getCache().getRecentHydrations(10);
+		expect(hydrations.length).toBeGreaterThan(0);
+		const event = hydrations.find((h) => h.itemId === item.id);
+		expect(event).toBeDefined();
+		expect(event!.sessionId).toBe("test-session");
+		expect(event!.userMessage).toBe("I am debugging a crash");
+		expect(event!.latencyMs).toBeGreaterThanOrEqual(0);
+		expect(event!.triggerIds).toContain("debug");
+	});
+
+	test("does not log hydration for items not in manifest", async () => {
+		// Store a debug item and build manifest
+		const manifestItem = harness.getManager().remember("Debug info", "episodic", ["debug", "error"]);
+		await harness.processUserMessage("I am debugging a crash");
+		expect(harness.wasInManifest(manifestItem.id)).toBe(true);
+
+		// Store a non-manifest item (different tags, not matched by trigger)
+		const otherItem = harness.getManager().remember("Unrelated fact", "fact", ["unrelated"]);
+
+		// Recall the unrelated item by its tags — it was NOT in the manifest
+		await harness.executeTool("veil_recall", { tags: ["unrelated"], limit: 10 });
+
+		const hydrations = harness.getManager().getCache().getRecentHydrations(10);
+		const event = hydrations.find((h) => h.itemId === otherItem.id);
+		expect(event).toBeUndefined();
+	});
+});
+
 describe("UX integration", () => {
 	it("getUsage reflects loaded items", async () => {
 		const harness = new VeilHarness({ dbPath: tmpDbPath() });
