@@ -130,10 +130,24 @@ export class ContextCache {
 		`);
 
 		this.stmtPersistTrigger = this.db.prepare(`
-			INSERT OR REPLACE INTO custom_triggers
-			(id, pattern, negative_pattern, type, action_tags, action_type,
+			INSERT INTO custom_triggers
+			(id, pattern, pattern_flags, negative_pattern, negative_pattern_flags,
+			 type, action_tags, action_type,
 			 priority, enabled, learned, confidence, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+			  pattern = excluded.pattern,
+			  pattern_flags = excluded.pattern_flags,
+			  negative_pattern = excluded.negative_pattern,
+			  negative_pattern_flags = excluded.negative_pattern_flags,
+			  type = excluded.type,
+			  action_tags = excluded.action_tags,
+			  action_type = excluded.action_type,
+			  priority = excluded.priority,
+			  enabled = excluded.enabled,
+			  learned = excluded.learned,
+			  confidence = excluded.confidence,
+			  updated_at = excluded.updated_at
 		`);
 
 		this.stmtLoadCustomTriggers = this.db.prepare(`
@@ -214,7 +228,9 @@ export class ContextCache {
 			CREATE TABLE IF NOT EXISTS custom_triggers (
 				id TEXT PRIMARY KEY,
 				pattern TEXT NOT NULL,
+				pattern_flags TEXT NOT NULL DEFAULT '',
 				negative_pattern TEXT,
+				negative_pattern_flags TEXT,
 				type TEXT NOT NULL DEFAULT 'keyword',
 				action_tags TEXT,
 				action_type TEXT,
@@ -229,6 +245,18 @@ export class ContextCache {
 			CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON custom_triggers(enabled);
 			CREATE INDEX IF NOT EXISTS idx_triggers_type ON custom_triggers(type);
 		`);
+
+		// Migration: add pattern_flags columns if they don't exist
+		try {
+			this.db.exec("ALTER TABLE custom_triggers ADD COLUMN pattern_flags TEXT NOT NULL DEFAULT ''");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE custom_triggers ADD COLUMN negative_pattern_flags TEXT");
+		} catch {
+			// Column already exists
+		}
 	}
 
 	put(item: ContextItem): void {
@@ -410,7 +438,9 @@ export class ContextCache {
 		this.stmtPersistTrigger.run(
 			trigger.id,
 			trigger.pattern.source,
+			trigger.pattern.flags,
 			trigger.negative?.source ?? null,
+			trigger.negative?.flags ?? null,
 			trigger.type,
 			JSON.stringify(trigger.action.tags ?? []),
 			trigger.action.type ?? null,
@@ -427,8 +457,10 @@ export class ContextCache {
 		const rows = this.stmtLoadCustomTriggers.all() as any[];
 		return rows.map((row) => ({
 			id: row.id,
-			pattern: new RegExp(row.pattern, "i"),
-			negative: row.negative_pattern ? new RegExp(row.negative_pattern, "i") : undefined,
+			pattern: new RegExp(row.pattern, row.pattern_flags || ""),
+			negative: row.negative_pattern
+				? new RegExp(row.negative_pattern, row.negative_pattern_flags || "")
+				: undefined,
 			type: row.type as "keyword" | "file" | "command",
 			action: {
 				tags: row.action_tags ? JSON.parse(row.action_tags) : undefined,

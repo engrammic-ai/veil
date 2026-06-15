@@ -275,10 +275,28 @@ describe("ContextCache custom triggers", () => {
 		expect(cache.loadCustomTriggers()).toHaveLength(1);
 	});
 
-	test("pattern is reconstructed with case-insensitive flag", () => {
-		const trigger: Trigger = {
-			id: "trigger-flags",
+	test("pattern flags are preserved exactly on reload", () => {
+		const triggerNoFlags: Trigger = {
+			id: "trigger-no-flags",
 			pattern: /React/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		cache.persistTrigger(triggerNoFlags);
+
+		const results = cache.loadCustomTriggers();
+		// No flags — case-sensitive, so 'react' should NOT match /React/
+		expect(results[0].pattern.flags).toBe("");
+		expect(results[0].pattern.test("React")).toBe(true);
+		expect(results[0].pattern.test("react")).toBe(false);
+	});
+
+	test("case-insensitive flag is preserved on reload", () => {
+		const trigger: Trigger = {
+			id: "trigger-i-flag",
+			pattern: /React/i,
 			type: "keyword",
 			action: {},
 			priority: 1,
@@ -290,5 +308,40 @@ describe("ContextCache custom triggers", () => {
 		expect(results[0].pattern.flags).toContain("i");
 		expect(results[0].pattern.test("react")).toBe(true);
 		expect(results[0].pattern.test("REACT")).toBe(true);
+	});
+
+	test("created_at is preserved when updating an existing trigger", () => {
+		const trigger: Trigger = {
+			id: "trigger-created-at",
+			pattern: /hello/,
+			type: "keyword",
+			action: {},
+			priority: 1,
+			enabled: true,
+		};
+		cache.persistTrigger(trigger);
+
+		// Read created_at from DB directly via loadCustomTriggers (not exposed, so query raw)
+		const dbFirst = (cache as any).db.prepare(
+			"SELECT created_at, updated_at FROM custom_triggers WHERE id = ?",
+		).get("trigger-created-at") as { created_at: number; updated_at: number };
+		const originalCreatedAt = dbFirst.created_at;
+
+		// Small delay to ensure updated_at would differ
+		const before = Date.now();
+		while (Date.now() <= before) { /* spin until clock advances */ }
+
+		const updated: Trigger = { ...trigger, priority: 99 };
+		cache.persistTrigger(updated);
+
+		const dbSecond = (cache as any).db.prepare(
+			"SELECT created_at, updated_at FROM custom_triggers WHERE id = ?",
+		).get("trigger-created-at") as { created_at: number; updated_at: number };
+
+		expect(dbSecond.created_at).toBe(originalCreatedAt);
+		expect(dbSecond.updated_at).toBeGreaterThan(originalCreatedAt);
+
+		const results = cache.loadCustomTriggers();
+		expect(results[0].priority).toBe(99);
 	});
 });
