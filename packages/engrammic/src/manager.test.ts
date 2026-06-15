@@ -44,3 +44,49 @@ describe("ContextManager eviction ledger logging", () => {
 		expect(found?.itemId).toBe(evicted[0].item.id);
 	});
 });
+
+describe("ContextManager re-request miss detection", () => {
+	let testDir: string;
+	let manager: ContextManager;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-mgr-miss-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		manager = makeManager(testDir);
+	});
+
+	afterEach(async () => {
+		await manager.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("fetching an evicted item back from cold raises the threshold", async () => {
+		for (let i = 0; i < 6; i++) {
+			const item = manager.remember(`item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
+			manager.load([item.id]);
+		}
+		const evicted = await manager.checkEviction({ tags: ["t"] });
+		const pointer = evicted[0].item.kgPointer;
+		expect(pointer).toBeTruthy();
+
+		const before = manager.getEvictionThreshold();
+		await manager.fetchFromCold(pointer!);
+		expect(manager.getEvictionThreshold()).toBeGreaterThan(before);
+	});
+
+	test("re-capturing recently-evicted content raises the threshold and consumes the ledger entry", async () => {
+		for (let i = 0; i < 6; i++) {
+			const item = manager.remember(`item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
+			manager.load([item.id]);
+		}
+		const evicted = await manager.checkEviction({ tags: ["t"] });
+		const victim = evicted[0].item;
+
+		const before = manager.getEvictionThreshold();
+		// Simulate re-reading the evicted content (same content -> same hash)
+		manager.remember(victim.content, "episodic", ["t"]);
+
+		expect(manager.getEvictionThreshold()).toBeGreaterThan(before);
+		expect(manager.getCache().findRecentEviction(victim.contentHash, 60_000)).toBeNull();
+	});
+});
