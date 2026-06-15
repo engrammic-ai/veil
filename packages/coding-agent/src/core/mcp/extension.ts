@@ -138,54 +138,96 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.registerCommand("mcp-status", {
-		description: "Show MCP server status",
-		handler: async (_args, ctx) => {
-			if (!manager) {
-				ctx.ui.notify("MCP not initialized", "info");
-				return;
-			}
+	pi.registerCommand("mcp", {
+		description: "Manage MCP servers: /mcp [status|reconnect|list|help]",
+		handler: async (args, ctx) => {
+			const subcommand = args.trim().split(/\s+/)[0] || "status";
 
-			const servers = manager.getConnectedServers();
-			const tools = manager.getAllTools();
+			switch (subcommand) {
+				case "help":
+					ctx.ui.notify(
+						[
+							"MCP Commands:",
+							"  /mcp              Show server status (default)",
+							"  /mcp status       Show connected servers and tool count",
+							"  /mcp list         List all available tools",
+							"  /mcp reconnect    Disconnect and reconnect all servers",
+							"  /mcp help         Show this help",
+							"",
+							"Config: ~/.veil/mcp.json",
+							"Disable: --no-mcp flag",
+						].join("\n"),
+						"info",
+					);
+					break;
 
-			if (servers.length === 0) {
-				ctx.ui.notify("No MCP servers connected", "info");
-				return;
-			}
+				case "list":
+					if (!manager) {
+						ctx.ui.notify("MCP not initialized", "info");
+						return;
+					}
+					const tools = manager.getAllTools();
+					if (tools.length === 0) {
+						ctx.ui.notify("No MCP tools available", "info");
+						return;
+					}
+					const byServer = new Map<string, McpToolInfo[]>();
+					for (const t of tools) {
+						const list = byServer.get(t.serverName) ?? [];
+						list.push(t);
+						byServer.set(t.serverName, list);
+					}
+					const lines: string[] = [];
+					for (const [server, serverTools] of byServer) {
+						lines.push(`[${server}] (${serverTools.length} tools)`);
+						for (const t of serverTools) {
+							lines.push(`  - ${t.name}: ${t.description ?? "(no description)"}`);
+						}
+					}
+					ctx.ui.notify(lines.join("\n"), "info");
+					break;
 
-			const lines = [
-				`Connected servers: ${servers.join(", ")}`,
-				`Total tools: ${tools.length}`,
-				"",
-				"Tools:",
-				...tools.map((t) => `  - mcp__${t.serverName}__${t.name}`),
-			];
+				case "reconnect":
+					const config = loadMcpConfig();
+					if (manager) {
+						await manager.disconnectAll();
+					}
+					manager = new McpClientManager(config);
+					try {
+						const { serverCount, toolCount } = await manager.connectAll();
+						ctx.ui.notify(`MCP reconnected: ${serverCount} server(s), ${toolCount} tool(s)`, "info");
+						for (const tool of manager.getAllTools()) {
+							registerMcpTool(pi, tool);
+						}
+					} catch (err) {
+						ctx.ui.notify(`MCP reconnect failed: ${err}`, "error");
+					}
+					break;
 
-			ctx.ui.notify(lines.join("\n"), "info");
-		},
-	});
-
-	pi.registerCommand("mcp-reconnect", {
-		description: "Reconnect to all MCP servers",
-		handler: async (_args, ctx) => {
-			const config = loadMcpConfig();
-
-			if (manager) {
-				await manager.disconnectAll();
-			}
-
-			manager = new McpClientManager(config);
-
-			try {
-				const { serverCount, toolCount } = await manager.connectAll();
-				ctx.ui.notify(`MCP reconnected: ${serverCount} server(s), ${toolCount} tool(s)`, "info");
-
-				for (const tool of manager.getAllTools()) {
-					registerMcpTool(pi, tool);
-				}
-			} catch (err) {
-				ctx.ui.notify(`MCP reconnect failed: ${err}`, "error");
+				case "status":
+				default:
+					if (!manager) {
+						ctx.ui.notify("MCP not initialized (no mcp.json or disabled)", "info");
+						return;
+					}
+					const servers = manager.getConnectedServers();
+					const allTools = manager.getAllTools();
+					if (servers.length === 0) {
+						ctx.ui.notify("No MCP servers connected\nConfig: ~/.veil/mcp.json", "info");
+						return;
+					}
+					ctx.ui.notify(
+						[
+							`MCP Status:`,
+							`  Servers: ${servers.join(", ")}`,
+							`  Tools: ${allTools.length}`,
+							"",
+							"Use /mcp list to see all tools",
+							"Use /mcp reconnect to reload",
+						].join("\n"),
+						"info",
+					);
+					break;
 			}
 		},
 	});
