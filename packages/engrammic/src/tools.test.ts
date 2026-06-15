@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import { ContextManager } from "./manager.ts";
 import { executeVeilTool, TOOL_SCHEMAS } from "./tools.ts";
@@ -63,6 +63,21 @@ describe("executeVeilTool", () => {
 		expect(data.items).toHaveLength(1);
 		expect(data.items[0].id).toBe(item.id);
 		expect(data.items[0].stub).toContain("[EPISODE:");
+	});
+
+	test("veil_recall invokes onRecall callback with recalled item IDs", async () => {
+		const itemA = manager.remember("Alpha content", "episodic", ["cb-tag"]);
+		const itemB = manager.remember("Beta content", "fact", ["cb-tag"]);
+		const onRecall = vi.fn();
+
+		const result = await executeVeilTool("veil_recall", { tags: ["cb-tag"] }, { manager, onRecall });
+
+		expect(result.success).toBe(true);
+		expect(onRecall).toHaveBeenCalledTimes(1);
+		const calledWith: string[] = onRecall.mock.calls[0][0];
+		expect(calledWith).toHaveLength(2);
+		expect(calledWith).toContain(itemA.id);
+		expect(calledWith).toContain(itemB.id);
 	});
 
 	test("veil_promote loads item into context", async () => {
