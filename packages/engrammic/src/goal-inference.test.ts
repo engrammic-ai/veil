@@ -1,17 +1,23 @@
 /**
- * Unit tests for goal-inference.ts (Phase D.4.1-D.4.3)
+ * Unit tests for goal-inference.ts (Phase D.4)
  */
 
 import { describe, expect, test } from "vitest";
+import type { AttemptRecord } from "./attempts.ts";
 import {
 	advanceGoalState,
 	createGoalInferenceState,
+	DEFAULT_LLM_CONFIG,
+	detectRetryMarker,
+	extractRationale,
 	extractTarget,
 	extractTestSuite,
 	inferGoalId,
+	inferGoalWithLLM,
 	isTestRunner,
 	normalizeCommand,
 	normalizeFilePath,
+	shouldCloseGoal,
 	shouldMergeGoals,
 } from "./goal-inference.ts";
 import type { ToolResultEvent } from "./harness.ts";
@@ -347,5 +353,160 @@ describe("advanceGoalState", () => {
 		const s = createGoalInferenceState(0);
 		const next = advanceGoalState(s, "cmd:git status", null, 1);
 		expect(next.recentTargets).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// D.4.5 — detectRetryMarker
+// ---------------------------------------------------------------------------
+
+describe("detectRetryMarker", () => {
+	test("detects 'that didn't work'", () => {
+		expect(detectRetryMarker("that didn't work, let me try something else")).toBeTruthy();
+	});
+
+	test("detects 'let me try'", () => {
+		expect(detectRetryMarker("let me try a different approach")).toBeTruthy();
+	});
+
+	test("detects 'still failing'", () => {
+		expect(detectRetryMarker("The test is still failing")).toBeTruthy();
+	});
+
+	test("detects 'same error'", () => {
+		expect(detectRetryMarker("Getting the same error as before")).toBeTruthy();
+	});
+
+	test("returns null for normal text", () => {
+		expect(detectRetryMarker("I'll update the authentication module")).toBeNull();
+	});
+
+	test("returns matched marker text", () => {
+		const result = detectRetryMarker("that didn't work, so I'll fix it");
+		expect(result).toBe("that didn't work");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// D.4.6 — extractRationale
+// ---------------------------------------------------------------------------
+
+describe("extractRationale", () => {
+	test("extracts 'let me' pattern", () => {
+		const result = extractRationale("let me fix the null check in the auth module");
+		expect(result).toBe("fix the null check in the auth module");
+	});
+
+	test("extracts 'I'll' pattern", () => {
+		const result = extractRationale("I'll update the config to use the new format");
+		expect(result).toBe("update the config to use the new format");
+	});
+
+	test("extracts 'because' pattern", () => {
+		const result = extractRationale("because the variable is undefined at this point");
+		expect(result).toBe("the variable is undefined at this point");
+	});
+
+	test("extracts 'the issue is' pattern", () => {
+		const result = extractRationale("the issue is that we're not handling null values");
+		expect(result).toBe("that we're not handling null values");
+	});
+
+	test("returns null for short matches", () => {
+		expect(extractRationale("let me try")).toBeNull();
+	});
+
+	test("returns null for non-matching text", () => {
+		expect(extractRationale("Running the test suite now")).toBeNull();
+	});
+
+	test("truncates to 100 chars", () => {
+		const long = `let me ${"a".repeat(150)}`;
+		const result = extractRationale(long);
+		expect(result?.length).toBeLessThanOrEqual(100);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// D.4.7 — shouldCloseGoal
+// ---------------------------------------------------------------------------
+
+function makeAttemptRecord(overrides: Partial<AttemptRecord> = {}): AttemptRecord {
+	return {
+		id: "attempt-1",
+		sessionId: "session-1",
+		goalId: "file:auth.ts",
+		iteration: 1,
+		action: "bash",
+		target: "auth.ts",
+		outcome: "fail",
+		evidence: "Test failed",
+		errorPattern: "test-failure",
+		createdAt: Date.now(),
+		turn: 1,
+		goalOpen: true,
+		pinned: false,
+		...overrides,
+	};
+}
+
+describe("shouldCloseGoal", () => {
+	test("returns false for empty attempts", () => {
+		expect(shouldCloseGoal([], 5)).toBe(false);
+	});
+
+	test("returns false when last attempt is fail", () => {
+		const attempts = [makeAttemptRecord({ outcome: "fail", turn: 4 })];
+		expect(shouldCloseGoal(attempts, 5)).toBe(false);
+	});
+
+	test("returns true when last is pass and no recent failures", () => {
+		const attempts = [
+			makeAttemptRecord({ id: "a1", outcome: "fail", turn: 1 }),
+			makeAttemptRecord({ id: "a2", outcome: "pass", turn: 5 }),
+		];
+		expect(shouldCloseGoal(attempts, 5)).toBe(true);
+	});
+
+	test("returns false when pass but failure in last 3 turns", () => {
+		const attempts = [
+			makeAttemptRecord({ id: "a1", outcome: "fail", turn: 3 }),
+			makeAttemptRecord({ id: "a2", outcome: "pass", turn: 5 }),
+		];
+		expect(shouldCloseGoal(attempts, 5)).toBe(false);
+	});
+
+	test("returns true when failure is more than 3 turns ago", () => {
+		const attempts = [
+			makeAttemptRecord({ id: "a1", outcome: "fail", turn: 1 }),
+			makeAttemptRecord({ id: "a2", outcome: "pass", turn: 5 }),
+		];
+		expect(shouldCloseGoal(attempts, 5)).toBe(true);
+	});
+
+	test("handles uncertain as failure", () => {
+		const attempts = [
+			makeAttemptRecord({ id: "a1", outcome: "uncertain", turn: 4 }),
+			makeAttemptRecord({ id: "a2", outcome: "pass", turn: 5 }),
+		];
+		expect(shouldCloseGoal(attempts, 5)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// D.4.8 — inferGoalWithLLM (stub)
+// ---------------------------------------------------------------------------
+
+describe("inferGoalWithLLM", () => {
+	test("returns null (stub implementation)", () => {
+		const result = inferGoalWithLLM("some agent text", {
+			recentTargets: [],
+			currentGoalId: null,
+		});
+		expect(result).toBeNull();
+	});
+
+	test("default config has enabled=false", () => {
+		expect(DEFAULT_LLM_CONFIG.enabled).toBe(false);
 	});
 });

@@ -52,13 +52,20 @@ export { createVeilExtension } from "./extension.ts";
 export {
 	advanceGoalState,
 	createGoalInferenceState,
+	DEFAULT_LLM_CONFIG,
+	detectRetryMarker,
+	extractRationale,
 	extractTarget,
 	extractTestSuite,
+	type GoalInferenceLLMConfig,
 	type GoalInferenceState,
 	inferGoalId,
+	inferGoalWithLLM,
 	isTestRunner,
 	normalizeCommand,
 	normalizeFilePath,
+	RETRY_MARKERS,
+	shouldCloseGoal,
 	shouldMergeGoals,
 } from "./goal-inference.ts";
 export {

@@ -185,6 +185,7 @@ export class ConvergenceMonitor {
 	 */
 	resetGoal(goalId: string): void {
 		this.states.delete(goalId);
+		this.patternHistory.delete(goalId);
 	}
 
 	/**
