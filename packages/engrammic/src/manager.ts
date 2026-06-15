@@ -296,9 +296,17 @@ export class ContextManager {
 
 	/**
 	 * Increment turn counter and check for checkpoint.
+	 * Also records co-access for all currently-loaded items.
 	 */
 	tick(): boolean {
 		this.turnCount++;
+
+		// Record co-access for all items currently in the active window
+		const loadedIds = Array.from(this.loaded.keys());
+		if (loadedIds.length >= 2) {
+			this.cache.coAccess.recordAccess(loadedIds, this.turnCount);
+		}
+
 		const interval = this.config.decaySweepIntervalTurns;
 		if (interval > 0 && this.turnCount % interval === 0) {
 			this.runDecaySweep();
