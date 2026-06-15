@@ -202,6 +202,69 @@ describe("executeVeilTool", () => {
 	});
 });
 
+describe("veil_history with mock ColdStore that has query", () => {
+	let tmpDir: string;
+	let manager: ContextManager;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "tools-history-test-"));
+
+		// Build a mock ColdStore with a query method that returns items
+		const mockItem = {
+			id: "cold-item-1",
+			content: "historical deployment procedure for canary releases",
+			contentHash: "abc",
+			createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
+			lastAccess: Date.now(),
+			accessCount: 1,
+			decayScore: 0.8,
+			cognitiveWeight: 0,
+			type: "procedural" as const,
+			tags: ["deploy", "canary"],
+			pinned: false,
+			source: "auto" as const,
+		};
+
+		const mockColdStore = {
+			capabilities: { semantic: true, temporal: false, provenance: false },
+			demote: vi.fn().mockResolvedValue("ptr_1"),
+			fetch: vi.fn().mockResolvedValue(null),
+			exists: vi.fn().mockResolvedValue(false),
+			delete: vi.fn().mockResolvedValue(undefined),
+			count: vi.fn().mockResolvedValue(1),
+			close: vi.fn().mockResolvedValue(undefined),
+			query: vi.fn().mockResolvedValue([mockItem]),
+		};
+
+		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, mockColdStore);
+	});
+
+	afterEach(async () => {
+		await manager.close();
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("veil_history returns formatted items when cold store query returns results", async () => {
+		const result = await executeVeilTool("veil_history", { query: "deployment", days: 7 }, { manager });
+
+		expect(result.success).toBe(true);
+		const data = result.data as { items: unknown[]; formatted: string };
+		expect(Array.isArray(data.items)).toBe(true);
+		expect(data.items.length).toBeGreaterThan(0);
+		expect(data.formatted).toContain("cold-item-1");
+		expect(data.formatted).toContain("procedural");
+		expect(data.formatted).toContain("historical deployment");
+	});
+
+	test("veil_history filters out items older than the since cutoff", async () => {
+		const result = await executeVeilTool("veil_history", { query: "deployment", days: 1 }, { manager });
+		// mockItem is 2 days old; days=1 cuts off at 1 day ago — item should be filtered out
+		expect(result.success).toBe(true);
+		const data = result.data as { message?: string; items?: unknown[] };
+		expect(data.message).toContain("No related context found");
+	});
+});
+
 describe("ContextManager episode API", () => {
 	let tmpDir: string;
 	let manager: ContextManager;

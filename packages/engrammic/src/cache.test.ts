@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type HydrationEvent, ContextCache, createItem } from "./cache.ts";
 import type { Trigger } from "./types.ts";
 
@@ -311,6 +311,7 @@ describe("ContextCache custom triggers", () => {
 	});
 
 	test("created_at is preserved when updating an existing trigger", () => {
+		vi.useFakeTimers();
 		const trigger: Trigger = {
 			id: "trigger-created-at",
 			pattern: /hello/,
@@ -327,9 +328,8 @@ describe("ContextCache custom triggers", () => {
 		).get("trigger-created-at") as { created_at: number; updated_at: number };
 		const originalCreatedAt = dbFirst.created_at;
 
-		// Small delay to ensure updated_at would differ
-		const before = Date.now();
-		while (Date.now() <= before) { /* spin until clock advances */ }
+		// Advance fake clock so updated_at will differ from created_at
+		vi.advanceTimersByTime(100);
 
 		const updated: Trigger = { ...trigger, priority: 99 };
 		cache.persistTrigger(updated);
@@ -343,6 +343,8 @@ describe("ContextCache custom triggers", () => {
 
 		const results = cache.loadCustomTriggers();
 		expect(results[0].priority).toBe(99);
+
+		vi.useRealTimers();
 	});
 });
 

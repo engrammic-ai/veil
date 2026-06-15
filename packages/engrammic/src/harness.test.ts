@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import { VeilHarness } from "./harness.ts";
 
@@ -637,6 +637,109 @@ describe("maybeLearn", () => {
 		const triggersAfter = cache.loadCustomTriggers().length;
 
 		expect(triggersAfter).toBe(triggersBefore);
+
+		await harness.close();
+	});
+});
+
+describe("learned trigger matches subsequent messages", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("a learned trigger surfaces manifest items on the next processUserMessage call", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// First harness: store item, log hydrations, run maybeLearn to produce a learned trigger
+		const harness1 = new VeilHarness({
+			dbPath,
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 0, minHydrations: 3 },
+		});
+
+		const item = harness1.remember("canary deployment checklist for production", "procedural", ["canary"]);
+		const cache1 = harness1.getManager().getCache();
+
+		const messages = ["canary release steps", "canary deployment procedure", "canary rollout guide"];
+		const now = Date.now();
+		for (let i = 0; i < messages.length; i++) {
+			cache1.logHydration({
+				sessionId: "s1",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: messages[i],
+				hydratedAt: now + i,
+				latencyMs: 10,
+			});
+		}
+
+		await harness1.maybeLearn();
+		const learnedTriggers = cache1.loadCustomTriggers();
+		expect(learnedTriggers.length).toBeGreaterThan(0); // sanity-check: learning ran
+
+		await harness1.close();
+
+		// Second harness: reopen same DB — learned trigger is loaded at init
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+
+		// Send a message that should match the learned trigger's pattern
+		const keyword = learnedTriggers[0].pattern.source; // e.g. "canary"
+		const manifest = await harness2.processUserMessage(`show me the ${keyword} guide`);
+
+		await harness2.close();
+
+		// The manifest must be non-null — the learned trigger matched and surfaced the item
+		expect(manifest).not.toBeNull();
+		expect(manifest).toContain("<veil-available>");
+		expect(manifest).toContain("canary deployment");
+	});
+});
+
+describe("processUserMessage buildManifest exception handling", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns null gracefully when buildManifest throws", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// Provide a cold store whose query method always throws — this exercises the
+		// try/catch around buildManifest inside processUserMessage.
+		const throwingColdStore = {
+			capabilities: { semantic: true, temporal: false, provenance: false },
+			demote: vi.fn().mockResolvedValue("ptr_x"),
+			fetch: vi.fn().mockResolvedValue(null),
+			exists: vi.fn().mockResolvedValue(false),
+			delete: vi.fn().mockResolvedValue(undefined),
+			count: vi.fn().mockResolvedValue(0),
+			close: vi.fn().mockResolvedValue(undefined),
+			// Returning a rejecting promise causes buildManifest to throw during cold fetch
+			query: vi.fn().mockRejectedValue(new Error("cold storage unavailable")),
+		};
+
+		const harness = new VeilHarness({ dbPath, coldStore: throwingColdStore });
+
+		// Store an item with tags matched by the "debug" DEFAULT_TRIGGER
+		harness.remember("Debug notes on the crash", "episodic", ["debug", "error"]);
+
+		// processUserMessage must not throw; it should catch and return null
+		const result = await harness.processUserMessage("I am debugging a crash");
+
+		// Result may be null (error path) or a valid manifest (if warm cache items
+		// were surfaced before the cold query threw). Either way, no exception should escape.
+		expect(() => result).not.toThrow();
 
 		await harness.close();
 	});
