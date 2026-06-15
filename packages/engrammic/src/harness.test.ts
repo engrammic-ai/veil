@@ -365,3 +365,93 @@ describe("autoCapture integration", () => {
 		await harness.close();
 	});
 });
+
+describe("processUserMessage (anticipatory loading)", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns manifest when triggers match", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Store something with "test" tag
+		harness.remember("Test failure in auth module", "episodic", ["test", "auth"]);
+
+		const result = await harness.processUserMessage("fix the tests");
+		expect(result).not.toBeNull();
+		expect(result).toContain("<veil-available>");
+		expect(result).toContain("Test failure in auth");
+
+		await harness.close();
+	});
+
+	test("returns null when no triggers match", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		harness.remember("Some content", "fact", ["unrelated"]);
+
+		const result = await harness.processUserMessage("hello world");
+		expect(result).toBeNull();
+
+		await harness.close();
+	});
+
+	test("returns null when budget exceeds 70%", async () => {
+		// Use small maxTokens with no reserve so we can easily exceed 70%
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			maxTokens: 100,
+			reserveTokens: 0,
+		});
+
+		// Each char is ~0.25 tokens, so 400 chars ≈ 100 tokens
+		// Load multiple items to exceed 70% (70 tokens)
+		for (let i = 0; i < 5; i++) {
+			const content = `Test content number ${i} with more text to make it bigger ${"x".repeat(100)}`;
+			const item = harness.remember(content, "fact", ["test"]);
+			harness.load([item.id]);
+		}
+
+		const usage = harness.getUsage();
+		expect(usage.hotItems).toBe(5);
+		expect(usage.percent).toBeGreaterThan(70);
+
+		const result = await harness.processUserMessage("run the tests");
+		expect(result).toBeNull();
+
+		await harness.close();
+	});
+
+	test("preloads top items when budget < 50%", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Store items
+		harness.remember("Test item 1", "episodic", ["test"]);
+		harness.remember("Test item 2", "episodic", ["test"]);
+
+		const beforeItems = harness.getWindow().items.length;
+
+		await harness.processUserMessage("run the tests");
+
+		const afterItems = harness.getWindow().items.length;
+		expect(afterItems).toBeGreaterThan(beforeItems);
+
+		await harness.close();
+	});
+});
