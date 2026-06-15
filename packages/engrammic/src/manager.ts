@@ -234,8 +234,12 @@ export class ContextManager {
 		const item = await this.circuitBreaker.execute(() => this.cold.fetch(pointer));
 		if (!item) return null;
 
-		// Re-request miss: we demoted this to cold and now need it back.
-		this.eviction.recordReRequest();
+		// Re-request miss: only if this content was recently evicted
+		const prior = this.cache.findRecentEviction(item.contentHash, this.config.reRequestWindowMs);
+		if (prior) {
+			this.eviction.recordReRequest();
+			this.cache.clearEvictionForHash(item.contentHash);
+		}
 
 		// Bring back to warm cache
 		this.cache.put(item);
@@ -295,7 +299,8 @@ export class ContextManager {
 	 */
 	tick(): boolean {
 		this.turnCount++;
-		if (this.turnCount % this.config.decaySweepIntervalTurns === 0) {
+		const interval = this.config.decaySweepIntervalTurns;
+		if (interval > 0 && this.turnCount % interval === 0) {
 			this.runDecaySweep();
 		}
 		return this.turnCount % this.config.checkpointIntervalTurns === 0;
@@ -327,6 +332,7 @@ export class ContextManager {
 	 */
 	runDecaySweep(): string[] {
 		this.cache.applyDecay(0.95);
+		this.cache.pruneEvictionLog(this.config.reRequestWindowMs);
 		return this.cache.pruneByDecay(0.9);
 	}
 

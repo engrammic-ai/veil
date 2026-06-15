@@ -56,6 +56,7 @@ export class ContextCache {
 	private stmtLogEviction: Database.Statement;
 	private stmtFindRecentEviction: Database.Statement;
 	private stmtClearEvictionForHash: Database.Statement;
+	private stmtPruneEvictionLog: Database.Statement;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -189,6 +190,8 @@ export class ContextCache {
 		`);
 
 		this.stmtClearEvictionForHash = this.db.prepare("DELETE FROM eviction_log WHERE content_hash = ?");
+
+		this.stmtPruneEvictionLog = this.db.prepare("DELETE FROM eviction_log WHERE evicted_at < ?");
 	}
 
 	private init(): void {
@@ -483,6 +486,12 @@ export class ContextCache {
 
 	clearEvictionForHash(contentHash: string): void {
 		this.stmtClearEvictionForHash.run(contentHash);
+	}
+
+	pruneEvictionLog(olderThanMs: number): number {
+		const cutoff = Date.now() - olderThanMs;
+		const result = this.stmtPruneEvictionLog.run(cutoff);
+		return result.changes;
 	}
 
 	logHydration(event: HydrationEvent): void {
