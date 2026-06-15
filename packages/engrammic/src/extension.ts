@@ -31,7 +31,7 @@ interface ExtensionAPI {
 	on(event: "turn_end", handler: (event: unknown, ctx: ExtensionContext) => Promise<void>): void;
 	on(
 		event: "before_agent_start",
-		handler: (event: BeforeAgentStartEvent, ctx: ExtensionContext) => Promise<BeforeAgentStartResult | void>,
+		handler: (event: BeforeAgentStartEvent, ctx: ExtensionContext) => Promise<BeforeAgentStartResult | undefined>,
 	): void;
 	registerFlag(
 		name: string,

@@ -49,6 +49,8 @@ export interface Trigger {
 	};
 	priority: number; // Higher = checked first
 	enabled: boolean;
+	learned?: boolean;
+	confidence?: number;
 }
 
 // Manifest item shown to agent (lightweight summary)
@@ -58,6 +60,7 @@ export interface ManifestItem {
 	tags: string[];
 	summary: string; // First 50 chars
 	age: string; // "2min ago", "1hr ago"
+	source?: "warm" | "cold";
 }
 
 // Full manifest returned by anticipatory loading
