@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import { ContextManager } from "./manager.ts";
 
@@ -88,5 +88,34 @@ describe("ContextManager re-request miss detection", () => {
 
 		expect(manager.getEvictionThreshold()).toBeGreaterThan(before);
 		expect(manager.getCache().findRecentEviction(victim.contentHash, 60_000)).toBeNull();
+	});
+});
+
+describe("ContextManager decay scheduling", () => {
+	let testDir: string;
+	let manager: ContextManager;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-mgr-decay-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		manager = makeManager(testDir, { decaySweepIntervalTurns: 3 });
+	});
+
+	afterEach(async () => {
+		await manager.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("runs decay sweep every decaySweepIntervalTurns ticks", () => {
+		const spy = vi.spyOn(manager, "runDecaySweep");
+		manager.tick(); // turn 1
+		manager.tick(); // turn 2
+		expect(spy).not.toHaveBeenCalled();
+		manager.tick(); // turn 3 -> sweep
+		expect(spy).toHaveBeenCalledTimes(1);
+		manager.tick(); // 4
+		manager.tick(); // 5
+		manager.tick(); // 6 -> sweep
+		expect(spy).toHaveBeenCalledTimes(2);
 	});
 });

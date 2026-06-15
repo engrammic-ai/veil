@@ -295,6 +295,9 @@ export class ContextManager {
 	 */
 	tick(): boolean {
 		this.turnCount++;
+		if (this.turnCount % this.config.decaySweepIntervalTurns === 0) {
+			this.runDecaySweep();
+		}
 		return this.turnCount % this.config.checkpointIntervalTurns === 0;
 	}
 
