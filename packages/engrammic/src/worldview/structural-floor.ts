@@ -39,13 +39,15 @@ export class StructuralFloor {
 		this.db = db;
 		this.maxTurns = maxTurns;
 
-		// Ensure table exists
+		// Ensure table exists with index for pruning
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS structural_floor (
 				item_id TEXT PRIMARY KEY,
 				initial_score REAL NOT NULL,
 				created_turn INTEGER NOT NULL
 			);
+			CREATE INDEX IF NOT EXISTS idx_structural_floor_turn
+				ON structural_floor(created_turn);
 		`);
 
 		this.stmtAdd = this.db.prepare(`

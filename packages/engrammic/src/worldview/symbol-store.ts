@@ -127,6 +127,58 @@ export class SymbolStore {
 		return rows;
 	}
 
+	/**
+	 * Resolve cross-file references by matching ref symbols to defs in other files.
+	 *
+	 * For each ref with target_file=NULL, looks for a def with the same symbol name
+	 * in a different file. If found, updates target_file and target_symbol.
+	 *
+	 * Returns the number of refs that were resolved.
+	 */
+	resolveReferences(): number {
+		// Get all defs indexed by symbol name -> file
+		const defs = this.db.prepare(`
+			SELECT symbol, file FROM symbol_graph WHERE kind = 'def'
+		`).all() as Array<{ symbol: string; file: string }>;
+
+		// Build a map: symbol -> [files that define it]
+		const defMap = new Map<string, string[]>();
+		for (const def of defs) {
+			const files = defMap.get(def.symbol) ?? [];
+			files.push(def.file);
+			defMap.set(def.symbol, files);
+		}
+
+		// Get all unresolved refs
+		const unresolvedRefs = this.db.prepare(`
+			SELECT file, symbol, line FROM symbol_graph
+			WHERE kind = 'ref' AND target_file IS NULL
+		`).all() as Array<{ file: string; symbol: string; line: number }>;
+
+		// Update refs with matching defs (from different files)
+		const updateStmt = this.db.prepare(`
+			UPDATE symbol_graph
+			SET target_file = ?, target_symbol = ?
+			WHERE file = ? AND symbol = ? AND kind = 'ref' AND line = ?
+		`);
+
+		let resolved = 0;
+		const run = this.db.transaction(() => {
+			for (const ref of unresolvedRefs) {
+				const defFiles = defMap.get(ref.symbol) ?? [];
+				// Find first def in a different file
+				const targetFile = defFiles.find(f => f !== ref.file);
+				if (targetFile) {
+					updateStmt.run(targetFile, ref.symbol, ref.file, ref.symbol, ref.line);
+					resolved++;
+				}
+			}
+		});
+		run();
+
+		return resolved;
+	}
+
 	close(): void {
 		this.db.close();
 	}

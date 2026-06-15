@@ -309,4 +309,54 @@ describe("SymbolStore", () => {
 		expect(rows[0].target_file).toBeNull();
 		expect(rows[0].target_symbol).toBeNull();
 	});
+
+	describe("resolveReferences", () => {
+		it("resolves refs to defs in other files", () => {
+			// File A defines 'sharedFn', File B references it
+			store.upsertSymbols("/a.ts", [{ symbol: "sharedFn", kind: "def", line: 1 }]);
+			store.upsertSymbols("/b.ts", [{ symbol: "sharedFn", kind: "ref", line: 5 }]);
+
+			const resolved = store.resolveReferences();
+			expect(resolved).toBe(1);
+
+			const rows = store.getSymbolsForFile("/b.ts");
+			const ref = rows.find((r) => r.kind === "ref");
+			expect(ref?.target_file).toBe("/a.ts");
+			expect(ref?.target_symbol).toBe("sharedFn");
+		});
+
+		it("does not resolve refs to defs in the same file", () => {
+			// Same file has both def and ref - should not create cross-file edge
+			store.upsertSymbols("/a.ts", [
+				{ symbol: "localFn", kind: "def", line: 1 },
+				{ symbol: "localFn", kind: "ref", line: 10 },
+			]);
+
+			const resolved = store.resolveReferences();
+			expect(resolved).toBe(0);
+
+			const rows = store.getSymbolsForFile("/a.ts");
+			const ref = rows.find((r) => r.kind === "ref");
+			expect(ref?.target_file).toBeNull();
+		});
+
+		it("resolves multiple refs across files", () => {
+			store.upsertSymbols("/lib.ts", [{ symbol: "helper", kind: "def", line: 1 }]);
+			store.upsertSymbols("/a.ts", [{ symbol: "helper", kind: "ref", line: 5 }]);
+			store.upsertSymbols("/b.ts", [{ symbol: "helper", kind: "ref", line: 3 }]);
+
+			const resolved = store.resolveReferences();
+			expect(resolved).toBe(2);
+		});
+
+		it("handles symbol with no matching def", () => {
+			store.upsertSymbols("/a.ts", [{ symbol: "unknownFn", kind: "ref", line: 5 }]);
+
+			const resolved = store.resolveReferences();
+			expect(resolved).toBe(0);
+
+			const rows = store.getSymbolsForFile("/a.ts");
+			expect(rows[0].target_file).toBeNull();
+		});
+	});
 });

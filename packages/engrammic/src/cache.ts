@@ -200,6 +200,14 @@ export class ContextCache {
 		this.coAccess = new CoAccessTracker(this.db);
 	}
 
+	/**
+	 * Get the underlying database connection.
+	 * Use sparingly - prefer using cache methods directly.
+	 */
+	getDb(): Database.Database {
+		return this.db;
+	}
+
 	private init(): void {
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS items (

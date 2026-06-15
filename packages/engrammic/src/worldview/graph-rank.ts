@@ -9,6 +9,7 @@
 import Database from "better-sqlite3";
 import Graph from "graphology";
 import pagerank from "graphology-pagerank";
+import { SymbolStore } from "./symbol-store.ts";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -324,12 +325,16 @@ export class RankStore {
 // ---------------------------------------------------------------------------
 
 /**
- * Full pipeline: build graph → compute PageRank → store results.
+ * Full pipeline: resolve refs → build graph → compute PageRank → store results.
  *
  * Idempotent: safe to call repeatedly as the symbol_graph is updated.
  * Returns the number of files ranked.
  */
 export function updateRanks(db: Database.Database): number {
+	// Resolve cross-file references before building the graph
+	const symbolStore = new SymbolStore(db);
+	symbolStore.resolveReferences();
+
 	const store = new RankStore(db);
 	const graph = buildFileGraph(db);
 	const scores = computePageRank(graph);

@@ -138,6 +138,27 @@ export function extractSignature(node: SyntaxNode, langName: string): string | n
 }
 
 /**
+ * Internal: compress with pre-split lines to avoid repeated splits.
+ */
+function compressFunctionWithLines(
+	node: SyntaxNode,
+	lines: string[],
+	langName: string,
+): string | null {
+	const sig = extractSignature(node, langName);
+	if (sig === null) return null;
+
+	const bodyTypes = BODY_NODE_TYPES[langName] ?? new Set<string>();
+	const bodyNode = findBodyNode(node, bodyTypes);
+	if (bodyNode === null) return null;
+
+	const bodyText = extractNodeText(bodyNode, lines);
+	const hash = hashImplementation(bodyText);
+
+	return `${sig} [IMPL:${hash}]`;
+}
+
+/**
  * Compress a single function node to `signature [IMPL:hash]`.
  *
  * Returns `null` when:
@@ -153,19 +174,7 @@ export function compressFunction(
 	content: string,
 	langName: string,
 ): string | null {
-	const sig = extractSignature(node, langName);
-	if (sig === null) return null;
-
-	const bodyTypes = BODY_NODE_TYPES[langName] ?? new Set<string>();
-	const bodyNode = findBodyNode(node, bodyTypes);
-	if (bodyNode === null) return null;
-
-	// Extract body text directly from content using byte positions so we are
-	// not confused by multi-line offsets.
-	const bodyText = extractNodeText(bodyNode, content);
-	const hash = hashImplementation(bodyText);
-
-	return `${sig} [IMPL:${hash}]`;
+	return compressFunctionWithLines(node, content.split("\n"), langName);
 }
 
 /**
@@ -215,7 +224,7 @@ export async function compressFile(
 	const replacements: Replacement[] = [];
 
 	for (const node of fnNodes) {
-		const compressed = compressFunction(node, content, langName);
+		const compressed = compressFunctionWithLines(node, lines, langName);
 		if (compressed === null) continue;
 
 		replacements.push({
@@ -268,14 +277,16 @@ function findBodyNode(node: SyntaxNode, bodyTypes: Set<string>): SyntaxNode | nu
 }
 
 /**
- * Extract the raw text of a SyntaxNode from the full file content using
+ * Extract the raw text of a SyntaxNode from pre-split lines using
  * character-level row/column positions.
  *
  * This is more reliable than `node.text` in some edge cases where the parser
  * computes text lazily or includes surrounding whitespace.
+ *
+ * @param node  - The syntax node to extract text for
+ * @param lines - Pre-split lines of the file content (avoids repeated splits)
  */
-function extractNodeText(node: SyntaxNode, content: string): string {
-	const lines = content.split("\n");
+function extractNodeText(node: SyntaxNode, lines: string[]): string {
 	const startRow = node.startPosition.row;
 	const startCol = node.startPosition.column;
 	const endRow = node.endPosition.row;

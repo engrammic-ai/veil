@@ -31,6 +31,7 @@ import { estimateTokens } from "./utils.ts";
 import type { RankStore } from "./worldview/graph-rank.ts";
 import type { SymbolStore } from "./worldview/symbol-store.ts";
 import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
+import { StructuralFloor } from "./worldview/structural-floor.ts";
 import type { ScoredSuggestion } from "./worldview/unified-anticipate.ts";
 import { UnifiedAnticipator } from "./worldview/unified-anticipate.ts";
 
@@ -45,6 +46,7 @@ export class ContextManager {
 	private circuitBreaker: CircuitBreaker;
 	private symbolStore?: SymbolStore;
 	private rankStore?: RankStore;
+	private floor: StructuralFloor;
 
 	constructor(config: Partial<ContextManagerConfig> = {}, coldStore?: ColdStore, symbolStore?: SymbolStore, rankStore?: RankStore) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
@@ -81,6 +83,9 @@ export class ContextManager {
 
 		this.symbolStore = symbolStore;
 		this.rankStore = rankStore;
+
+		// Initialize structural floor for preload protection
+		this.floor = new StructuralFloor(this.cache.getDb());
 	}
 
 	/**
@@ -383,6 +388,9 @@ export class ContextManager {
 		if (loadedIds.length >= 2) {
 			this.cache.coAccess.recordAccess(loadedIds, this.turnCount);
 		}
+
+		// Prune expired structural floors
+		this.floor.pruneExpired(this.turnCount);
 
 		const interval = this.config.decaySweepIntervalTurns;
 		if (interval > 0 && this.turnCount % interval === 0) {
