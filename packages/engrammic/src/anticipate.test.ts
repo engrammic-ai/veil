@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import {
+	buildBehavioralManifest,
+	buildManifest,
+	DEFAULT_TRIGGERS,
+	formatManifest,
+	matchTriggers,
+} from "./anticipate.ts";
 import type { ContextItem, ContextManifest, Trigger } from "./types.ts";
 
 // Minimal mock cache
@@ -654,5 +660,150 @@ describe("buildManifest cold storage", () => {
 		// Should not throw
 		const result = await buildManifest([trigger], warmCache as any, { percent: 30 }, coldNoQuery as any);
 		expect(result).toBeNull();
+	});
+});
+
+// -----------------------------------------------------------------------
+// buildBehavioralManifest
+// -----------------------------------------------------------------------
+
+describe("buildBehavioralManifest", () => {
+	function makeCacheWithGet(items: ContextItem[] = []) {
+		const itemMap = new Map(items.map((i) => [i.id, i]));
+		return {
+			get: vi.fn((id: string) => itemMap.get(id) ?? null),
+		};
+	}
+
+	function makeCoAccessTracker(coAccessMap: Record<string, Array<{ itemId: string; count: number }>> = {}) {
+		return {
+			getCoAccessedWith: vi.fn((itemId: string, limit: number) => {
+				const entries = coAccessMap[itemId] ?? [];
+				return entries.slice(0, limit);
+			}),
+		};
+	}
+
+	test("returns empty array when no accessed items", () => {
+		const cache = makeCacheWithGet();
+		const tracker = makeCoAccessTracker();
+		const result = buildBehavioralManifest([], tracker as any, cache as any);
+		expect(result).toEqual([]);
+		expect(tracker.getCoAccessedWith).not.toHaveBeenCalled();
+	});
+
+	test("returns empty array when no co-access data exists", () => {
+		const cache = makeCacheWithGet([makeItem({ id: "item-A" })]);
+		const tracker = makeCoAccessTracker({}); // no entries for item-A
+		const result = buildBehavioralManifest(["item-A"], tracker as any, cache as any);
+		expect(result).toEqual([]);
+	});
+
+	test("returns co-accessed items found in warm cache", () => {
+		const itemB = makeItem({ id: "item-B", type: "fact", tags: ["fact"], content: "fact about the system" });
+		const cache = makeCacheWithGet([itemB]);
+		const tracker = makeCoAccessTracker({
+			"item-A": [{ itemId: "item-B", count: 5 }],
+		});
+		const result = buildBehavioralManifest(["item-A"], tracker as any, cache as any);
+		expect(result).toHaveLength(1);
+		expect(result[0].id).toBe("item-B");
+		expect(result[0].type).toBe("fact");
+	});
+
+	test("excludes the accessed items themselves from results", () => {
+		// item-A is accessed, co-access table might list it paired with itself if mis-recorded
+		// More realistically: item-B co-accessed with item-A, but item-A is in accessedSet
+		const itemA = makeItem({ id: "item-A" });
+		const itemB = makeItem({ id: "item-B" });
+		const cache = makeCacheWithGet([itemA, itemB]);
+		const tracker = makeCoAccessTracker({
+			"item-A": [
+				{ itemId: "item-A", count: 10 }, // self — should be excluded
+				{ itemId: "item-B", count: 3 },
+			],
+		});
+		const result = buildBehavioralManifest(["item-A"], tracker as any, cache as any);
+		expect(result.map((i) => i.id)).not.toContain("item-A");
+		expect(result.map((i) => i.id)).toContain("item-B");
+	});
+
+	test("deduplicates candidates across multiple accessed items", () => {
+		const itemC = makeItem({ id: "item-C", content: "shared co-accessed item" });
+		const cache = makeCacheWithGet([itemC]);
+		const tracker = makeCoAccessTracker({
+			"item-A": [{ itemId: "item-C", count: 4 }],
+			"item-B": [{ itemId: "item-C", count: 6 }],
+		});
+		const result = buildBehavioralManifest(["item-A", "item-B"], tracker as any, cache as any);
+		// item-C should appear only once despite appearing in both lookups
+		expect(result.filter((i) => i.id === "item-C")).toHaveLength(1);
+	});
+
+	test("aggregates co-access counts across multiple accessed items for ranking", () => {
+		const itemC = makeItem({ id: "item-C", content: "high aggregate" });
+		const itemD = makeItem({ id: "item-D", content: "low aggregate" });
+		const cache = makeCacheWithGet([itemC, itemD]);
+		// item-C has count 3 from item-A and count 5 from item-B = 8 total
+		// item-D has count 7 from item-A only = 7 total
+		const tracker = makeCoAccessTracker({
+			"item-A": [
+				{ itemId: "item-C", count: 3 },
+				{ itemId: "item-D", count: 7 },
+			],
+			"item-B": [{ itemId: "item-C", count: 5 }],
+		});
+		const result = buildBehavioralManifest(["item-A", "item-B"], tracker as any, cache as any);
+		expect(result[0].id).toBe("item-C"); // higher aggregate count
+		expect(result[1].id).toBe("item-D");
+	});
+
+	test("respects the limit parameter", () => {
+		const items = Array.from({ length: 10 }, (_, k) => makeItem({ id: `item-${k}`, content: `content ${k}` }));
+		const cache = makeCacheWithGet(items);
+		const coMap: Record<string, Array<{ itemId: string; count: number }>> = {
+			"item-X": items.map((i, k) => ({ itemId: i.id, count: 10 - k })),
+		};
+		const tracker = makeCoAccessTracker(coMap);
+
+		const result = buildBehavioralManifest(["item-X"], tracker as any, cache as any, 3);
+		expect(result).toHaveLength(3);
+	});
+
+	test("skips candidates not found in warm cache", () => {
+		// co-access points to item-Z which is not in the warm cache (evicted to cold)
+		const cache = makeCacheWithGet([]); // empty warm cache
+		const tracker = makeCoAccessTracker({
+			"item-A": [{ itemId: "item-Z", count: 10 }],
+		});
+		const result = buildBehavioralManifest(["item-A"], tracker as any, cache as any);
+		expect(result).toEqual([]);
+	});
+
+	test("summary is first 50 chars with newlines replaced", () => {
+		const itemB = makeItem({
+			id: "item-B",
+			content: "line one\nline two\nline three and more content here beyond fifty chars",
+		});
+		const cache = makeCacheWithGet([itemB]);
+		const tracker = makeCoAccessTracker({
+			"item-A": [{ itemId: "item-B", count: 2 }],
+		});
+		const result = buildBehavioralManifest(["item-A"], tracker as any, cache as any);
+		expect(result[0].summary).toBe("line one line two line three and more content here");
+		expect(result[0].summary.length).toBeLessThanOrEqual(50);
+		expect(result[0].summary).not.toContain("\n");
+	});
+
+	test("uses default limit of 5", () => {
+		const items = Array.from({ length: 8 }, (_, k) => makeItem({ id: `item-${k}`, content: `content ${k}` }));
+		const cache = makeCacheWithGet(items);
+		const coMap: Record<string, Array<{ itemId: string; count: number }>> = {
+			"item-X": items.map((i, k) => ({ itemId: i.id, count: 8 - k })),
+		};
+		const tracker = makeCoAccessTracker(coMap);
+
+		const result = buildBehavioralManifest(["item-X"], tracker as any, cache as any);
+		expect(result.length).toBeLessThanOrEqual(5);
 	});
 });

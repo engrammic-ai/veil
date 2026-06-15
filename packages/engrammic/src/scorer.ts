@@ -4,6 +4,7 @@
  */
 
 import type { ContextItem, ContextManagerConfig, TaskContext } from "./types.ts";
+import type { StructuralFloor } from "./worldview/structural-floor.ts";
 
 export interface ScorerWeights {
 	recency: number;
@@ -24,12 +25,20 @@ export const DEFAULT_WEIGHTS: ScorerWeights = {
 /**
  * Compute relevance score for a context item.
  * Higher score = more valuable = keep longer.
+ *
+ * @param floor   Optional structural floor tracker. When provided and the item
+ *                has an active preload floor, the returned score is
+ *                max(computed, floorScore), preventing premature eviction of
+ *                freshly-preloaded items.
+ * @param currentTurn Current turn number, required when floor is provided.
  */
 export function computeRelevance(
 	item: ContextItem,
 	taskCtx: TaskContext,
 	_config: ContextManagerConfig,
 	weights: ScorerWeights = DEFAULT_WEIGHTS,
+	floor?: StructuralFloor,
+	currentTurn?: number,
 ): number {
 	const now = Date.now();
 
@@ -81,7 +90,17 @@ export function computeRelevance(
 	const sourceMod = item.source === "explicit" ? 1.5 : 1.0;
 
 	// Apply type modifier, source modifier, and clamp
-	return Math.min(1.0, Math.max(0.0, withDecay * typeMod * sourceMod));
+	const computed = Math.min(1.0, Math.max(0.0, withDecay * typeMod * sourceMod));
+
+	// Structural floor: if the item was preloaded, honour the minimum score
+	if (floor !== undefined && currentTurn !== undefined) {
+		const floorScore = floor.getFloorScore(item.id, currentTurn);
+		if (floorScore > 0) {
+			return Math.max(computed, floorScore);
+		}
+	}
+
+	return computed;
 }
 
 /**
@@ -91,11 +110,13 @@ export function rankItems(
 	items: ContextItem[],
 	taskCtx: TaskContext,
 	config: ContextManagerConfig,
+	floor?: StructuralFloor,
+	currentTurn?: number,
 ): Array<{ item: ContextItem; score: number }> {
 	return items
 		.map((item) => ({
 			item,
-			score: computeRelevance(item, taskCtx, config),
+			score: computeRelevance(item, taskCtx, config, DEFAULT_WEIGHTS, floor, currentTurn),
 		}))
 		.sort((a, b) => b.score - a.score);
 }
@@ -107,8 +128,10 @@ export function findEvictionCandidates(
 	items: ContextItem[],
 	taskCtx: TaskContext,
 	config: ContextManagerConfig,
+	floor?: StructuralFloor,
+	currentTurn?: number,
 ): Array<{ item: ContextItem; score: number }> {
-	return rankItems(items, taskCtx, config)
+	return rankItems(items, taskCtx, config, floor, currentTurn)
 		.filter(({ score }) => score < config.evictionThreshold)
 		.reverse(); // lowest scores first for eviction
 }

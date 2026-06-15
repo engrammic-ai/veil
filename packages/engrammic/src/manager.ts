@@ -10,6 +10,7 @@
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { buildBehavioralManifest } from "./anticipate.ts";
 import { ContextCache, createItem } from "./cache.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
@@ -22,10 +23,17 @@ import type {
 	ContextManagerConfig,
 	ContextWindow,
 	EvictionCandidate,
+	ManifestItem,
 	TaskContext,
 } from "./types.ts";
 import { DEFAULT_CONFIG } from "./types.ts";
 import { estimateTokens } from "./utils.ts";
+import type { RankStore } from "./worldview/graph-rank.ts";
+import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
+import { StructuralFloor } from "./worldview/structural-floor.ts";
+import type { SymbolStore } from "./worldview/symbol-store.ts";
+import type { ScoredSuggestion } from "./worldview/unified-anticipate.ts";
+import { UnifiedAnticipator } from "./worldview/unified-anticipate.ts";
 
 export class ContextManager {
 	private cache: ContextCache;
@@ -36,8 +44,16 @@ export class ContextManager {
 	private turnCount: number = 0;
 	private eviction: EvictionController;
 	private circuitBreaker: CircuitBreaker;
+	private symbolStore?: SymbolStore;
+	private rankStore?: RankStore;
+	private floor: StructuralFloor;
 
-	constructor(config: Partial<ContextManagerConfig> = {}, coldStore?: ColdStore) {
+	constructor(
+		config: Partial<ContextManagerConfig> = {},
+		coldStore?: ColdStore,
+		symbolStore?: SymbolStore,
+		rankStore?: RankStore,
+	) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
 
 		// Ensure db directory exists
@@ -69,6 +85,12 @@ export class ContextManager {
 		for (const item of stuck) {
 			this.cache.unmarkEvicting(item.id);
 		}
+
+		this.symbolStore = symbolStore;
+		this.rankStore = rankStore;
+
+		// Initialize structural floor for preload protection
+		this.floor = new StructuralFloor(this.cache.getDb());
 	}
 
 	/**
@@ -122,6 +144,67 @@ export class ContextManager {
 		}
 
 		return items;
+	}
+
+	/**
+	 * Return behavioral anticipation suggestions for the given accessed items.
+	 *
+	 * Looks up co-access patterns for each accessed item and returns the top
+	 * candidates (warm cache only) that are frequently loaded alongside them.
+	 * Call this after load() to get preload candidates for the next turn.
+	 *
+	 * @param accessedItemIds - IDs of items that were just accessed
+	 * @param limit - max suggestions to return (default 5)
+	 */
+	getBehavioralSuggestions(accessedItemIds: string[], limit: number = 5): ManifestItem[] {
+		return buildBehavioralManifest(accessedItemIds, this.cache.coAccess, this.cache, limit);
+	}
+
+	/**
+	 * Return structural preload suggestions for the given accessed file.
+	 *
+	 * Queries the symbol_graph for files structurally connected to `accessedFile`
+	 * (imports/references in either direction) and ranks them by effective rank
+	 * (pagerank * task_bias boost). Returns up to `limit` file paths.
+	 *
+	 * Returns an empty array when no SymbolStore or RankStore is configured,
+	 * or when no connected files are found.
+	 *
+	 * @param accessedFile - the file that was just accessed
+	 * @param limit - max suggestions to return (default 5)
+	 */
+	getStructuralPreloadSuggestions(accessedFile: string, limit: number = 5): string[] {
+		if (!this.symbolStore || !this.rankStore) return [];
+		return getStructuralSuggestions(accessedFile, this.symbolStore, this.rankStore, limit);
+	}
+
+	/**
+	 * Return unified anticipatory suggestions blending structural and behavioral signals.
+	 *
+	 * When structural stores (SymbolStore + RankStore) are available, combines
+	 * PageRank-based file graph signals with co-access behavioral patterns.
+	 * Falls back to behavioral-only if structural stores are not configured.
+	 *
+	 * @param accessedItems - IDs/paths of items that were just accessed
+	 * @param options       - optional weight overrides and result cap
+	 */
+	getPreloadSuggestions(
+		accessedItems: string[],
+		options?: { structuralWeight?: number; behavioralWeight?: number; limit?: number },
+	): ScoredSuggestion[] {
+		if (this.symbolStore && this.rankStore) {
+			const anticipator = new UnifiedAnticipator(this.symbolStore, this.rankStore, this.cache.coAccess);
+			return anticipator.getSuggestions(accessedItems, options);
+		}
+
+		// Behavioral-only fallback: wrap buildBehavioralManifest results into ScoredSuggestion shape
+		const limit = options?.limit ?? 10;
+		const behavioral = buildBehavioralManifest(accessedItems, this.cache.coAccess, this.cache, limit);
+		return behavioral.map((item) => ({
+			itemId: item.id,
+			score: 0, // raw count not preserved through ManifestItem; relative ordering is preserved
+			sources: ["behavioral" as const],
+		}));
 	}
 
 	/**
@@ -296,9 +379,20 @@ export class ContextManager {
 
 	/**
 	 * Increment turn counter and check for checkpoint.
+	 * Also records co-access for all currently-loaded items.
 	 */
 	tick(): boolean {
 		this.turnCount++;
+
+		// Record co-access for all items currently in the active window
+		const loadedIds = Array.from(this.loaded.keys());
+		if (loadedIds.length >= 2) {
+			this.cache.coAccess.recordAccess(loadedIds, this.turnCount);
+		}
+
+		// Prune expired structural floors
+		this.floor.pruneExpired(this.turnCount);
+
 		const interval = this.config.decaySweepIntervalTurns;
 		if (interval > 0 && this.turnCount % interval === 0) {
 			this.runDecaySweep();

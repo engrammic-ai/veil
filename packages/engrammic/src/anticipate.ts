@@ -4,6 +4,7 @@ import type { ContextCache } from "./cache.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import type { ContextItem, ContextManifest, ManifestItem, Trigger } from "./types.ts";
 import { formatRelativeTime } from "./utils.ts";
+import type { CoAccessTracker } from "./worldview/co-access.ts";
 
 // Default triggers for common patterns
 export const DEFAULT_TRIGGERS: Trigger[] = [
@@ -138,6 +139,60 @@ export async function buildManifest(
 		budgetPercent: budget.percent,
 		items,
 	};
+}
+
+/**
+ * Build a behavioral manifest from co-access patterns.
+ *
+ * For each accessed item, look up which other items are frequently co-accessed
+ * with it, then surface those as candidates for anticipatory preloading.
+ * Results are deduplicated, ranked by co-access count, and capped at `limit`.
+ *
+ * Unlike trigger-based anticipation (which fires on user messages), this runs
+ * when items are actually accessed — connecting behavioral history to preloading.
+ */
+export function buildBehavioralManifest(
+	accessedItemIds: string[],
+	coAccessTracker: CoAccessTracker,
+	cache: ContextCache,
+	limit: number = 5,
+): ManifestItem[] {
+	if (accessedItemIds.length === 0) return [];
+
+	// Collect co-accessed candidates with their counts, excluding the accessed items themselves
+	const accessedSet = new Set(accessedItemIds);
+	const countMap = new Map<string, number>();
+
+	for (const itemId of accessedItemIds) {
+		const coAccessed = coAccessTracker.getCoAccessedWith(itemId, limit * 2);
+		for (const entry of coAccessed) {
+			if (accessedSet.has(entry.itemId)) continue; // don't re-surface already-accessed items
+			countMap.set(entry.itemId, (countMap.get(entry.itemId) ?? 0) + entry.count);
+		}
+	}
+
+	if (countMap.size === 0) return [];
+
+	// Sort by aggregated co-access count descending
+	const ranked = Array.from(countMap.entries())
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, limit);
+
+	// Resolve each candidate against the warm cache
+	const items: ManifestItem[] = [];
+	for (const [candidateId] of ranked) {
+		const item = cache.get(candidateId);
+		if (!item) continue; // not in warm cache, skip
+		items.push({
+			id: item.id,
+			type: item.type,
+			tags: item.tags,
+			summary: item.content.slice(0, 50).replace(/\n/g, " "),
+			age: formatRelativeTime(item.lastAccess),
+		});
+	}
+
+	return items;
 }
 
 export function formatManifest(manifest: ContextManifest): string {
