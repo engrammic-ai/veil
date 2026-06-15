@@ -6,12 +6,12 @@
  * web-tree-sitter is mocked so symbol extraction works without WASM.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileTracker } from "./file-tracker.ts";
 import { checkAndUpdateFile } from "./incremental-update.ts";
-import { SymbolStore } from "./symbol-store.ts";
 import { TreeSitterParser } from "./parser.ts";
+import { SymbolStore } from "./symbol-store.ts";
 
 // ---------------------------------------------------------------------------
 // Mock web-tree-sitter (same pattern as symbols.test.ts)

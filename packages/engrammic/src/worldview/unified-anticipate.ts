@@ -15,8 +15,8 @@
 
 import type { CoAccessTracker } from "./co-access.ts";
 import type { RankStore } from "./graph-rank.ts";
-import type { SymbolStore } from "./symbol-store.ts";
 import { getStructuralSuggestions } from "./structural-anticipate.ts";
+import type { SymbolStore } from "./symbol-store.ts";
 
 // ---------------------------------------------------------------------------
 // Public types

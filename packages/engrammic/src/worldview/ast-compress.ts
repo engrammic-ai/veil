@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { SyntaxNode, Tree } from "./parser.ts";
-import { TreeSitterParser, getLanguageForFile } from "./parser.ts";
+import { getLanguageForFile, type TreeSitterParser } from "./parser.ts";
 
 // ---------------------------------------------------------------------------
 // Language-specific node types for functions/methods
@@ -52,14 +52,8 @@ const FUNCTION_NODE_TYPES: Record<string, Set<string>> = {
 		"method_definition",
 		"arrow_function",
 	]),
-	python: new Set([
-		"function_definition",
-		"async_function_definition",
-	]),
-	go: new Set([
-		"function_declaration",
-		"method_declaration",
-	]),
+	python: new Set(["function_definition", "async_function_definition"]),
+	go: new Set(["function_declaration", "method_declaration"]),
 };
 
 /**
@@ -140,11 +134,7 @@ export function extractSignature(node: SyntaxNode, langName: string): string | n
 /**
  * Internal: compress with pre-split lines to avoid repeated splits.
  */
-function compressFunctionWithLines(
-	node: SyntaxNode,
-	lines: string[],
-	langName: string,
-): string | null {
+function compressFunctionWithLines(node: SyntaxNode, lines: string[], langName: string): string | null {
 	const sig = extractSignature(node, langName);
 	if (sig === null) return null;
 
@@ -169,11 +159,7 @@ function compressFunctionWithLines(
  * @param content  - The full source text of the file (used to extract body).
  * @param langName - Tree-sitter language name.
  */
-export function compressFunction(
-	node: SyntaxNode,
-	content: string,
-	langName: string,
-): string | null {
+export function compressFunction(node: SyntaxNode, content: string, langName: string): string | null {
 	return compressFunctionWithLines(node, content.split("\n"), langName);
 }
 
@@ -193,11 +179,7 @@ export function compressFunction(
  * @param content  - Source text of the file.
  * @param parser   - An already-initialized TreeSitterParser.
  */
-export async function compressFile(
-	filePath: string,
-	content: string,
-	parser: TreeSitterParser,
-): Promise<string> {
+export async function compressFile(filePath: string, content: string, parser: TreeSitterParser): Promise<string> {
 	const langName = getLanguageForFile(filePath);
 	if (langName === null) return content;
 

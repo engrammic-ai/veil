@@ -5,12 +5,12 @@
  * controlled AST shapes that exercise the walker logic.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
-import { SymbolExtractor, extractFromTree } from "./symbols.ts";
-import type { ExtractedSymbol } from "./symbols.ts";
-import { SymbolStore } from "./symbol-store.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyntaxNode, Tree } from "./parser.ts";
+import { SymbolStore } from "./symbol-store.ts";
+import type { ExtractedSymbol } from "./symbols.ts";
+import { extractFromTree, SymbolExtractor } from "./symbols.ts";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -29,12 +29,15 @@ vi.mock("web-tree-sitter", () => {
 				load: vi.fn().mockResolvedValue(mockLanguage),
 			},
 			// Constructor mock: return mockParser instance
-			...Object.assign(function MockParser() {
-				return mockParser;
-			}, {
-				init: vi.fn().mockResolvedValue(undefined),
-				Language: { load: vi.fn().mockResolvedValue(mockLanguage) },
-			}),
+			...Object.assign(
+				function MockParser() {
+					return mockParser;
+				},
+				{
+					init: vi.fn().mockResolvedValue(undefined),
+					Language: { load: vi.fn().mockResolvedValue(mockLanguage) },
+				},
+			),
 		},
 		__mockParser: mockParser,
 		__mockLanguage: mockLanguage,
@@ -45,12 +48,7 @@ vi.mock("web-tree-sitter", () => {
 // AST builder helpers
 // ---------------------------------------------------------------------------
 
-function makeNode(
-	type: string,
-	text: string,
-	row: number,
-	namedChildren: SyntaxNode[] = [],
-): SyntaxNode {
+function makeNode(type: string, text: string, row: number, namedChildren: SyntaxNode[] = []): SyntaxNode {
 	return {
 		type,
 		text,
@@ -99,11 +97,7 @@ describe("extractFromTree — TypeScript", () => {
 
 	it("extracts a class_declaration def", () => {
 		const nameNode = makeNode("identifier", "MyClass", 5);
-		const classNode = withField(
-			makeNode("class_declaration", "class MyClass {}", 5, [nameNode]),
-			"name",
-			nameNode,
-		);
+		const classNode = withField(makeNode("class_declaration", "class MyClass {}", 5, [nameNode]), "name", nameNode);
 		const root = makeNode("program", "", 0, [classNode]);
 		const tree = makeTree(root, "typescript");
 
@@ -113,11 +107,7 @@ describe("extractFromTree — TypeScript", () => {
 
 	it("extracts an interface_declaration def", () => {
 		const nameNode = makeNode("type_identifier", "IFoo", 10);
-		const iface = withField(
-			makeNode("interface_declaration", "interface IFoo {}", 10, [nameNode]),
-			"name",
-			nameNode,
-		);
+		const iface = withField(makeNode("interface_declaration", "interface IFoo {}", 10, [nameNode]), "name", nameNode);
 		const root = makeNode("program", "", 0, [iface]);
 		const tree = makeTree(root, "typescript");
 
@@ -147,11 +137,7 @@ describe("extractFromTree — TypeScript", () => {
 
 	it("does not emit ref on the same line as def", () => {
 		const nameNode = makeNode("identifier", "fn", 2);
-		const funcNode = withField(
-			makeNode("function_declaration", "function fn() {}", 2, [nameNode]),
-			"name",
-			nameNode,
-		);
+		const funcNode = withField(makeNode("function_declaration", "function fn() {}", 2, [nameNode]), "name", nameNode);
 		// Ref on same line
 		const refNode = makeNode("identifier", "fn", 2);
 

@@ -10,12 +10,12 @@
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { buildBehavioralManifest } from "./anticipate.ts";
 import { ContextCache, createItem } from "./cache.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { SqliteColdStore } from "./cold/sqlite.ts";
 import { EvictionController } from "./eviction.ts";
-import { buildBehavioralManifest } from "./anticipate.ts";
 import { findEvictionCandidates, rankItems } from "./scorer.ts";
 import type {
 	ContextBudget,
@@ -29,9 +29,9 @@ import type {
 import { DEFAULT_CONFIG } from "./types.ts";
 import { estimateTokens } from "./utils.ts";
 import type { RankStore } from "./worldview/graph-rank.ts";
-import type { SymbolStore } from "./worldview/symbol-store.ts";
 import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
 import { StructuralFloor } from "./worldview/structural-floor.ts";
+import type { SymbolStore } from "./worldview/symbol-store.ts";
 import type { ScoredSuggestion } from "./worldview/unified-anticipate.ts";
 import { UnifiedAnticipator } from "./worldview/unified-anticipate.ts";
 
@@ -48,7 +48,12 @@ export class ContextManager {
 	private rankStore?: RankStore;
 	private floor: StructuralFloor;
 
-	constructor(config: Partial<ContextManagerConfig> = {}, coldStore?: ColdStore, symbolStore?: SymbolStore, rankStore?: RankStore) {
+	constructor(
+		config: Partial<ContextManagerConfig> = {},
+		coldStore?: ColdStore,
+		symbolStore?: SymbolStore,
+		rankStore?: RankStore,
+	) {
 		this.config = { ...DEFAULT_CONFIG, ...config };
 
 		// Ensure db directory exists
@@ -188,11 +193,7 @@ export class ContextManager {
 		options?: { structuralWeight?: number; behavioralWeight?: number; limit?: number },
 	): ScoredSuggestion[] {
 		if (this.symbolStore && this.rankStore) {
-			const anticipator = new UnifiedAnticipator(
-				this.symbolStore,
-				this.rankStore,
-				this.cache.coAccess,
-			);
+			const anticipator = new UnifiedAnticipator(this.symbolStore, this.rankStore, this.cache.coAccess);
 			return anticipator.getSuggestions(accessedItems, options);
 		}
 

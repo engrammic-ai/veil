@@ -6,9 +6,9 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { STRUCTURAL_RANK_SCHEMA, RankStore } from "./graph-rank.ts";
-import { SYMBOL_GRAPH_SCHEMA, SymbolStore } from "./symbol-store.ts";
+import { RankStore, STRUCTURAL_RANK_SCHEMA } from "./graph-rank.ts";
 import { getStructuralSuggestions } from "./structural-anticipate.ts";
+import { SYMBOL_GRAPH_SCHEMA, SymbolStore } from "./symbol-store.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,13 +24,7 @@ function makeDb(dir: string): Database.Database {
 }
 
 /** Insert a 'ref' row: file references target_file via symbol. */
-function insertRef(
-	db: Database.Database,
-	file: string,
-	symbol: string,
-	targetFile: string,
-	line = 1,
-): void {
+function insertRef(db: Database.Database, file: string, symbol: string, targetFile: string, line = 1): void {
 	db.prepare(
 		`INSERT OR REPLACE INTO symbol_graph (file, symbol, kind, target_file, target_symbol, line)
      VALUES (?, ?, 'ref', ?, NULL, ?)`,
@@ -104,7 +98,12 @@ describe("getStructuralSuggestions", () => {
 	test("never includes the accessed file itself", () => {
 		insertRef(db, "src/a.ts", "fn", "src/b.ts");
 		insertDef(db, "src/a.ts", "localFn");
-		rankStore.saveRanks(new Map([["src/a.ts", 0.8], ["src/b.ts", 0.5]]));
+		rankStore.saveRanks(
+			new Map([
+				["src/a.ts", 0.8],
+				["src/b.ts", 0.5],
+			]),
+		);
 
 		const suggestions = getStructuralSuggestions("src/a.ts", symbolStore, rankStore);
 		expect(suggestions).not.toContain("src/a.ts");
@@ -116,11 +115,13 @@ describe("getStructuralSuggestions", () => {
 		insertRef(db, "src/a.ts", "C", "src/c.ts");
 		insertRef(db, "src/a.ts", "D", "src/d.ts");
 
-		rankStore.saveRanks(new Map([
-			["src/b.ts", 0.2],
-			["src/c.ts", 0.7],
-			["src/d.ts", 0.4],
-		]));
+		rankStore.saveRanks(
+			new Map([
+				["src/b.ts", 0.2],
+				["src/c.ts", 0.7],
+				["src/d.ts", 0.4],
+			]),
+		);
 
 		const suggestions = getStructuralSuggestions("src/a.ts", symbolStore, rankStore);
 		expect(suggestions[0]).toBe("src/c.ts");
@@ -159,10 +160,12 @@ describe("getStructuralSuggestions", () => {
 		insertDef(db, "src/hub.ts", "hubFn");
 		insertRef(db, "src/client.ts", "hubFn", "src/hub.ts");
 
-		rankStore.saveRanks(new Map([
-			["src/lib.ts", 0.4],
-			["src/client.ts", 0.3],
-		]));
+		rankStore.saveRanks(
+			new Map([
+				["src/lib.ts", 0.4],
+				["src/client.ts", 0.3],
+			]),
+		);
 
 		const suggestions = getStructuralSuggestions("src/hub.ts", symbolStore, rankStore);
 		expect(suggestions).toContain("src/lib.ts");
@@ -193,10 +196,12 @@ describe("getStructuralSuggestions", () => {
 		insertRef(db, "src/a.ts", "C", "src/c.ts");
 
 		// c has higher raw pagerank, but b gets a large task bias
-		rankStore.saveRanks(new Map([
-			["src/b.ts", 0.2],
-			["src/c.ts", 0.5],
-		]));
+		rankStore.saveRanks(
+			new Map([
+				["src/b.ts", 0.2],
+				["src/c.ts", 0.5],
+			]),
+		);
 		rankStore.updateBias("src/b.ts", 1.0); // effective = 0.2 * (1 + 1.0) = 0.4
 
 		// b effective = 0.4, c effective = 0.5 * 1 = 0.5 → c still wins

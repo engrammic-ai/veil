@@ -132,7 +132,11 @@ function walkDefs(
 		} else if (nodeType === "decorated_definition" && language === "python") {
 			// Python decorated_definition: drill into the actual definition child
 			for (const child of node.namedChildren) {
-				if (child.type === "function_definition" || child.type === "class_definition" || child.type === "async_function_definition") {
+				if (
+					child.type === "function_definition" ||
+					child.type === "class_definition" ||
+					child.type === "async_function_definition"
+				) {
 					const nameNode = getFieldChild(child, "name");
 					if (nameNode && nameNode.text.trim()) {
 						results.push({ symbol: nameNode.text.trim(), line: child.startPosition.row + 1 });
@@ -155,11 +159,7 @@ function walkDefs(
 	}
 
 	// Variable/const/let assignment: `const Foo = function(){}` or `const bar = () => {}`
-	if (
-		nodeType === "lexical_declaration" ||
-		nodeType === "variable_declaration" ||
-		nodeType === "export_statement"
-	) {
+	if (nodeType === "lexical_declaration" || nodeType === "variable_declaration" || nodeType === "export_statement") {
 		extractAssignmentDefs(node, results, language);
 	}
 
@@ -201,11 +201,7 @@ function extractAssignmentDefs(
  * We restrict to identifiers that appear as call expressions or member access
  * to keep the reference set manageable.
  */
-function walkRefs(
-	node: SyntaxNode,
-	knownDefs: Set<string>,
-	results: Array<{ symbol: string; line: number }>,
-): void {
+function walkRefs(node: SyntaxNode, knownDefs: Set<string>, results: Array<{ symbol: string; line: number }>): void {
 	const nodeType = node.type;
 	const line = node.startPosition.row + 1;
 

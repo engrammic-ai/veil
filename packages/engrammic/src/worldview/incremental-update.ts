@@ -7,10 +7,10 @@
  *   if (result.skipped) { /* file unchanged, symbols already current *\/ }
  */
 
-import { TreeSitterParser } from "./parser.ts";
-import { SymbolExtractor } from "./symbols.ts";
-import type { SymbolStore } from "./symbol-store.ts";
 import type { FileTracker } from "./file-tracker.ts";
+import type { TreeSitterParser } from "./parser.ts";
+import type { SymbolStore } from "./symbol-store.ts";
+import { SymbolExtractor } from "./symbols.ts";
 
 // ---------------------------------------------------------------------------
 // Public types

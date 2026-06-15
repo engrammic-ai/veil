@@ -79,11 +79,9 @@ export function buildFileGraph(db: Database.Database): Graph {
 
 	// Also ensure every file that appears as a definition source is present
 	// as a node (even if nothing references it yet)
-	const defFiles = db
-		.prepare(
-			`SELECT DISTINCT file FROM symbol_graph WHERE kind = 'def'`,
-		)
-		.all() as Array<{ file: string }>;
+	const defFiles = db.prepare(`SELECT DISTINCT file FROM symbol_graph WHERE kind = 'def'`).all() as Array<{
+		file: string;
+	}>;
 
 	for (const { file } of defFiles) {
 		if (!graph.hasNode(file)) {
@@ -166,7 +164,7 @@ export function computeTaskBias(graph: Graph, hotFiles: string[], maxHops = 3): 
 			}
 
 			// Decay: 1.0 at hop 0, 0.5 at hop 1, 0.25 at hop 2, …
-			const contribution = 1.0 / (2 ** hop);
+			const contribution = 1.0 / 2 ** hop;
 
 			// Keep the maximum contribution seen so far for this node
 			const existing = bias.get(node) ?? 0;
@@ -245,9 +243,7 @@ export class RankStore {
 			"SELECT file, pagerank, task_bias, updated_at FROM structural_rank ORDER BY pagerank DESC",
 		);
 
-		this.stmtUpdateBias = this.db.prepare(
-			"UPDATE structural_rank SET task_bias = ?, updated_at = ? WHERE file = ?",
-		);
+		this.stmtUpdateBias = this.db.prepare("UPDATE structural_rank SET task_bias = ?, updated_at = ? WHERE file = ?");
 	}
 
 	/**

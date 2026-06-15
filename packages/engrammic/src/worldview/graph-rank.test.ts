@@ -6,8 +6,16 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+	buildFileGraph,
+	computePageRank,
+	computeTaskBias,
+	RankStore,
+	STRUCTURAL_RANK_SCHEMA,
+	updateRanks,
+	updateTaskBias,
+} from "./graph-rank.ts";
 import { SYMBOL_GRAPH_SCHEMA } from "./symbol-store.ts";
-import { STRUCTURAL_RANK_SCHEMA, RankStore, buildFileGraph, computePageRank, computeTaskBias, updateRanks, updateTaskBias } from "./graph-rank.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,13 +33,7 @@ function makeDb(dir: string): Database.Database {
 }
 
 /** Insert a reference row (file -> target_file via symbol). */
-function insertRef(
-	db: Database.Database,
-	file: string,
-	symbol: string,
-	targetFile: string,
-	line = 1,
-): void {
+function insertRef(db: Database.Database, file: string, symbol: string, targetFile: string, line = 1): void {
 	db.prepare(
 		`INSERT OR REPLACE INTO symbol_graph (file, symbol, kind, target_file, target_symbol, line)
      VALUES (?, ?, 'ref', ?, NULL, ?)`,
@@ -335,14 +337,16 @@ describe("updateRanks", () => {
 		insertRef(db, "src/a.ts", "fn", "src/b.ts");
 
 		updateRanks(db);
-		const rowsFirst = db
-			.prepare("SELECT file, pagerank FROM structural_rank ORDER BY file")
-			.all() as Array<{ file: string; pagerank: number }>;
+		const rowsFirst = db.prepare("SELECT file, pagerank FROM structural_rank ORDER BY file").all() as Array<{
+			file: string;
+			pagerank: number;
+		}>;
 
 		updateRanks(db);
-		const rowsSecond = db
-			.prepare("SELECT file, pagerank FROM structural_rank ORDER BY file")
-			.all() as Array<{ file: string; pagerank: number }>;
+		const rowsSecond = db.prepare("SELECT file, pagerank FROM structural_rank ORDER BY file").all() as Array<{
+			file: string;
+			pagerank: number;
+		}>;
 
 		expect(rowsFirst).toHaveLength(rowsSecond.length);
 		for (let i = 0; i < rowsFirst.length; i++) {
@@ -486,16 +490,24 @@ describe("updateTaskBias", () => {
 		insertRef(db, "src/a.ts", "fn", "src/b.ts");
 		// Pre-populate pagerank rows so the upsert has something to update
 		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0, ?)").run(
-			"src/a.ts", 0.5, Date.now()
+			"src/a.ts",
+			0.5,
+			Date.now(),
 		);
 		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0, ?)").run(
-			"src/b.ts", 0.5, Date.now()
+			"src/b.ts",
+			0.5,
+			Date.now(),
 		);
 
 		updateTaskBias(db, ["src/a.ts"]);
 
-		const rowA = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as { task_bias: number };
-		const rowB = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/b.ts'").get() as { task_bias: number };
+		const rowA = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as {
+			task_bias: number;
+		};
+		const rowB = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/b.ts'").get() as {
+			task_bias: number;
+		};
 
 		expect(rowA.task_bias).toBeCloseTo(1.0, 10);
 		expect(rowB.task_bias).toBeCloseTo(0.5, 10);
@@ -506,24 +518,32 @@ describe("updateTaskBias", () => {
 		insertDef(db, "src/unrelated.ts", "fnU");
 
 		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0.9, ?)").run(
-			"src/unrelated.ts", 0.1, Date.now()
+			"src/unrelated.ts",
+			0.1,
+			Date.now(),
 		);
 
 		updateTaskBias(db, ["src/a.ts"]);
 
-		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/unrelated.ts'").get() as { task_bias: number };
+		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/unrelated.ts'").get() as {
+			task_bias: number;
+		};
 		expect(row.task_bias).toBe(0);
 	});
 
 	test("with no hot files resets all task_bias to 0", () => {
 		insertRef(db, "src/a.ts", "fn", "src/b.ts");
 		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0.8, ?)").run(
-			"src/a.ts", 0.5, Date.now()
+			"src/a.ts",
+			0.5,
+			Date.now(),
 		);
 
 		updateTaskBias(db, []);
 
-		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as { task_bias: number };
+		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as {
+			task_bias: number;
+		};
 		expect(row.task_bias).toBe(0);
 	});
 });
@@ -596,10 +616,12 @@ describe("RankStore — updateBias and getEffectiveRank", () => {
 	});
 
 	test("files with higher effective rank are boosted relative to unbiased files", () => {
-		store.saveRanks(new Map([
-			["src/low-rank.ts", 0.1],
-			["src/high-rank.ts", 0.3],
-		]));
+		store.saveRanks(
+			new Map([
+				["src/low-rank.ts", 0.1],
+				["src/high-rank.ts", 0.3],
+			]),
+		);
 		// Boost the low-rank file with high task bias
 		store.updateBias("src/low-rank.ts", 1.0);
 

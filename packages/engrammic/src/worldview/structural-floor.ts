@@ -102,7 +102,7 @@ export class StructuralFloor {
 		const age = currentTurn - row.created_turn;
 		if (age >= this.maxTurns) return 0;
 
-		return row.initial_score * Math.pow(DECAY_RATE, age);
+		return row.initial_score * DECAY_RATE ** age;
 	}
 
 	/**

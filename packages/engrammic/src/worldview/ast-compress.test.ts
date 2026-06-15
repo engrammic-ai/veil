@@ -5,15 +5,10 @@
  * shapes exercise the signature extraction and hashing logic directly.
  */
 
-import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { compressFile, compressFunction, extractSignature, hashImplementation } from "./ast-compress.ts";
 import type { SyntaxNode } from "./parser.ts";
-import {
-	hashImplementation,
-	extractSignature,
-	compressFunction,
-	compressFile,
-} from "./ast-compress.ts";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -69,10 +64,7 @@ function makeNode(
 /**
  * Attach childForFieldName to a node so getFieldChild-style lookups work.
  */
-function withFieldMap(
-	node: SyntaxNode,
-	fields: Record<string, SyntaxNode | null>,
-): SyntaxNode {
+function withFieldMap(node: SyntaxNode, fields: Record<string, SyntaxNode | null>): SyntaxNode {
 	(node as any).childForFieldName = (name: string) => fields[name] ?? null;
 	return node;
 }
@@ -101,17 +93,12 @@ describe("hashImplementation", () => {
 	});
 
 	it("differs for different implementations", () => {
-		expect(hashImplementation("{ return 1; }")).not.toBe(
-			hashImplementation("{ return 2; }"),
-		);
+		expect(hashImplementation("{ return 1; }")).not.toBe(hashImplementation("{ return 2; }"));
 	});
 
 	it("matches first 8 chars of sha256", () => {
 		const text = "{ foo(); }";
-		const expected = createHash("sha256")
-			.update(text, "utf8")
-			.digest("hex")
-			.slice(0, 8);
+		const expected = createHash("sha256").update(text, "utf8").digest("hex").slice(0, 8);
 		expect(hashImplementation(text)).toBe(expected);
 	});
 
@@ -134,15 +121,9 @@ describe("extractSignature — TypeScript", () => {
 
 	it("returns null for unsupported language", () => {
 		const body = makeNode("statement_block", "{ return 1; }", 0, 20, 0, 33);
-		const fn = withFieldMap(
-			makeNode(
-				"function_declaration",
-				"function foo() { return 1; }",
-				0, 0, 0, 28,
-				[body],
-			),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", "function foo() { return 1; }", 0, 0, 0, 28, [body]), {
+			body,
+		});
 		expect(extractSignature(fn, "cobol")).toBeNull();
 	});
 
@@ -152,12 +133,7 @@ describe("extractSignature — TypeScript", () => {
 		// 0123456789012345678901234567890123456789012345
 		const body = makeNode("statement_block", "{ return x; }", 0, 32, 0, 45);
 		const fn = withFieldMap(
-			makeNode(
-				"function_declaration",
-				"function foo(x: number): number { return x; }",
-				0, 0, 0, 45,
-				[body],
-			),
+			makeNode("function_declaration", "function foo(x: number): number { return x; }", 0, 0, 0, 45, [body]),
 			{ body },
 		);
 		const sig = extractSignature(fn, "typescript");
@@ -168,10 +144,7 @@ describe("extractSignature — TypeScript", () => {
 		const src = `function bar(\n  a: string,\n  b: number\n): void {\n  console.log(a, b);\n}`;
 		// The body "{" starts at row 3, col 8
 		const body = makeNode("statement_block", "{\n  console.log(a, b);\n}", 3, 8, 5, 1);
-		const fn = withFieldMap(
-			makeNode("function_declaration", src, 0, 0, 5, 1, [body]),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", src, 0, 0, 5, 1, [body]), { body });
 		const sig = extractSignature(fn, "typescript");
 		// Should be everything before the opening brace on row 3
 		expect(sig).toBe("function bar(\n  a: string,\n  b: number\n): void");
@@ -180,12 +153,7 @@ describe("extractSignature — TypeScript", () => {
 	it("extracts signature from method_definition", () => {
 		const body = makeNode("statement_block", "{ return this.x; }", 0, 20, 0, 38);
 		const method = withFieldMap(
-			makeNode(
-				"method_definition",
-				"getX(): number { return this.x; }",
-				0, 0, 0, 32,
-				[body],
-			),
+			makeNode("method_definition", "getX(): number { return this.x; }", 0, 0, 0, 32, [body]),
 			{ body },
 		);
 		const sig = extractSignature(method, "typescript");
@@ -195,12 +163,7 @@ describe("extractSignature — TypeScript", () => {
 	it("falls back to named-child scan when childForFieldName absent", () => {
 		// No childForFieldName — relies on type-based scan
 		const body = makeNode("statement_block", "{ return 1; }", 0, 15, 0, 28);
-		const fn = makeNode(
-			"function_declaration",
-			"function fn() { return 1; }",
-			0, 0, 0, 27,
-			[body],
-		);
+		const fn = makeNode("function_declaration", "function fn() { return 1; }", 0, 0, 0, 27, [body]);
 		const sig = extractSignature(fn, "typescript");
 		expect(sig).toBe("function fn()");
 	});
@@ -222,12 +185,9 @@ describe("extractSignature — Python", () => {
 		// def greet(name: str) -> str:\n    return f"hello {name}"
 		const body = makeNode("block", '    return f"hello {name}"', 1, 0, 1, 26);
 		const fn = withFieldMap(
-			makeNode(
-				"function_definition",
-				'def greet(name: str) -> str:\n    return f"hello {name}"',
-				0, 0, 1, 26,
-				[body],
-			),
+			makeNode("function_definition", 'def greet(name: str) -> str:\n    return f"hello {name}"', 0, 0, 1, 26, [
+				body,
+			]),
 			{ body },
 		);
 		const sig = extractSignature(fn, "python");
@@ -238,12 +198,7 @@ describe("extractSignature — Python", () => {
 	it("extracts signature from async_function_definition", () => {
 		const body = makeNode("block", "    pass", 1, 0, 1, 8);
 		const fn = withFieldMap(
-			makeNode(
-				"async_function_definition",
-				"async def fetch() -> None:\n    pass",
-				0, 0, 1, 8,
-				[body],
-			),
+			makeNode("async_function_definition", "async def fetch() -> None:\n    pass", 0, 0, 1, 8, [body]),
 			{ body },
 		);
 		const sig = extractSignature(fn, "python");
@@ -260,12 +215,7 @@ describe("extractSignature — Go", () => {
 		// func Add(a, b int) int { return a + b }
 		const body = makeNode("block", "{ return a + b }", 0, 24, 0, 40);
 		const fn = withFieldMap(
-			makeNode(
-				"function_declaration",
-				"func Add(a, b int) int { return a + b }",
-				0, 0, 0, 39,
-				[body],
-			),
+			makeNode("function_declaration", "func Add(a, b int) int { return a + b }", 0, 0, 0, 39, [body]),
 			{ body },
 		);
 		const sig = extractSignature(fn, "go");
@@ -275,12 +225,7 @@ describe("extractSignature — Go", () => {
 	it("extracts signature from method_declaration", () => {
 		const body = makeNode("block", "{ return s.name }", 0, 26, 0, 43);
 		const method = withFieldMap(
-			makeNode(
-				"method_declaration",
-				"func (s Server) Name() string { return s.name }",
-				0, 0, 0, 47,
-				[body],
-			),
+			makeNode("method_declaration", "func (s Server) Name() string { return s.name }", 0, 0, 0, 47, [body]),
 			{ body },
 		);
 		const sig = extractSignature(method, "go");
@@ -308,10 +253,7 @@ describe("compressFunction", () => {
 	it("returns `signature [IMPL:hash]` for a valid function", () => {
 		const content = "function foo(x: number): number { return x * 2; }";
 		const body = makeNode("statement_block", "{ return x * 2; }", 0, 32, 0, 49);
-		const fn = withFieldMap(
-			makeNode("function_declaration", content, 0, 0, 0, 49, [body]),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", content, 0, 0, 0, 49, [body]), { body });
 
 		const result = compressFunction(fn, content, "typescript");
 		expect(result).not.toBeNull();
@@ -322,10 +264,7 @@ describe("compressFunction", () => {
 		const content = "function fn() { return 1; }";
 		const bodyText = "{ return 1; }";
 		const body = makeNode("statement_block", bodyText, 0, 14, 0, 27);
-		const fn = withFieldMap(
-			makeNode("function_declaration", content, 0, 0, 0, 27, [body]),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", content, 0, 0, 0, 27, [body]), { body });
 
 		const result = compressFunction(fn, content, "typescript");
 		const expectedHash = hashImplementation(bodyText);
@@ -336,10 +275,7 @@ describe("compressFunction", () => {
 		const makeCompressed = (bodyText: string, sigEnd: number) => {
 			const content = `function f() ${bodyText}`;
 			const body = makeNode("statement_block", bodyText, 0, 13, 0, 13 + bodyText.length);
-			const fn = withFieldMap(
-				makeNode("function_declaration", content, 0, 0, 0, content.length, [body]),
-				{ body },
-			);
+			const fn = withFieldMap(makeNode("function_declaration", content, 0, 0, 0, content.length, [body]), { body });
 			return compressFunction(fn, content, "typescript");
 		};
 
@@ -397,10 +333,7 @@ describe("compressFile", () => {
 		const content = "function foo() { return 1; }";
 		const bodyText = "{ return 1; }";
 		const body = makeNode("statement_block", bodyText, 0, 15, 0, 28);
-		const fn = withFieldMap(
-			makeNode("function_declaration", content, 0, 0, 0, 28, [body]),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", content, 0, 0, 0, 28, [body]), { body });
 		const root = makeNode("program", content, 0, 0, 0, 28, [fn]);
 		const tree = makeTree(root, "typescript");
 		const parser = await makeParser(tree);
@@ -419,10 +352,9 @@ describe("compressFile", () => {
 		const bodyText = "{ return 1; }";
 		// Function starts at row 1, col 0; body at row 1, col 15
 		const body = makeNode("statement_block", bodyText, 1, 15, 1, 28);
-		const fn = withFieldMap(
-			makeNode("function_declaration", "function foo() { return 1; }", 1, 0, 1, 28, [body]),
-			{ body },
-		);
+		const fn = withFieldMap(makeNode("function_declaration", "function foo() { return 1; }", 1, 0, 1, 28, [body]), {
+			body,
+		});
 		const root = makeNode("program", content, 0, 0, 1, 28, [fn]);
 		const tree = makeTree(root, "typescript");
 		const parser = await makeParser(tree);

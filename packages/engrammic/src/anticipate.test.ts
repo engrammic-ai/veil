@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import { buildBehavioralManifest, buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import {
+	buildBehavioralManifest,
+	buildManifest,
+	DEFAULT_TRIGGERS,
+	formatManifest,
+	matchTriggers,
+} from "./anticipate.ts";
 import type { ContextItem, ContextManifest, Trigger } from "./types.ts";
 
 // Minimal mock cache

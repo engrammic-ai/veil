@@ -137,9 +137,11 @@ export class SymbolStore {
 	 */
 	resolveReferences(): number {
 		// Get all defs indexed by symbol name -> file
-		const defs = this.db.prepare(`
+		const defs = this.db
+			.prepare(`
 			SELECT symbol, file FROM symbol_graph WHERE kind = 'def'
-		`).all() as Array<{ symbol: string; file: string }>;
+		`)
+			.all() as Array<{ symbol: string; file: string }>;
 
 		// Build a map: symbol -> [files that define it]
 		const defMap = new Map<string, string[]>();
@@ -150,10 +152,12 @@ export class SymbolStore {
 		}
 
 		// Get all unresolved refs
-		const unresolvedRefs = this.db.prepare(`
+		const unresolvedRefs = this.db
+			.prepare(`
 			SELECT file, symbol, line FROM symbol_graph
 			WHERE kind = 'ref' AND target_file IS NULL
-		`).all() as Array<{ file: string; symbol: string; line: number }>;
+		`)
+			.all() as Array<{ file: string; symbol: string; line: number }>;
 
 		// Update refs with matching defs (from different files)
 		const updateStmt = this.db.prepare(`
@@ -167,7 +171,7 @@ export class SymbolStore {
 			for (const ref of unresolvedRefs) {
 				const defFiles = defMap.get(ref.symbol) ?? [];
 				// Find first def in a different file
-				const targetFile = defFiles.find(f => f !== ref.file);
+				const targetFile = defFiles.find((f) => f !== ref.file);
 				if (targetFile) {
 					updateStmt.run(targetFile, ref.symbol, ref.file, ref.symbol, ref.line);
 					resolved++;

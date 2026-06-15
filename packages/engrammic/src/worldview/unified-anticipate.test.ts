@@ -2,9 +2,9 @@
  * Tests for unified-anticipate.ts
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
-import { UnifiedAnticipator } from "./unified-anticipate.ts";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { ScoredSuggestion } from "./unified-anticipate.ts";
+import { UnifiedAnticipator } from "./unified-anticipate.ts";
 
 // ---------------------------------------------------------------------------
 // Minimal stubs
@@ -44,20 +44,12 @@ function makeCoAccessTracker(entries: Record<string, Array<{ itemId: string; cou
 describe("UnifiedAnticipator", () => {
 	describe("getSuggestions", () => {
 		it("returns empty array for empty accessedItems", () => {
-			const anticipator = new UnifiedAnticipator(
-				makeSymbolStore([]),
-				makeRankStore({}),
-				makeCoAccessTracker({}),
-			);
+			const anticipator = new UnifiedAnticipator(makeSymbolStore([]), makeRankStore({}), makeCoAccessTracker({}));
 			expect(anticipator.getSuggestions([])).toEqual([]);
 		});
 
 		it("returns empty array when limit is 0", () => {
-			const anticipator = new UnifiedAnticipator(
-				makeSymbolStore([]),
-				makeRankStore({}),
-				makeCoAccessTracker({}),
-			);
+			const anticipator = new UnifiedAnticipator(makeSymbolStore([]), makeRankStore({}), makeCoAccessTracker({}));
 			expect(anticipator.getSuggestions(["a.ts"], { limit: 0 })).toEqual([]);
 		});
 
@@ -161,11 +153,7 @@ describe("UnifiedAnticipator", () => {
 				],
 			});
 
-			const anticipator = new UnifiedAnticipator(
-				makeSymbolStore([]),
-				makeRankStore({}),
-				coAccess,
-			);
+			const anticipator = new UnifiedAnticipator(makeSymbolStore([]), makeRankStore({}), coAccess);
 			const results = anticipator.getSuggestions(["main.ts"], { limit: 3 });
 			expect(results.length).toBe(3);
 		});
@@ -197,9 +185,7 @@ describe("UnifiedAnticipator", () => {
 		});
 
 		it("scores are in range [0, 1] for valid inputs", () => {
-			const symbolStore = makeSymbolStore([
-				{ symbol: "X", kind: "ref", file: "a.ts", target_file: "b.ts" },
-			]);
+			const symbolStore = makeSymbolStore([{ symbol: "X", kind: "ref", file: "a.ts", target_file: "b.ts" }]);
 			const rankStore = makeRankStore({ "b.ts": 0.5 });
 			const coAccess = makeCoAccessTracker({
 				"a.ts": [{ itemId: "c.ts", count: 5 }],
@@ -224,11 +210,7 @@ describe("UnifiedAnticipator", () => {
 				"b.ts": [{ itemId: "c.ts", count: 2 }],
 			});
 
-			const anticipator = new UnifiedAnticipator(
-				makeSymbolStore([]),
-				makeRankStore({}),
-				coAccess,
-			);
+			const anticipator = new UnifiedAnticipator(makeSymbolStore([]), makeRankStore({}), coAccess);
 			const results = anticipator.getSuggestions(["a.ts", "b.ts"]);
 			const ids = results.map((r) => r.itemId);
 

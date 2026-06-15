@@ -1,9 +1,9 @@
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
-import { StructuralFloor } from "./structural-floor.ts";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { computeRelevance, findEvictionCandidates } from "../scorer.ts";
 import type { ContextItem, TaskContext } from "../types.ts";
 import { DEFAULT_CONFIG } from "../types.ts";
+import { StructuralFloor } from "./structural-floor.ts";
 
 // --- helpers ---
 
