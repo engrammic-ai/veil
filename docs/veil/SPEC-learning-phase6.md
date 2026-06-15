@@ -232,18 +232,18 @@ private logHydration(event: HydrationEvent): void {
 
 ```typescript
 logHydration(event: HydrationEvent): void {
-  this.db.exec(`
+  this.db.prepare(`
     INSERT OR IGNORE INTO hydration_events 
     (session_id, item_id, trigger_ids, user_message, hydrated_at, latency_ms)
     VALUES (?, ?, ?, ?, ?, ?)
-  `, [
+  `).run(
     event.sessionId,
     event.itemId,
     JSON.stringify(event.triggerIds),
     event.userMessage,
     event.hydratedAt,
     event.latencyMs,
-  ]);
+  );
 }
 
 getRecentHydrations(limit: number): HydrationEvent[] {
@@ -478,12 +478,12 @@ CREATE TABLE IF NOT EXISTS custom_triggers (
 ```typescript
 persistTrigger(trigger: Trigger): void {
   const now = Date.now();
-  this.db.exec(`
+  this.db.prepare(`
     INSERT OR REPLACE INTO custom_triggers
     (id, pattern, negative_pattern, type, action_tags, action_type, 
      priority, enabled, learned, confidence, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
+  `).run(
     trigger.id,
     trigger.pattern.source,
     trigger.negative?.source ?? null,
@@ -496,7 +496,7 @@ persistTrigger(trigger: Trigger): void {
     trigger.confidence ?? null,
     now,
     now,
-  ]);
+  );
 }
 
 loadCustomTriggers(): Trigger[] {
@@ -521,7 +521,7 @@ loadCustomTriggers(): Trigger[] {
 }
 
 deleteTrigger(id: string): void {
-  this.db.exec(`DELETE FROM custom_triggers WHERE id = ?`, [id]);
+  this.db.prepare(`DELETE FROM custom_triggers WHERE id = ?`).run(id);
 }
 ```
 
@@ -630,10 +630,10 @@ linkEpisodes(
   targetId: string,
   relation: "continues" | "relates" | "supersedes",
 ): void {
-  this.db.exec(`
+  this.db.prepare(`
     INSERT OR IGNORE INTO episode_links (source_id, target_id, relation, created_at)
     VALUES (?, ?, ?, ?)
-  `, [sourceId, targetId, relation, Date.now()]);
+  `).run(sourceId, targetId, relation, Date.now());
 }
 
 getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
