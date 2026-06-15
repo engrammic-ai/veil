@@ -17,7 +17,7 @@ export interface ContextItem {
 	cognitiveWeight: number; // -1 to +1, success/failure attribution
 
 	// Classification
-	type: "episodic" | "procedural" | "fact";
+	type: ContextItemType;
 	tags: string[];
 	pinned: boolean;
 
@@ -31,6 +31,43 @@ export interface ContextItem {
 
 	// Source tracking
 	source: "auto" | "explicit"; // auto-captured vs explicitly remembered
+	sourceToolCallId?: string; // links to Pi tool call for faded history
+}
+
+// Type alias extracted from ContextItem for reuse
+export type ContextItemType = "episodic" | "procedural" | "fact";
+
+// Trigger for pattern matching user messages (anticipatory loading)
+export interface Trigger {
+	id: string;
+	pattern: RegExp;
+	negative?: RegExp; // If matches, trigger doesn't fire
+	type: "keyword" | "file" | "command";
+	action: {
+		tags?: string[];
+		type?: ContextItemType;
+	};
+	priority: number; // Higher = checked first
+	enabled: boolean;
+	learned?: boolean;
+	confidence?: number;
+}
+
+// Manifest item shown to agent (lightweight summary)
+export interface ManifestItem {
+	id: string;
+	type: ContextItemType;
+	tags: string[];
+	summary: string; // First 50 chars
+	age: string; // "2min ago", "1hr ago"
+	source?: "warm" | "cold";
+}
+
+// Full manifest returned by anticipatory loading
+export interface ContextManifest {
+	triggers: string[]; // Trigger IDs that fired
+	budgetPercent: number; // Budget at query time (pre-preload)
+	items: ManifestItem[]; // Max 10
 }
 
 export interface TaskContext {
@@ -90,7 +127,7 @@ export interface ContextManagerConfig {
 }
 
 export interface CaptureRule {
-	type: "episodic" | "fact";
+	type: ContextItemType;
 	tags: string[];
 }
 

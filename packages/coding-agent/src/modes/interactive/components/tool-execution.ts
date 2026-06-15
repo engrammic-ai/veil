@@ -5,6 +5,9 @@ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/rend
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 
+const ANSI_DIM = "\x1b[2m";
+const ANSI_RESET = "\x1b[0m";
+
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
@@ -39,6 +42,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private _dimmed = false;
 
 	constructor(
 		toolName: string,
@@ -213,6 +217,15 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	/** Set whether this tool execution renders dimmed (for evicted context). */
+	setDimmed(dimmed: boolean): void {
+		this._dimmed = dimmed;
+	}
+
+	isDimmed(): boolean {
+		return this._dimmed;
+	}
+
 	override invalidate(): void {
 		super.invalidate();
 		this.updateDisplay();
@@ -223,13 +236,15 @@ export class ToolExecutionComponent extends Container {
 			return [];
 		}
 
+		let lines: string[];
+
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
 			const contentLines = this.selfRenderContainer.render(width);
 			if (contentLines.length === 0 && this.imageComponents.length === 0) {
 				return [];
 			}
 
-			const lines: string[] = [];
+			lines = [];
 			if (contentLines.length > 0) {
 				lines.push("");
 				lines.push(...contentLines);
@@ -244,10 +259,15 @@ export class ToolExecutionComponent extends Container {
 					lines.push(...imageComponent.render(width));
 				}
 			}
-			return lines;
+		} else {
+			lines = super.render(width);
 		}
 
-		return super.render(width);
+		if (this._dimmed) {
+			lines = lines.map((line) => ANSI_DIM + line + ANSI_RESET);
+		}
+
+		return lines;
 	}
 
 	private updateDisplay(): void {

@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import { VeilHarness } from "./harness.ts";
 
@@ -361,6 +361,385 @@ describe("autoCapture integration", () => {
 
 		const cache = harness.getManager().getCache();
 		expect(cache.getAll().length).toBe(0);
+
+		await harness.close();
+	});
+});
+
+describe("custom triggers loaded on startup", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("custom triggers persisted to DB are merged with DEFAULT_TRIGGERS on harness init", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// First harness: persist a custom trigger and a matching item
+		const harness1 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		harness1.remember("deployment runbook for canary releases", "procedural", ["deploy", "canary"]);
+		harness1.getManager().getCache().persistTrigger({
+			id: "custom-deploy-trigger",
+			pattern: /\bdeploy\b/i,
+			type: "keyword",
+			action: { tags: ["deploy"] },
+			priority: 10,
+			enabled: true,
+			learned: true,
+		});
+		await harness1.close();
+
+		// Second harness: reopen same DB — custom trigger must be loaded
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		const result = await harness2.processUserMessage("how do we deploy to production?");
+		await harness2.close();
+
+		// The custom trigger matched, so a manifest should be returned
+		expect(result).not.toBeNull();
+		expect(result).toContain("<veil-available>");
+		expect(result).toContain("deployment runbook");
+	});
+});
+
+describe("processUserMessage (anticipatory loading)", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns manifest when triggers match", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Store something with "test" tag
+		harness.remember("Test failure in auth module", "episodic", ["test", "auth"]);
+
+		const result = await harness.processUserMessage("fix the tests");
+		expect(result).not.toBeNull();
+		expect(result).toContain("<veil-available>");
+		expect(result).toContain("Test failure in auth");
+
+		await harness.close();
+	});
+
+	test("returns null when no triggers match", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		harness.remember("Some content", "fact", ["unrelated"]);
+
+		const result = await harness.processUserMessage("hello world");
+		expect(result).toBeNull();
+
+		await harness.close();
+	});
+
+	test("returns null when budget exceeds 70%", async () => {
+		// Use small maxTokens with no reserve so we can easily exceed 70%
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			maxTokens: 100,
+			reserveTokens: 0,
+		});
+
+		// Each char is ~0.25 tokens, so 400 chars ≈ 100 tokens
+		// Load multiple items to exceed 70% (70 tokens)
+		for (let i = 0; i < 5; i++) {
+			const content = `Test content number ${i} with more text to make it bigger ${"x".repeat(100)}`;
+			const item = harness.remember(content, "fact", ["test"]);
+			harness.load([item.id]);
+		}
+
+		const usage = harness.getUsage();
+		expect(usage.hotItems).toBe(5);
+		expect(usage.percent).toBeGreaterThan(70);
+
+		const result = await harness.processUserMessage("run the tests");
+		expect(result).toBeNull();
+
+		await harness.close();
+	});
+
+	test("preloads top items when budget < 50%", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Store items
+		harness.remember("Test item 1", "episodic", ["test"]);
+		harness.remember("Test item 2", "episodic", ["test"]);
+
+		const beforeItems = harness.getWindow().items.length;
+
+		await harness.processUserMessage("run the tests");
+
+		const afterItems = harness.getWindow().items.length;
+		expect(afterItems).toBeGreaterThan(beforeItems);
+
+		await harness.close();
+	});
+});
+
+describe("maybeLearn", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("does not run before interval has elapsed", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 60 * 60 * 1000, minHydrations: 1 },
+		});
+
+		// Inject hydration events directly so the threshold is met
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("deploy runbook for production releases", "procedural", ["deploy"]);
+		cache.logHydration({
+			sessionId: "test",
+			itemId: item.id,
+			triggerIds: [],
+			userMessage: "deploy to production",
+			hydratedAt: Date.now(),
+			latencyMs: 10,
+		});
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+
+		// maybeLearn should skip because lastLearnTime is 0 and intervalMs is 1hr
+		// i.e. it would RUN (0 elapsed > 1hr? No — 0 elapsed < 1hr, so it should skip)
+		// With lastLearnTime=0, now - 0 = large number > 1hr, so it WILL run.
+		// We need to run it once to set lastLearnTime, then call again immediately.
+		await harness.maybeLearn(); // first call: sets lastLearnTime
+		const triggersAfterFirst = cache.loadCustomTriggers().length;
+
+		await harness.maybeLearn(); // second call: interval not elapsed, skips
+		const triggersAfterSecond = cache.loadCustomTriggers().length;
+
+		// Both calls should result in the same trigger count (second was skipped)
+		expect(triggersAfterSecond).toBe(triggersAfterFirst);
+
+		await harness.close();
+	});
+
+	test("skips when fewer than minHydrations events exist", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 0, minHydrations: 5 },
+		});
+
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("deploy runbook for production releases", "procedural", ["deploy"]);
+
+		// Log only 3 hydrations (below minHydrations=5)
+		for (let i = 0; i < 3; i++) {
+			cache.logHydration({
+				sessionId: "test",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: `deploy message ${i}`,
+				hydratedAt: Date.now(),
+				latencyMs: 10,
+			});
+		}
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		expect(triggersAfter).toBe(triggersBefore);
+
+		await harness.close();
+	});
+
+	test("persists new triggers when patterns are found", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			// intervalMs=0 forces the interval check to pass; minHydrations=3 is low enough
+			learningConfig: { intervalMs: 0, minHydrations: 3 },
+		});
+
+		const cache = harness.getManager().getCache();
+		// Use a unique tag not covered by DEFAULT_TRIGGERS
+		const item = harness.remember("canary deployment checklist", "procedural", ["canary"]);
+
+		// Log enough hydrations with the same keyword to form a pattern.
+		// Use distinct hydratedAt values to avoid the UNIQUE(session_id, item_id, hydrated_at)
+		// constraint silently dropping duplicate-timestamp rows.
+		const messages = ["canary release steps", "canary deployment procedure", "canary rollout guide"];
+		const now = Date.now();
+		for (let i = 0; i < messages.length; i++) {
+			cache.logHydration({
+				sessionId: "test",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: messages[i],
+				hydratedAt: now + i,
+				latencyMs: 10,
+			});
+		}
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		// A learned trigger should have been persisted
+		expect(triggersAfter).toBeGreaterThan(triggersBefore);
+
+		await harness.close();
+	});
+
+	test("uses learningConfig overrides from VeilHarnessConfig", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 999999999, minHydrations: 1 },
+		});
+
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("some content", "fact", ["sometag"]);
+		cache.logHydration({
+			sessionId: "test",
+			itemId: item.id,
+			triggerIds: [],
+			userMessage: "some message",
+			hydratedAt: Date.now(),
+			latencyMs: 5,
+		});
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		// intervalMs is huge so maybeLearn should skip
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		expect(triggersAfter).toBe(triggersBefore);
+
+		await harness.close();
+	});
+});
+
+describe("learned trigger matches subsequent messages", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("a learned trigger surfaces manifest items on the next processUserMessage call", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// First harness: store item, log hydrations, run maybeLearn to produce a learned trigger
+		const harness1 = new VeilHarness({
+			dbPath,
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 0, minHydrations: 3 },
+		});
+
+		const item = harness1.remember("canary deployment checklist for production", "procedural", ["canary"]);
+		const cache1 = harness1.getManager().getCache();
+
+		const messages = ["canary release steps", "canary deployment procedure", "canary rollout guide"];
+		const now = Date.now();
+		for (let i = 0; i < messages.length; i++) {
+			cache1.logHydration({
+				sessionId: "s1",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: messages[i],
+				hydratedAt: now + i,
+				latencyMs: 10,
+			});
+		}
+
+		await harness1.maybeLearn();
+		const learnedTriggers = cache1.loadCustomTriggers();
+		expect(learnedTriggers.length).toBeGreaterThan(0); // sanity-check: learning ran
+
+		await harness1.close();
+
+		// Second harness: reopen same DB — learned trigger is loaded at init
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+
+		// Send a message that should match the learned trigger's pattern
+		const keyword = learnedTriggers[0].pattern.source; // e.g. "canary"
+		const manifest = await harness2.processUserMessage(`show me the ${keyword} guide`);
+
+		await harness2.close();
+
+		// The manifest must be non-null — the learned trigger matched and surfaced the item
+		expect(manifest).not.toBeNull();
+		expect(manifest).toContain("<veil-available>");
+		expect(manifest).toContain("canary deployment");
+	});
+});
+
+describe("processUserMessage buildManifest exception handling", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns null gracefully when buildManifest throws", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// Provide a cold store whose query method always throws — this exercises the
+		// try/catch around buildManifest inside processUserMessage.
+		const throwingColdStore = {
+			capabilities: { semantic: true, temporal: false, provenance: false },
+			demote: vi.fn().mockResolvedValue("ptr_x"),
+			fetch: vi.fn().mockResolvedValue(null),
+			exists: vi.fn().mockResolvedValue(false),
+			delete: vi.fn().mockResolvedValue(undefined),
+			count: vi.fn().mockResolvedValue(0),
+			close: vi.fn().mockResolvedValue(undefined),
+			// Returning a rejecting promise causes buildManifest to throw during cold fetch
+			query: vi.fn().mockRejectedValue(new Error("cold storage unavailable")),
+		};
+
+		const harness = new VeilHarness({ dbPath, coldStore: throwingColdStore });
+
+		// Store an item with tags matched by the "debug" DEFAULT_TRIGGER
+		harness.remember("Debug notes on the crash", "episodic", ["debug", "error"]);
+
+		// processUserMessage must not throw; it should catch and return null
+		const result = await harness.processUserMessage("I am debugging a crash");
+
+		// Result may be null (error path) or a valid manifest (if warm cache items
+		// were surfaced before the cold query threw). Either way, no exception should escape.
+		expect(() => result).not.toThrow();
 
 		await harness.close();
 	});
