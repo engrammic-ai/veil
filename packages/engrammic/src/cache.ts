@@ -382,6 +382,35 @@ export class ContextCache {
 				updated_at INTEGER NOT NULL
 			);
 		`);
+
+		// Phase D: Attempts table for failure-memory
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS attempts (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				goal_id TEXT NOT NULL,
+				iteration INTEGER NOT NULL,
+
+				action TEXT NOT NULL,
+				target TEXT,
+				rationale TEXT,
+
+				outcome TEXT NOT NULL CHECK(outcome IN ('fail', 'pass', 'partial', 'uncertain')),
+				evidence TEXT,
+				error_pattern TEXT,
+
+				created_at REAL NOT NULL,
+				turn INTEGER NOT NULL,
+
+				goal_open INTEGER DEFAULT 1,
+				pinned INTEGER DEFAULT 0
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_attempts_goal ON attempts(goal_id);
+			CREATE INDEX IF NOT EXISTS idx_attempts_session ON attempts(session_id);
+			CREATE INDEX IF NOT EXISTS idx_attempts_outcome ON attempts(outcome);
+			CREATE INDEX IF NOT EXISTS idx_attempts_open ON attempts(goal_open);
+		`);
 	}
 
 	put(item: ContextItem): void {
