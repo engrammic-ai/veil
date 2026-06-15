@@ -21,3 +21,8 @@ export { hashImplementation, extractSignature, compressFunction, compressFile } 
 
 export type { RankRow } from "./graph-rank.ts";
 export { STRUCTURAL_RANK_SCHEMA, buildFileGraph, computePageRank, RankStore, updateRanks } from "./graph-rank.ts";
+
+export { getStructuralSuggestions } from "./structural-anticipate.ts";
+
+export type { ScoredSuggestion, UnifiedAnticipatorOptions } from "./unified-anticipate.ts";
+export { UnifiedAnticipator } from "./unified-anticipate.ts";
