@@ -30,6 +30,7 @@ import { DEFAULT_CONFIG } from "./types.ts";
 import { estimateTokens } from "./utils.ts";
 import type { RankStore } from "./worldview/graph-rank.ts";
 import type { SymbolStore } from "./worldview/symbol-store.ts";
+import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
 import type { ScoredSuggestion } from "./worldview/unified-anticipate.ts";
 import { UnifiedAnticipator } from "./worldview/unified-anticipate.ts";
 
