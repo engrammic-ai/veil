@@ -120,6 +120,10 @@ export interface ContextManagerConfig {
 	coldFailureThreshold: number;
 	coldCircuitResetMs: number;
 	dbPath: string;
+	// Autonomic self-tuning
+	reRequestBackoffStep: number; // threshold raise per re-request miss (AIMD back-off)
+	reRequestWindowMs: number; // how recently an item must have been evicted to count a re-capture as a miss
+	decaySweepIntervalTurns: number; // run decay sweep every N ticks
 	// UX
 	statusBarEnabled: boolean;
 	fadeEvicted: boolean;
@@ -160,6 +164,10 @@ export const DEFAULT_CONFIG: ContextManagerConfig = {
 	coldFailureThreshold: 3,
 	coldCircuitResetMs: 300000,
 	dbPath: ".veil/context.db",
+	// Autonomic self-tuning
+	reRequestBackoffStep: 0.05,
+	reRequestWindowMs: 30 * 60 * 1000,
+	decaySweepIntervalTurns: 50,
 	// UX
 	statusBarEnabled: true,
 	fadeEvicted: true,
