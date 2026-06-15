@@ -340,6 +340,21 @@ export class ContextCache {
 			CREATE INDEX IF NOT EXISTS idx_co_access_a ON co_access(item_a);
 			CREATE INDEX IF NOT EXISTS idx_co_access_b ON co_access(item_b);
 		`);
+
+		// Symbol graph for structural worldview — feeds PageRank ranking
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS symbol_graph (
+				file TEXT NOT NULL,
+				symbol TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				target_file TEXT,
+				target_symbol TEXT,
+				line INTEGER,
+				PRIMARY KEY (file, symbol, kind, line)
+			);
+			CREATE INDEX IF NOT EXISTS idx_symbol_graph_file ON symbol_graph(file);
+			CREATE INDEX IF NOT EXISTS idx_symbol_graph_symbol ON symbol_graph(symbol);
+		`);
 	}
 
 	put(item: ContextItem): void {
