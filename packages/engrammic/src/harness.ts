@@ -82,6 +82,13 @@ export interface UsageStats {
 	percent: number;
 }
 
+interface ManifestContext {
+	itemIds: Set<string>;
+	triggerIds: string[];
+	userMessage: string;
+	timestamp: number;
+}
+
 export class VeilHarness {
 	private manager: ContextManager;
 	private config: VeilHarnessConfig;
@@ -93,10 +100,7 @@ export class VeilHarness {
 	private totalCaptures: number = 0;
 	private evictedToolCallIds: Set<string> = new Set();
 	private triggers: Trigger[] = DEFAULT_TRIGGERS;
-	private manifestItemIds: Set<string> = new Set(); // For Phase 6 learning
-	private lastManifestTime: number = 0;
-	private lastManifestTriggers: string[] = [];
-	private lastUserMessage: string = "";
+	private currentManifest: ManifestContext | null = null;
 	private readonly learningConfig: LearningConfig = {
 		intervalMs: 60 * 60 * 1000, // 1 hour default
 		minHydrations: 10,
@@ -412,18 +416,31 @@ export class VeilHarness {
 
 	/**
 	 * Called when items are recalled via veil_recall. Logs hydration events for manifest items.
+	 * Uses the bundled ManifestContext snapshot set by processUserMessage.
+	 * Clears the manifest after logging to prevent stale data reuse.
 	 */
 	private onRecall(ids: string[]): void {
+		const MANIFEST_STALE_MS = 5 * 60 * 1000; // 5 minutes
 		const now = Date.now();
+
+		if (!this.currentManifest) return;
+		if (now - this.currentManifest.timestamp > MANIFEST_STALE_MS) {
+			this.currentManifest = null;
+			return;
+		}
+
+		const manifest = this.currentManifest;
+		this.currentManifest = null; // Clear to prevent stale data reuse
+
 		for (const id of ids) {
-			if (this.manifestItemIds.has(id)) {
+			if (manifest.itemIds.has(id)) {
 				this.manager.getCache().logHydration({
 					sessionId: this.sessionId ?? "unknown",
 					itemId: id,
-					triggerIds: this.lastManifestTriggers,
-					userMessage: this.lastUserMessage,
+					triggerIds: manifest.triggerIds,
+					userMessage: manifest.userMessage,
 					hydratedAt: now,
-					latencyMs: now - this.lastManifestTime,
+					latencyMs: now - manifest.timestamp,
 				});
 			}
 		}
@@ -499,16 +516,15 @@ export class VeilHarness {
 
 	/**
 	 * Track manifest items for future learning (Phase 6).
+	 * Bundles all related state into a single ManifestContext snapshot to prevent temporal coupling.
 	 */
 	private trackManifestItems(manifest: ContextManifest, userMessage: string, startTime: number): void {
-		this.manifestItemIds.clear();
-		for (const item of manifest.items) {
-			this.manifestItemIds.add(item.id);
-		}
-		// Track for hydration learning
-		this.lastManifestTime = startTime; // Use startTime to capture full latency from message receipt
-		this.lastManifestTriggers = manifest.triggers;
-		this.lastUserMessage = userMessage;
+		this.currentManifest = {
+			itemIds: new Set(manifest.items.map((item) => item.id)),
+			triggerIds: manifest.triggers,
+			userMessage,
+			timestamp: startTime, // Use startTime to capture full latency from message receipt
+		};
 	}
 
 	/**
@@ -520,10 +536,10 @@ export class VeilHarness {
 	}
 
 	/**
-	 * Check if an item ID was in the last manifest (for Phase 6 learning).
+	 * Check if an item ID was in the current manifest (for Phase 6 learning).
 	 */
 	wasInManifest(id: string): boolean {
-		return this.manifestItemIds.has(id);
+		return this.currentManifest?.itemIds.has(id) ?? false;
 	}
 
 	/**

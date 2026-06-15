@@ -176,6 +176,29 @@ describe("onRecall hydration logging", () => {
 		expect(event!.triggerIds).toContain("debug");
 	});
 
+	test("does not log hydration when manifest context is stale (older than 5 minutes)", async () => {
+		// Store an item with tags that the "debug" trigger will surface
+		const item = harness.getManager().remember("Debug info about a stale issue", "episodic", ["debug", "error"]);
+
+		// Build manifest via processUserMessage
+		await harness.processUserMessage("I am debugging a crash");
+		expect(harness.wasInManifest(item.id)).toBe(true);
+
+		// Directly overwrite currentManifest timestamp to simulate staleness (>5 minutes ago)
+		// We access the private field via a cast to bypass TypeScript's access controls in tests.
+		const STALE_MS = 5 * 60 * 1000 + 1000; // 5 minutes + 1 second
+		(harness as unknown as { currentManifest: { timestamp: number } | null }).currentManifest!.timestamp =
+			Date.now() - STALE_MS;
+
+		// Recall the item — stale manifest should be discarded, no hydration logged
+		const result = await harness.executeTool("veil_recall", { tags: ["debug"], limit: 10 });
+		expect(result.success).toBe(true);
+
+		const hydrations = harness.getManager().getCache().getRecentHydrations(10);
+		const event = hydrations.find((h) => h.itemId === item.id);
+		expect(event).toBeUndefined();
+	});
+
 	test("does not log hydration for items not in manifest", async () => {
 		// Store a debug item and build manifest
 		const manifestItem = harness.getManager().remember("Debug info", "episodic", ["debug", "error"]);
