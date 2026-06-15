@@ -222,6 +222,7 @@ export class ContextManager {
 			this.cache.deleteEvicting(item.id);
 		} else {
 			this.cache.unmarkEvicting(item.id);
+			this.cache.clearEvictionForHash(item.contentHash);
 		}
 	}
 
