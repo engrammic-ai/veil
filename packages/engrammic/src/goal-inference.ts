@@ -286,3 +286,118 @@ export function advanceGoalState(
 		recentTargets,
 	};
 }
+
+// ---------------------------------------------------------------------------
+// D.4.5 — RETRY_MARKERS detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Patterns that indicate the agent is retrying after a failure.
+ * Used for Level 2 transcript mining (no LLM required).
+ */
+export const RETRY_MARKERS: RegExp[] = [
+	/that didn['']t work/i,
+	/let me try/i,
+	/trying (?:a different|another|again)/i,
+	/instead,?\s*(?:I['']ll|let me|we)/i,
+	/still (?:failing|broken|not working)/i,
+	/same error/i,
+	/didn['']t (?:fix|solve|help)/i,
+	/back to/i,
+	/previous approach/i,
+];
+
+/**
+ * Detect if agent text contains retry markers.
+ * Returns the matched marker text or null.
+ */
+export function detectRetryMarker(agentText: string): string | null {
+	for (const pattern of RETRY_MARKERS) {
+		const match = agentText.match(pattern);
+		if (match) return match[0];
+	}
+	return null;
+}
+
+// ---------------------------------------------------------------------------
+// D.4.6 — extractRationale
+// ---------------------------------------------------------------------------
+
+/**
+ * Patterns to extract rationale from agent text.
+ */
+const RATIONALE_EXTRACTORS: RegExp[] = [
+	/(?:let me|I['']ll|trying to)\s+(.{10,100})/i,
+	/because\s+(.{10,100})/i,
+	/the (?:issue|problem|error) (?:is|was|seems)\s+(.{10,100})/i,
+];
+
+/**
+ * Extract rationale from agent text (e.g., "trying to fix the null check").
+ * Returns null if no rationale pattern is found.
+ */
+export function extractRationale(agentText: string): string | null {
+	for (const pattern of RATIONALE_EXTRACTORS) {
+		const match = agentText.match(pattern);
+		if (match) return match[1].slice(0, 100);
+	}
+	return null;
+}
+
+// ---------------------------------------------------------------------------
+// D.4.7 — shouldCloseGoal
+// ---------------------------------------------------------------------------
+
+import type { AttemptRecord } from "./attempts.ts";
+
+/**
+ * Determine if a goal should be marked as resolved (closed).
+ *
+ * A goal is resolved when:
+ * 1. The most recent attempt has outcome='pass', AND
+ * 2. No failures for that goal in the last 3 turns
+ *
+ * This prevents premature closure when a test passes but something else fails.
+ */
+export function shouldCloseGoal(attempts: AttemptRecord[], currentTurn: number): boolean {
+	if (attempts.length === 0) return false;
+
+	const lastAttempt = attempts[attempts.length - 1];
+
+	if (lastAttempt.outcome !== "pass") return false;
+
+	const recentFailures = attempts.filter(
+		(a) => (a.outcome === "fail" || a.outcome === "uncertain") && currentTurn - a.turn <= 3,
+	);
+
+	return recentFailures.length === 0;
+}
+
+// ---------------------------------------------------------------------------
+// D.4.8 — LLM tier stub
+// ---------------------------------------------------------------------------
+
+export interface GoalInferenceLLMConfig {
+	enabled: boolean;
+	model?: string;
+	maxCallsPerSession?: number;
+}
+
+export const DEFAULT_LLM_CONFIG: GoalInferenceLLMConfig = {
+	enabled: false,
+	model: undefined,
+	maxCallsPerSession: 10,
+};
+
+/**
+ * Stub for optional LLM-based goal inference.
+ * Currently a no-op that always returns null.
+ * When enabled, would use a Haiku-class model for ambiguous cases.
+ */
+export function inferGoalWithLLM(
+	_agentText: string,
+	_context: { recentTargets: string[]; currentGoalId: string | null },
+	_config: GoalInferenceLLMConfig = DEFAULT_LLM_CONFIG,
+): string | null {
+	return null;
+}

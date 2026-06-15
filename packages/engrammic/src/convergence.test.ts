@@ -171,6 +171,22 @@ describe("ConvergenceMonitor", () => {
 		expect(monitor.getState("file:auth.ts")).toBeNull();
 	});
 
+	test("resetGoal clears pattern history", () => {
+		const monitor = new ConvergenceMonitor({ escalateOnRepeat: 2 });
+
+		monitor.update(makeAttempt({ id: "a1", errorPattern: "same-error" }), 1);
+		monitor.update(makeAttempt({ id: "a2", errorPattern: "same-error" }), 2);
+
+		monitor.resetGoal("file:auth.ts");
+
+		monitor.update(makeAttempt({ id: "a3", errorPattern: "same-error" }), 3);
+		const result = monitor.checkConvergence(
+			monitor.getState("file:auth.ts")!,
+			makeAttempt({ errorPattern: "same-error" }),
+		);
+		expect(result.level).toBe(0);
+	});
+
 	test("getAllStates returns all tracked goals", () => {
 		const monitor = new ConvergenceMonitor();
 
