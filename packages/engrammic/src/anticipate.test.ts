@@ -1,18 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import {
-	DEFAULT_TRIGGERS,
-	buildManifest,
-	formatManifest,
-	matchTriggers,
-} from "./anticipate.ts";
+import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import type { ContextItem, ContextManifest, Trigger } from "./types.ts";
 
 // Minimal mock cache
 function makeCache(items: ContextItem[] = []) {
 	return {
-		getByTags: vi.fn((tags: string[], _limit: number) =>
-			items.filter((i) => tags.some((t) => i.tags.includes(t))),
-		),
+		getByTags: vi.fn((tags: string[], _limit: number) => items.filter((i) => tags.some((t) => i.tags.includes(t)))),
 		getAll: vi.fn(() => items),
 	};
 }
@@ -222,9 +215,7 @@ describe("buildManifest", () => {
 	});
 
 	test("limits manifest to 10 items", async () => {
-		const items = Array.from({ length: 20 }, (_, k) =>
-			makeItem({ id: `item-${k}`, tags: ["test"] }),
-		);
+		const items = Array.from({ length: 20 }, (_, k) => makeItem({ id: `item-${k}`, tags: ["test"] }));
 		const cache = makeCache(items);
 		// Override getByTags to return all 20
 		cache.getByTags.mockImplementation(() => items);

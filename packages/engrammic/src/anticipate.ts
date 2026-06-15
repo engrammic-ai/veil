@@ -1,8 +1,8 @@
 // packages/engrammic/src/anticipate.ts
 
-import { formatRelativeTime } from "./utils.ts";
 import type { ContextCache } from "./cache.ts";
-import type { ContextItem, Trigger, ContextManifest, ManifestItem } from "./types.ts";
+import type { ContextItem, ContextManifest, ManifestItem, Trigger } from "./types.ts";
+import { formatRelativeTime } from "./utils.ts";
 
 // Default triggers for common patterns
 export const DEFAULT_TRIGGERS: Trigger[] = [

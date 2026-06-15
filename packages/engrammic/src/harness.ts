@@ -9,6 +9,7 @@
  *   }
  */
 
+import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
@@ -17,11 +18,16 @@ import { buildContextSection } from "./injection.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
-import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
+import type {
+	CaptureConfig,
+	ContextManagerConfig,
+	ContextManifest,
+	EvictionCandidate,
+	TaskContext,
+	Trigger,
+} from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
-import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
-import type { ContextManifest, Trigger } from "./types.ts";
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
@@ -78,7 +84,7 @@ export class VeilHarness {
 	private totalCaptures: number = 0;
 	private evictedToolCallIds: Set<string> = new Set();
 	private triggers: Trigger[] = DEFAULT_TRIGGERS;
-	private manifestItemIds: Set<string> = new Set();  // For Phase 6 learning
+	private manifestItemIds: Set<string> = new Set(); // For Phase 6 learning
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -465,8 +471,8 @@ export class VeilHarness {
 	 * Preload top N manifest items into hot context.
 	 */
 	private preloadTopItems(manifest: ContextManifest, limit: number): void {
-		const ids = manifest.items.slice(0, limit).map(i => i.id);
-		this.load(ids);  // Existing method, handles dedup
+		const ids = manifest.items.slice(0, limit).map((i) => i.id);
+		this.load(ids); // Existing method, handles dedup
 	}
 
 	/**
