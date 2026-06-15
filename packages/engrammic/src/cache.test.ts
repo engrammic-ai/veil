@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { type HydrationEvent, ContextCache, createItem } from "./cache.ts";
+import { ContextCache, createItem, type HydrationEvent } from "./cache.ts";
 import type { Trigger } from "./types.ts";
 
 describe("ContextCache two-phase commit", () => {
@@ -124,8 +124,22 @@ describe("ContextCache hydration events", () => {
 	});
 
 	test("getHydrationStats returns count and avgLatency for an item", () => {
-		cache.logHydration({ sessionId: "s1", itemId: "item-x", triggerIds: [], userMessage: "a", hydratedAt: 1, latencyMs: 100 });
-		cache.logHydration({ sessionId: "s1", itemId: "item-x", triggerIds: [], userMessage: "b", hydratedAt: 2, latencyMs: 200 });
+		cache.logHydration({
+			sessionId: "s1",
+			itemId: "item-x",
+			triggerIds: [],
+			userMessage: "a",
+			hydratedAt: 1,
+			latencyMs: 100,
+		});
+		cache.logHydration({
+			sessionId: "s1",
+			itemId: "item-x",
+			triggerIds: [],
+			userMessage: "b",
+			hydratedAt: 2,
+			latencyMs: 200,
+		});
 
 		const stats = cache.getHydrationStats("item-x");
 		expect(stats.count).toBe(2);
@@ -323,9 +337,9 @@ describe("ContextCache custom triggers", () => {
 		cache.persistTrigger(trigger);
 
 		// Read created_at from DB directly via loadCustomTriggers (not exposed, so query raw)
-		const dbFirst = (cache as any).db.prepare(
-			"SELECT created_at, updated_at FROM custom_triggers WHERE id = ?",
-		).get("trigger-created-at") as { created_at: number; updated_at: number };
+		const dbFirst = (cache as any).db
+			.prepare("SELECT created_at, updated_at FROM custom_triggers WHERE id = ?")
+			.get("trigger-created-at") as { created_at: number; updated_at: number };
 		const originalCreatedAt = dbFirst.created_at;
 
 		// Advance fake clock so updated_at will differ from created_at
@@ -334,9 +348,9 @@ describe("ContextCache custom triggers", () => {
 		const updated: Trigger = { ...trigger, priority: 99 };
 		cache.persistTrigger(updated);
 
-		const dbSecond = (cache as any).db.prepare(
-			"SELECT created_at, updated_at FROM custom_triggers WHERE id = ?",
-		).get("trigger-created-at") as { created_at: number; updated_at: number };
+		const dbSecond = (cache as any).db
+			.prepare("SELECT created_at, updated_at FROM custom_triggers WHERE id = ?")
+			.get("trigger-created-at") as { created_at: number; updated_at: number };
 
 		expect(dbSecond.created_at).toBe(originalCreatedAt);
 		expect(dbSecond.updated_at).toBeGreaterThan(originalCreatedAt);
@@ -435,5 +449,46 @@ describe("ContextCache episode links", () => {
 
 		const related = cache.getRelatedEpisodes(source.id);
 		expect(related).toHaveLength(0);
+	});
+});
+
+describe("ContextCache eviction ledger", () => {
+	let testDir: string;
+	let cache: ContextCache;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-cache-evlog-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		cache = new ContextCache(join(testDir, "test.db"));
+	});
+
+	afterEach(() => {
+		cache.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("records and finds a recent eviction by content hash", () => {
+		cache.logEviction("item_1", "hashA", 5);
+		const found = cache.findRecentEviction("hashA", 60_000);
+		expect(found).not.toBeNull();
+		expect(found?.itemId).toBe("item_1");
+		expect(found?.evictedTurn).toBe(5);
+	});
+
+	test("returns null for an unknown hash", () => {
+		cache.logEviction("item_1", "hashA", 5);
+		expect(cache.findRecentEviction("hashB", 60_000)).toBeNull();
+	});
+
+	test("returns null when the eviction is older than the window", () => {
+		cache.logEviction("item_1", "hashA", 5);
+		// withinMs = 0 means cutoff is "now"; an entry stamped a moment ago is excluded
+		expect(cache.findRecentEviction("hashA", -1)).toBeNull();
+	});
+
+	test("clears eviction entries for a hash", () => {
+		cache.logEviction("item_1", "hashA", 5);
+		cache.clearEvictionForHash("hashA");
+		expect(cache.findRecentEviction("hashA", 60_000)).toBeNull();
 	});
 });

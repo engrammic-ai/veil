@@ -52,6 +52,11 @@ export class ContextCache {
 	private stmtLinkEpisodes: Database.Statement;
 	private stmtGetRelatedEpisodes: Database.Statement;
 
+	// Eviction ledger statements
+	private stmtLogEviction: Database.Statement;
+	private stmtFindRecentEviction: Database.Statement;
+	private stmtClearEvictionForHash: Database.Statement;
+
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
 		this.db.pragma("journal_mode = WAL");
@@ -172,6 +177,18 @@ export class ContextCache {
 			UNION
 			SELECT source_id AS linked_id, relation FROM episode_links WHERE target_id = ?
 		`);
+
+		this.stmtLogEviction = this.db.prepare(
+			"INSERT INTO eviction_log (item_id, content_hash, evicted_at, evicted_turn) VALUES (?, ?, ?, ?)",
+		);
+
+		this.stmtFindRecentEviction = this.db.prepare(`
+			SELECT item_id, evicted_at, evicted_turn FROM eviction_log
+			WHERE content_hash = ? AND evicted_at >= ?
+			ORDER BY evicted_at DESC LIMIT 1
+		`);
+
+		this.stmtClearEvictionForHash = this.db.prepare("DELETE FROM eviction_log WHERE content_hash = ?");
 	}
 
 	private init(): void {
@@ -286,6 +303,20 @@ export class ContextCache {
 
 			CREATE INDEX IF NOT EXISTS idx_episode_source ON episode_links(source_id);
 			CREATE INDEX IF NOT EXISTS idx_episode_target ON episode_links(target_id);
+		`);
+
+		// Eviction ledger for re-request (miss) detection — drives self-tuning
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS eviction_log (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				item_id TEXT NOT NULL,
+				content_hash TEXT NOT NULL,
+				evicted_at REAL NOT NULL,
+				evicted_turn INTEGER NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_eviction_hash ON eviction_log(content_hash);
+			CREATE INDEX IF NOT EXISTS idx_eviction_item ON eviction_log(item_id);
 		`);
 	}
 
@@ -434,6 +465,26 @@ export class ContextCache {
 		return rows.map((row) => this.rowToItem(row));
 	}
 
+	logEviction(itemId: string, contentHash: string, turn: number): void {
+		this.stmtLogEviction.run(itemId, contentHash, Date.now(), turn);
+	}
+
+	findRecentEviction(
+		contentHash: string,
+		withinMs: number,
+	): { itemId: string; evictedAt: number; evictedTurn: number } | null {
+		const cutoff = Date.now() - withinMs;
+		const row = this.stmtFindRecentEviction.get(contentHash, cutoff) as
+			| { item_id: string; evicted_at: number; evicted_turn: number }
+			| undefined;
+		if (!row) return null;
+		return { itemId: row.item_id, evictedAt: row.evicted_at, evictedTurn: row.evicted_turn };
+	}
+
+	clearEvictionForHash(contentHash: string): void {
+		this.stmtClearEvictionForHash.run(contentHash);
+	}
+
 	logHydration(event: HydrationEvent): void {
 		this.stmtLogHydration.run(
 			event.sessionId,
@@ -507,11 +558,7 @@ export class ContextCache {
 		this.stmtDeleteTrigger.run(id);
 	}
 
-	linkEpisodes(
-		sourceId: string,
-		targetId: string,
-		relation: "continues" | "relates" | "supersedes",
-	): void {
+	linkEpisodes(sourceId: string, targetId: string, relation: "continues" | "relates" | "supersedes"): void {
 		this.stmtLinkEpisodes.run(sourceId, targetId, relation, Date.now());
 	}
 
