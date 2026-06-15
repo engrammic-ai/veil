@@ -28,10 +28,10 @@ import type {
 } from "./types.ts";
 import { DEFAULT_CONFIG } from "./types.ts";
 import { estimateTokens } from "./utils.ts";
-import type { RankStore } from "./worldview/graph-rank.ts";
+import { RankStore } from "./worldview/graph-rank.ts";
 import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
 import { StructuralFloor } from "./worldview/structural-floor.ts";
-import type { SymbolStore } from "./worldview/symbol-store.ts";
+import { SymbolStore } from "./worldview/symbol-store.ts";
 import type { ScoredSuggestion } from "./worldview/unified-anticipate.ts";
 import { UnifiedAnticipator } from "./worldview/unified-anticipate.ts";
 
@@ -86,8 +86,15 @@ export class ContextManager {
 			this.cache.unmarkEvicting(item.id);
 		}
 
-		this.symbolStore = symbolStore;
-		this.rankStore = rankStore;
+		// Worldview stores: use provided or create when enabled
+		if (this.config.enableWorldview) {
+			const db = this.cache.getDb();
+			this.symbolStore = symbolStore ?? new SymbolStore(db);
+			this.rankStore = rankStore ?? new RankStore(db);
+		} else {
+			this.symbolStore = symbolStore;
+			this.rankStore = rankStore;
+		}
 
 		// Initialize structural floor for preload protection
 		this.floor = new StructuralFloor(this.cache.getDb());
@@ -456,6 +463,22 @@ export class ContextManager {
 	 */
 	getConfig(): ContextManagerConfig {
 		return { ...this.config };
+	}
+
+	/**
+	 * Get the symbol store (worldview structural data).
+	 * Returns undefined when worldview is disabled.
+	 */
+	getSymbolStore(): SymbolStore | undefined {
+		return this.symbolStore;
+	}
+
+	/**
+	 * Get the rank store (worldview PageRank data).
+	 * Returns undefined when worldview is disabled.
+	 */
+	getRankStore(): RankStore | undefined {
+		return this.rankStore;
 	}
 
 	/**

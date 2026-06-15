@@ -128,6 +128,8 @@ export interface ContextManagerConfig {
 	statusBarEnabled: boolean;
 	fadeEvicted: boolean;
 	evictionNotify: EvictionNotifyConfig;
+	// Worldview (Phase C)
+	enableWorldview: boolean;
 }
 
 export interface CaptureRule {
@@ -172,4 +174,6 @@ export const DEFAULT_CONFIG: ContextManagerConfig = {
 	statusBarEnabled: true,
 	fadeEvicted: true,
 	evictionNotify: DEFAULT_EVICTION_NOTIFY_CONFIG,
+	// Worldview (Phase C)
+	enableWorldview: false, // opt-in for now; requires tree-sitter WASM
 };

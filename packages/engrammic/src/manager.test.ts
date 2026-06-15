@@ -119,3 +119,30 @@ describe("ContextManager decay scheduling", () => {
 		expect(spy).toHaveBeenCalledTimes(2);
 	});
 });
+
+describe("ContextManager worldview enablement", () => {
+	let testDir: string;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-mgr-wv-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+	});
+
+	afterEach(async () => {
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("stores are undefined when worldview is disabled (default)", async () => {
+		const manager = makeManager(testDir);
+		expect(manager.getSymbolStore()).toBeUndefined();
+		expect(manager.getRankStore()).toBeUndefined();
+		await manager.close();
+	});
+
+	test("stores are created when worldview is enabled", async () => {
+		const manager = makeManager(testDir, { enableWorldview: true });
+		expect(manager.getSymbolStore()).toBeDefined();
+		expect(manager.getRankStore()).toBeDefined();
+		await manager.close();
+	});
+});
