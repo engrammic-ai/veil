@@ -11,6 +11,7 @@ import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
 import { VeilHarness } from "@engrammic/veil";
 import chalk from "chalk";
+import { mcpExtension } from "./core/mcp/index.ts";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
@@ -648,7 +649,10 @@ export async function main(args: string[], options?: MainOptions) {
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: options?.extensionFactories,
+				extensionFactories: [
+					...(options?.extensionFactories ?? []),
+					...(parsed.noMcp ? [] : [mcpExtension]),
+				],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
