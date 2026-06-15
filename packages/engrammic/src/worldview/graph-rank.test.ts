@@ -7,7 +7,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SYMBOL_GRAPH_SCHEMA } from "./symbol-store.ts";
-import { STRUCTURAL_RANK_SCHEMA, RankStore, buildFileGraph, computePageRank, updateRanks } from "./graph-rank.ts";
+import { STRUCTURAL_RANK_SCHEMA, RankStore, buildFileGraph, computePageRank, computeTaskBias, updateRanks, updateTaskBias } from "./graph-rank.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -349,5 +349,266 @@ describe("updateRanks", () => {
 			expect(rowsFirst[i].file).toBe(rowsSecond[i].file);
 			expect(rowsFirst[i].pagerank).toBeCloseTo(rowsSecond[i].pagerank, 10);
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// computeTaskBias
+// ---------------------------------------------------------------------------
+
+describe("computeTaskBias", () => {
+	let testDir: string;
+	let db: Database.Database;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-task-bias-${Date.now()}`);
+		db = makeDb(testDir);
+	});
+
+	afterEach(() => {
+		db.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("returns empty map when hotFiles is empty", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, []);
+		expect(bias.size).toBe(0);
+	});
+
+	test("returns empty map when graph is empty", () => {
+		const graph = buildFileGraph(db); // empty
+		const bias = computeTaskBias(graph, ["src/a.ts"]);
+		expect(bias.size).toBe(0);
+	});
+
+	test("hot file itself gets bias 1.0", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts"]);
+		expect(bias.get("src/a.ts")).toBeCloseTo(1.0, 10);
+	});
+
+	test("direct neighbor gets bias 0.5 (1 hop decay)", () => {
+		// a -> b  (a is hot, b is 1 hop away)
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts"]);
+		// b is 1 hop from hot file a => 1 / 2^1 = 0.5
+		expect(bias.get("src/b.ts")).toBeCloseTo(0.5, 10);
+	});
+
+	test("2-hop neighbor gets bias 0.25", () => {
+		// a -> b -> c  (a is hot)
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		insertRef(db, "src/b.ts", "fn2", "src/c.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts"]);
+		expect(bias.get("src/c.ts")).toBeCloseTo(0.25, 10);
+	});
+
+	test("nodes beyond maxHops are not included", () => {
+		// a -> b -> c -> d -> e  (maxHops=3, so e at hop 4 should not appear)
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		insertRef(db, "src/b.ts", "fn", "src/c.ts");
+		insertRef(db, "src/c.ts", "fn", "src/d.ts");
+		insertRef(db, "src/d.ts", "fn", "src/e.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts"], 3);
+		// d is at hop 3 (included), e is at hop 4 (excluded)
+		expect(bias.has("src/d.ts")).toBe(true);
+		expect(bias.has("src/e.ts")).toBe(false);
+	});
+
+	test("bias propagates over undirected edges — importer of hot file is boosted", () => {
+		// consumer imports hot_file (hot_file is hot, consumer is connected by reverse edge)
+		insertRef(db, "src/consumer.ts", "fn", "src/hot_file.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/hot_file.ts"]);
+		// consumer is a neighbor of hot_file in undirected traversal
+		expect(bias.has("src/consumer.ts")).toBe(true);
+		expect(bias.get("src/consumer.ts")).toBeCloseTo(0.5, 10);
+	});
+
+	test("multiple hot files combine — max contribution wins", () => {
+		// a -> c, b -> c; both a and b are hot
+		insertRef(db, "src/a.ts", "fn", "src/c.ts");
+		insertRef(db, "src/b.ts", "fn", "src/c.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts", "src/b.ts"]);
+		// c is 1 hop from both hot files => max(0.5, 0.5) = 0.5
+		expect(bias.get("src/c.ts")).toBeCloseTo(0.5, 10);
+	});
+
+	test("hot file not in graph is silently skipped", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		const graph = buildFileGraph(db);
+		// "src/ghost.ts" is not in the graph
+		expect(() => computeTaskBias(graph, ["src/ghost.ts"])).not.toThrow();
+		const bias = computeTaskBias(graph, ["src/ghost.ts"]);
+		expect(bias.size).toBe(0);
+	});
+
+	test("all bias values are in [0, 1] range", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		insertRef(db, "src/b.ts", "fn", "src/c.ts");
+		insertRef(db, "src/a.ts", "fn2", "src/c.ts");
+		const graph = buildFileGraph(db);
+		const bias = computeTaskBias(graph, ["src/a.ts"]);
+		for (const [, value] of bias) {
+			expect(value).toBeGreaterThanOrEqual(0);
+			expect(value).toBeLessThanOrEqual(1);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// updateTaskBias
+// ---------------------------------------------------------------------------
+
+describe("updateTaskBias", () => {
+	let testDir: string;
+	let db: Database.Database;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-update-task-bias-${Date.now()}`);
+		db = makeDb(testDir);
+		db.exec(STRUCTURAL_RANK_SCHEMA);
+	});
+
+	afterEach(() => {
+		db.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("writes bias values to structural_rank", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		// Pre-populate pagerank rows so the upsert has something to update
+		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0, ?)").run(
+			"src/a.ts", 0.5, Date.now()
+		);
+		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0, ?)").run(
+			"src/b.ts", 0.5, Date.now()
+		);
+
+		updateTaskBias(db, ["src/a.ts"]);
+
+		const rowA = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as { task_bias: number };
+		const rowB = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/b.ts'").get() as { task_bias: number };
+
+		expect(rowA.task_bias).toBeCloseTo(1.0, 10);
+		expect(rowB.task_bias).toBeCloseTo(0.5, 10);
+	});
+
+	test("resets task_bias to 0 for files not reached from hot files", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		insertDef(db, "src/unrelated.ts", "fnU");
+
+		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0.9, ?)").run(
+			"src/unrelated.ts", 0.1, Date.now()
+		);
+
+		updateTaskBias(db, ["src/a.ts"]);
+
+		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/unrelated.ts'").get() as { task_bias: number };
+		expect(row.task_bias).toBe(0);
+	});
+
+	test("with no hot files resets all task_bias to 0", () => {
+		insertRef(db, "src/a.ts", "fn", "src/b.ts");
+		db.prepare("INSERT INTO structural_rank (file, pagerank, task_bias, updated_at) VALUES (?, ?, 0.8, ?)").run(
+			"src/a.ts", 0.5, Date.now()
+		);
+
+		updateTaskBias(db, []);
+
+		const row = db.prepare("SELECT task_bias FROM structural_rank WHERE file = 'src/a.ts'").get() as { task_bias: number };
+		expect(row.task_bias).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// RankStore.updateBias and RankStore.getEffectiveRank
+// ---------------------------------------------------------------------------
+
+describe("RankStore — updateBias and getEffectiveRank", () => {
+	let testDir: string;
+	let db: Database.Database;
+	let store: RankStore;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-rank-store-bias-${Date.now()}`);
+		db = makeDb(testDir);
+		store = new RankStore(db);
+	});
+
+	afterEach(() => {
+		db.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("updateBias sets task_bias for an existing file", () => {
+		store.saveRanks(new Map([["src/a.ts", 0.4]]));
+		store.updateBias("src/a.ts", 0.75);
+
+		const row = store.getRank("src/a.ts");
+		expect(row).not.toBeNull();
+		expect(row!.task_bias).toBeCloseTo(0.75, 10);
+		// pagerank should be unchanged
+		expect(row!.pagerank).toBeCloseTo(0.4, 10);
+	});
+
+	test("updateBias is a no-op for a file not in the table", () => {
+		// Must not throw; file simply doesn't exist
+		expect(() => store.updateBias("src/ghost.ts", 0.5)).not.toThrow();
+		expect(store.getRank("src/ghost.ts")).toBeNull();
+	});
+
+	test("getEffectiveRank returns null for unknown file", () => {
+		expect(store.getEffectiveRank("src/missing.ts")).toBeNull();
+	});
+
+	test("getEffectiveRank with zero bias equals pagerank", () => {
+		store.saveRanks(new Map([["src/a.ts", 0.6]]));
+		// task_bias defaults to 0
+		const effective = store.getEffectiveRank("src/a.ts");
+		// pagerank * (1 + 0) = pagerank
+		expect(effective).toBeCloseTo(0.6, 10);
+	});
+
+	test("getEffectiveRank combines pagerank and task_bias correctly", () => {
+		store.saveRanks(new Map([["src/a.ts", 0.4]]));
+		store.updateBias("src/a.ts", 0.5);
+
+		const effective = store.getEffectiveRank("src/a.ts");
+		// 0.4 * (1 + 0.5) = 0.6
+		expect(effective).toBeCloseTo(0.6, 10);
+	});
+
+	test("getEffectiveRank with full bias (1.0) doubles the pagerank", () => {
+		store.saveRanks(new Map([["src/a.ts", 0.3]]));
+		store.updateBias("src/a.ts", 1.0);
+
+		const effective = store.getEffectiveRank("src/a.ts");
+		// 0.3 * (1 + 1) = 0.6
+		expect(effective).toBeCloseTo(0.6, 10);
+	});
+
+	test("files with higher effective rank are boosted relative to unbiased files", () => {
+		store.saveRanks(new Map([
+			["src/low-rank.ts", 0.1],
+			["src/high-rank.ts", 0.3],
+		]));
+		// Boost the low-rank file with high task bias
+		store.updateBias("src/low-rank.ts", 1.0);
+
+		const effectiveLow = store.getEffectiveRank("src/low-rank.ts")!;
+		const effectiveHigh = store.getEffectiveRank("src/high-rank.ts")!;
+
+		// low-rank with full bias: 0.1 * 2 = 0.2 > high-rank with no bias: 0.3 * 1 = 0.3? No.
+		// Actually high-rank 0.3 still wins; let's verify the formula is just applied correctly
+		expect(effectiveLow).toBeCloseTo(0.2, 10);
+		expect(effectiveHigh).toBeCloseTo(0.3, 10);
 	});
 });

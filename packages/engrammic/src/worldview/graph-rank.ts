@@ -119,6 +119,101 @@ export function computePageRank(graph: Graph): Map<string, number> {
 }
 
 // ---------------------------------------------------------------------------
+// Task bias computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes a task-personalized bias for each file in the graph based on which
+ * files are currently in the hot context (being actively worked on).
+ *
+ * Files directly connected to hot files get a bias boost of 1.0, files two
+ * hops away get 0.5, three hops get 0.25, etc. (geometric decay by hop count).
+ * Hot files themselves receive a bias of 1.0.
+ *
+ * Returns a Map<file, bias> where bias is in the range [0, 1].
+ * Files not reachable from any hot file are not included in the result.
+ */
+export function computeTaskBias(graph: Graph, hotFiles: string[], maxHops = 3): Map<string, number> {
+	const bias = new Map<string, number>();
+
+	if (hotFiles.length === 0 || graph.order === 0) {
+		return bias;
+	}
+
+	// BFS from each hot file, propagating decayed bias to neighbors.
+	// We use an undirected traversal (both in-edges and out-edges) so that
+	// files which import a hot file are also boosted — the bias flows both ways.
+	for (const hotFile of hotFiles) {
+		if (!graph.hasNode(hotFile)) {
+			continue;
+		}
+
+		// BFS queue: [node, hop distance from hotFile]
+		const queue: Array<[string, number]> = [[hotFile, 0]];
+		const visited = new Set<string>();
+
+		while (queue.length > 0) {
+			const [node, hop] = queue.shift()!;
+
+			if (visited.has(node)) {
+				continue;
+			}
+			visited.add(node);
+
+			if (hop > maxHops) {
+				continue;
+			}
+
+			// Decay: 1.0 at hop 0, 0.5 at hop 1, 0.25 at hop 2, …
+			const contribution = 1.0 / (2 ** hop);
+
+			// Keep the maximum contribution seen so far for this node
+			const existing = bias.get(node) ?? 0;
+			bias.set(node, Math.max(existing, contribution));
+
+			if (hop < maxHops) {
+				// Visit all neighbors (undirected: out-edges and in-edges)
+				graph.neighbors(node).forEach((neighbor: string) => {
+					if (!visited.has(neighbor)) {
+						queue.push([neighbor, hop + 1]);
+					}
+				});
+			}
+		}
+	}
+
+	return bias;
+}
+
+/**
+ * Computes task bias from hot files and writes the results to the
+ * structural_rank table.  Files not reached from any hot file have their
+ * task_bias reset to 0 so stale bias doesn't accumulate across tasks.
+ */
+export function updateTaskBias(db: Database.Database, hotFiles: string[]): void {
+	const graph = buildFileGraph(db);
+	const biasMap = computeTaskBias(graph, hotFiles);
+
+	const resetAll = db.prepare("UPDATE structural_rank SET task_bias = 0");
+	const upsertBias = db.prepare(`
+		INSERT INTO structural_rank (file, pagerank, task_bias, updated_at)
+		VALUES (?, 0, ?, ?)
+		ON CONFLICT(file) DO UPDATE SET
+		  task_bias  = excluded.task_bias,
+		  updated_at = excluded.updated_at
+	`);
+
+	const run = db.transaction(() => {
+		resetAll.run();
+		const now = Date.now();
+		for (const [file, biasValue] of biasMap) {
+			upsertBias.run(file, biasValue, now);
+		}
+	});
+	run();
+}
+
+// ---------------------------------------------------------------------------
 // RankStore — persists scores to structural_rank
 // ---------------------------------------------------------------------------
 
@@ -127,6 +222,7 @@ export class RankStore {
 	private stmtUpsert: Database.Statement;
 	private stmtGet: Database.Statement;
 	private stmtGetAll: Database.Statement;
+	private stmtUpdateBias: Database.Statement;
 
 	constructor(db: Database.Database) {
 		this.db = db;
@@ -147,6 +243,10 @@ export class RankStore {
 		this.stmtGetAll = this.db.prepare(
 			"SELECT file, pagerank, task_bias, updated_at FROM structural_rank ORDER BY pagerank DESC",
 		);
+
+		this.stmtUpdateBias = this.db.prepare(
+			"UPDATE structural_rank SET task_bias = ?, updated_at = ? WHERE file = ?",
+		);
 	}
 
 	/**
@@ -157,6 +257,28 @@ export class RankStore {
 		const db = new Database(dbPath);
 		db.pragma("journal_mode = WAL");
 		return new RankStore(db);
+	}
+
+	/**
+	 * Update the task_bias for a single file.
+	 * No-op if the file does not yet have a row in structural_rank.
+	 */
+	updateBias(file: string, bias: number): void {
+		this.stmtUpdateBias.run(bias, Date.now(), file);
+	}
+
+	/**
+	 * Returns the effective rank for a file, combining its PageRank score with
+	 * the task bias: effectiveRank = pagerank * (1 + task_bias).
+	 *
+	 * Returns null when the file is not present in the table.
+	 */
+	getEffectiveRank(file: string): number | null {
+		const row = this.getRank(file);
+		if (row === null) {
+			return null;
+		}
+		return row.pagerank * (1 + row.task_bias);
 	}
 
 	/**
