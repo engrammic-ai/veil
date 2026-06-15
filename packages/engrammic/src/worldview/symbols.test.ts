@@ -22,23 +22,17 @@ vi.mock("web-tree-sitter", () => {
 		setLanguage: vi.fn(),
 		parse: vi.fn(),
 	};
-	return {
-		default: {
-			init: vi.fn().mockResolvedValue(undefined),
-			Language: {
-				load: vi.fn().mockResolvedValue(mockLanguage),
-			},
-			// Constructor mock: return mockParser instance
-			...Object.assign(
-				function MockParser() {
-					return mockParser;
-				},
-				{
-					init: vi.fn().mockResolvedValue(undefined),
-					Language: { load: vi.fn().mockResolvedValue(mockLanguage) },
-				},
-			),
+	const MockParser = Object.assign(
+		function MockParserConstructor() {
+			return mockParser;
 		},
+		{
+			init: vi.fn().mockResolvedValue(undefined),
+			Language: { load: vi.fn().mockResolvedValue(mockLanguage) },
+		},
+	);
+	return {
+		default: MockParser,
 		__mockParser: mockParser,
 		__mockLanguage: mockLanguage,
 	};
