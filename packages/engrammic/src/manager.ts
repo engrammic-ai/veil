@@ -15,6 +15,7 @@ import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { SqliteColdStore } from "./cold/sqlite.ts";
 import { EvictionController } from "./eviction.ts";
+import { buildBehavioralManifest } from "./anticipate.ts";
 import { findEvictionCandidates, rankItems } from "./scorer.ts";
 import type {
 	ContextBudget,
@@ -22,6 +23,7 @@ import type {
 	ContextManagerConfig,
 	ContextWindow,
 	EvictionCandidate,
+	ManifestItem,
 	TaskContext,
 } from "./types.ts";
 import { DEFAULT_CONFIG } from "./types.ts";
@@ -122,6 +124,20 @@ export class ContextManager {
 		}
 
 		return items;
+	}
+
+	/**
+	 * Return behavioral anticipation suggestions for the given accessed items.
+	 *
+	 * Looks up co-access patterns for each accessed item and returns the top
+	 * candidates (warm cache only) that are frequently loaded alongside them.
+	 * Call this after load() to get preload candidates for the next turn.
+	 *
+	 * @param accessedItemIds - IDs of items that were just accessed
+	 * @param limit - max suggestions to return (default 5)
+	 */
+	getBehavioralSuggestions(accessedItemIds: string[], limit: number = 5): ManifestItem[] {
+		return buildBehavioralManifest(accessedItemIds, this.cache.coAccess, this.cache, limit);
 	}
 
 	/**
