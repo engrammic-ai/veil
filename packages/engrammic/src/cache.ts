@@ -5,7 +5,16 @@
 
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
-import type { ContextItem } from "./types.ts";
+import type { ContextItem, Trigger } from "./types.ts";
+
+export interface HydrationEvent {
+	sessionId: string;
+	itemId: string;
+	triggerIds: string[];
+	userMessage: string;
+	hydratedAt: number;
+	latencyMs: number;
+}
 
 export class ContextCache {
 	private db: Database.Database;
@@ -28,6 +37,20 @@ export class ContextCache {
 	private stmtUnmarkEvicting: Database.Statement;
 	private stmtDeleteEvicting: Database.Statement;
 	private stmtRecoverEvicting: Database.Statement;
+
+	// Hydration event statements
+	private stmtLogHydration: Database.Statement;
+	private stmtGetRecentHydrations: Database.Statement;
+	private stmtGetHydrationStats: Database.Statement;
+
+	// Custom trigger statements
+	private stmtPersistTrigger: Database.Statement;
+	private stmtLoadCustomTriggers: Database.Statement;
+	private stmtDeleteTrigger: Database.Statement;
+
+	// Episode link statements
+	private stmtLinkEpisodes: Database.Statement;
+	private stmtGetRelatedEpisodes: Database.Statement;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -93,6 +116,62 @@ export class ContextCache {
 		this.stmtDeleteEvicting = this.db.prepare("DELETE FROM items WHERE id = ? AND evicting = 1");
 
 		this.stmtRecoverEvicting = this.db.prepare("SELECT * FROM items WHERE evicting = 1");
+
+		this.stmtLogHydration = this.db.prepare(`
+			INSERT OR IGNORE INTO hydration_events
+			(session_id, item_id, trigger_ids, user_message, hydrated_at, latency_ms)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`);
+
+		this.stmtGetRecentHydrations = this.db.prepare(`
+			SELECT * FROM hydration_events
+			ORDER BY hydrated_at DESC LIMIT ?
+		`);
+
+		this.stmtGetHydrationStats = this.db.prepare(`
+			SELECT COUNT(*) as count, AVG(latency_ms) as avg_latency
+			FROM hydration_events WHERE item_id = ?
+		`);
+
+		this.stmtPersistTrigger = this.db.prepare(`
+			INSERT INTO custom_triggers
+			(id, pattern, pattern_flags, negative_pattern, negative_pattern_flags,
+			 type, action_tags, action_type,
+			 priority, enabled, learned, confidence, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+			  pattern = excluded.pattern,
+			  pattern_flags = excluded.pattern_flags,
+			  negative_pattern = excluded.negative_pattern,
+			  negative_pattern_flags = excluded.negative_pattern_flags,
+			  type = excluded.type,
+			  action_tags = excluded.action_tags,
+			  action_type = excluded.action_type,
+			  priority = excluded.priority,
+			  enabled = excluded.enabled,
+			  learned = excluded.learned,
+			  confidence = excluded.confidence,
+			  updated_at = excluded.updated_at
+		`);
+
+		this.stmtLoadCustomTriggers = this.db.prepare(`
+			SELECT * FROM custom_triggers WHERE enabled = 1
+		`);
+
+		this.stmtDeleteTrigger = this.db.prepare(`
+			DELETE FROM custom_triggers WHERE id = ?
+		`);
+
+		this.stmtLinkEpisodes = this.db.prepare(`
+			INSERT OR IGNORE INTO episode_links (source_id, target_id, relation, created_at)
+			VALUES (?, ?, ?, ?)
+		`);
+
+		this.stmtGetRelatedEpisodes = this.db.prepare(`
+			SELECT target_id AS linked_id, relation FROM episode_links WHERE source_id = ?
+			UNION
+			SELECT source_id AS linked_id, relation FROM episode_links WHERE target_id = ?
+		`);
 	}
 
 	private init(): void {
@@ -141,6 +220,73 @@ export class ContextCache {
 
 		// Index must be created after migration adds the column
 		this.db.exec("CREATE INDEX IF NOT EXISTS idx_source_tool_call_id ON items(source_tool_call_id)");
+
+		// Hydration events table for Phase 6 learning
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS hydration_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				session_id TEXT NOT NULL,
+				item_id TEXT NOT NULL,
+				trigger_ids TEXT NOT NULL,
+				user_message TEXT NOT NULL,
+				hydrated_at REAL NOT NULL,
+				latency_ms REAL,
+				UNIQUE(session_id, item_id, hydrated_at)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_hydration_item ON hydration_events(item_id);
+			CREATE INDEX IF NOT EXISTS idx_hydration_session ON hydration_events(session_id);
+		`);
+
+		// Custom triggers table for Phase 6 learning
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS custom_triggers (
+				id TEXT PRIMARY KEY,
+				pattern TEXT NOT NULL,
+				pattern_flags TEXT NOT NULL DEFAULT '',
+				negative_pattern TEXT,
+				negative_pattern_flags TEXT,
+				type TEXT NOT NULL DEFAULT 'keyword',
+				action_tags TEXT,
+				action_type TEXT,
+				priority INTEGER DEFAULT 10,
+				enabled INTEGER DEFAULT 1,
+				learned INTEGER DEFAULT 0,
+				confidence REAL,
+				created_at REAL NOT NULL,
+				updated_at REAL NOT NULL
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON custom_triggers(enabled);
+			CREATE INDEX IF NOT EXISTS idx_triggers_type ON custom_triggers(type);
+		`);
+
+		// Migration: add pattern_flags columns if they don't exist
+		try {
+			this.db.exec("ALTER TABLE custom_triggers ADD COLUMN pattern_flags TEXT NOT NULL DEFAULT ''");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE custom_triggers ADD COLUMN negative_pattern_flags TEXT");
+		} catch {
+			// Column already exists
+		}
+
+		// Episode links table for Part 5 schema
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS episode_links (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				source_id TEXT NOT NULL,
+				target_id TEXT NOT NULL,
+				relation TEXT NOT NULL,
+				created_at REAL NOT NULL,
+				UNIQUE(source_id, target_id, relation)
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_episode_source ON episode_links(source_id);
+			CREATE INDEX IF NOT EXISTS idx_episode_target ON episode_links(target_id);
+		`);
 	}
 
 	put(item: ContextItem): void {
@@ -286,6 +432,101 @@ export class ContextCache {
 	recoverEvicting(): ContextItem[] {
 		const rows = this.stmtRecoverEvicting.all() as any[];
 		return rows.map((row) => this.rowToItem(row));
+	}
+
+	logHydration(event: HydrationEvent): void {
+		this.stmtLogHydration.run(
+			event.sessionId,
+			event.itemId,
+			JSON.stringify(event.triggerIds),
+			event.userMessage,
+			event.hydratedAt,
+			event.latencyMs,
+		);
+	}
+
+	getRecentHydrations(limit: number): HydrationEvent[] {
+		const rows = this.stmtGetRecentHydrations.all(limit) as any[];
+		return rows.map((row) => ({
+			sessionId: row.session_id,
+			itemId: row.item_id,
+			triggerIds: JSON.parse(row.trigger_ids),
+			userMessage: row.user_message,
+			hydratedAt: row.hydrated_at,
+			latencyMs: row.latency_ms,
+		}));
+	}
+
+	getHydrationStats(itemId: string): { count: number; avgLatency: number } {
+		const row = this.stmtGetHydrationStats.get(itemId) as any;
+		if (!row) return { count: 0, avgLatency: 0 };
+		return { count: row.count, avgLatency: row.avg_latency ?? 0 };
+	}
+
+	persistTrigger(trigger: Trigger): void {
+		const now = Date.now();
+		this.stmtPersistTrigger.run(
+			trigger.id,
+			trigger.pattern.source,
+			trigger.pattern.flags,
+			trigger.negative?.source ?? null,
+			trigger.negative?.flags ?? null,
+			trigger.type,
+			JSON.stringify(trigger.action.tags ?? []),
+			trigger.action.type ?? null,
+			trigger.priority,
+			trigger.enabled ? 1 : 0,
+			trigger.learned ? 1 : 0,
+			trigger.confidence ?? null,
+			now,
+			now,
+		);
+	}
+
+	loadCustomTriggers(): Trigger[] {
+		const rows = this.stmtLoadCustomTriggers.all() as any[];
+		return rows.map((row) => ({
+			id: row.id,
+			pattern: new RegExp(row.pattern, row.pattern_flags || ""),
+			negative: row.negative_pattern
+				? new RegExp(row.negative_pattern, row.negative_pattern_flags || "")
+				: undefined,
+			type: row.type as "keyword" | "file" | "command",
+			action: {
+				tags: row.action_tags ? JSON.parse(row.action_tags) : undefined,
+				type: row.action_type ?? undefined,
+			},
+			priority: row.priority,
+			enabled: true,
+			learned: row.learned === 1,
+			confidence: row.confidence ?? undefined,
+		}));
+	}
+
+	deleteTrigger(id: string): void {
+		this.stmtDeleteTrigger.run(id);
+	}
+
+	linkEpisodes(
+		sourceId: string,
+		targetId: string,
+		relation: "continues" | "relates" | "supersedes",
+	): void {
+		this.stmtLinkEpisodes.run(sourceId, targetId, relation, Date.now());
+	}
+
+	getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
+		const rows = this.stmtGetRelatedEpisodes.all(itemId, itemId) as Array<{
+			linked_id: string;
+			relation: string;
+		}>;
+
+		return rows
+			.map((row) => {
+				const item = this.get(row.linked_id);
+				return item ? { item, relation: row.relation } : null;
+			})
+			.filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
 	}
 
 	close(): void {

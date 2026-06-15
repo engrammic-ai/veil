@@ -113,12 +113,25 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 			required: ["stub"],
 		},
 	},
+	{
+		name: "veil_history",
+		description: "Search past sessions for related context",
+		parameters: {
+			type: "object",
+			properties: {
+				query: { type: "string", description: "What to search for" },
+				days: { type: "number", description: "How far back to search", default: 7 },
+			},
+			required: ["query"],
+		},
+	},
 ];
 
 // Tool implementations
 
 export interface ToolContext {
 	manager: ContextManager;
+	onRecall?: (ids: string[]) => void;
 }
 
 export type ToolResult = { success: boolean; data?: unknown; error?: string };
@@ -145,6 +158,8 @@ export async function executeVeilTool(
 			return await executeForget(params as { id: string }, ctx);
 		case "veil_hydrate":
 			return executeHydrate(params as { stub: string }, ctx);
+		case "veil_history":
+			return await executeVeilHistory(params as { query: string; days?: number }, ctx);
 		default:
 			return { success: false, error: `Unknown tool: ${name}` };
 	}
@@ -153,6 +168,7 @@ export async function executeVeilTool(
 function executeRecall(params: { tags: string[]; limit?: number }, ctx: ToolContext): ToolResult {
 	const items = ctx.manager.recall(params.tags, params.limit ?? 10);
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
+	ctx.onRecall?.(items.map((i) => i.id));
 	return { success: true, data: { items: result } };
 }
 
@@ -220,4 +236,23 @@ function executeHydrate(params: { stub: string }, ctx: ToolContext): ToolResult 
 	}
 
 	return { success: true, data: { content: result.content } };
+}
+
+async function executeVeilHistory(
+	params: { query: string; days?: number },
+	ctx: ToolContext,
+): Promise<ToolResult> {
+	const since = Date.now() - (params.days ?? 7) * 24 * 60 * 60 * 1000;
+
+	const results = await ctx.manager.searchHistory(params.query, since);
+
+	if (results.length === 0) {
+		return { success: true, data: { message: "No related context found in recent sessions." } };
+	}
+
+	const formatted = results
+		.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`)
+		.join("\n");
+
+	return { success: true, data: { items: results, formatted } };
 }

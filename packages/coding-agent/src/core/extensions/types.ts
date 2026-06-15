@@ -272,6 +272,9 @@ export interface ExtensionUIContext {
 
 	/** Set tool output expansion state. */
 	setToolsExpanded(expanded: boolean): void;
+
+	/** Dim/undim a tool execution component by its tool call ID. Used for faded history. */
+	setToolCallDimmed(toolCallId: string, dimmed: boolean): void;
 }
 
 // ============================================================================

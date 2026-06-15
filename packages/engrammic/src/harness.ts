@@ -9,7 +9,9 @@
  *   }
  */
 
-import { hashContent } from "./cache.ts";
+import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import { analyzePatterns, patternToTrigger } from "./learning.ts";
+import { hashContent, type HydrationEvent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
@@ -17,9 +19,23 @@ import { buildContextSection } from "./injection.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
-import type { CaptureConfig, ContextManagerConfig, EvictionCandidate, TaskContext } from "./types.ts";
+import type {
+	CaptureConfig,
+	ContextManagerConfig,
+	ContextManifest,
+	EvictionCandidate,
+	TaskContext,
+	Trigger,
+} from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
+
+export interface LearningConfig {
+	/** How often to run pattern learning (ms). Default: 1 hour. */
+	intervalMs: number;
+	/** Minimum hydration events before learning runs. Default: 10. */
+	minHydrations: number;
+}
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
@@ -27,6 +43,7 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	onCheckpoint?: (turnCount: number) => void;
 	sessionId?: string; // Tag context items with session
 	captureConfig?: Partial<CaptureConfig>;
+	learningConfig?: Partial<LearningConfig>;
 }
 
 export interface BeforeToolCallContext {
@@ -50,6 +67,7 @@ export interface AfterToolCallResult {
 
 export interface ToolResultEvent {
 	toolName: string;
+	toolCallId?: string;
 	input: Record<string, unknown>;
 	content: Array<{ type: string; text?: string }>;
 	isError: boolean;
@@ -64,6 +82,13 @@ export interface UsageStats {
 	percent: number;
 }
 
+interface ManifestContext {
+	itemIds: Set<string>;
+	triggerIds: string[];
+	userMessage: string;
+	timestamp: number;
+}
+
 export class VeilHarness {
 	private manager: ContextManager;
 	private config: VeilHarnessConfig;
@@ -73,12 +98,23 @@ export class VeilHarness {
 	private captureConfig: CaptureConfig;
 	private capturesThisTurn: number = 0;
 	private totalCaptures: number = 0;
+	private evictedToolCallIds: Set<string> = new Set();
+	private triggers: Trigger[] = DEFAULT_TRIGGERS;
+	private currentManifest: ManifestContext | null = null;
+	private readonly learningConfig: LearningConfig = {
+		intervalMs: 60 * 60 * 1000, // 1 hour default
+		minHydrations: 10,
+	};
+	private lastLearnTime: number = 0;
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
 		this.captureConfig = { ...DEFAULT_CAPTURE_CONFIG, ...config.captureConfig };
+		this.learningConfig = { ...this.learningConfig, ...config.learningConfig };
 		this.manager = new ContextManager(config, config.coldStore);
+		const customTriggers = this.manager.getCache().loadCustomTriggers();
+		this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
 	}
 
 	/**
@@ -132,8 +168,16 @@ export class VeilHarness {
 		// Check if eviction needed
 		const evicted = await this.manager.checkEviction(this.currentTaskContext);
 
-		if (evicted.length > 0 && this.config.onEviction) {
-			this.config.onEviction(evicted);
+		if (evicted.length > 0) {
+			// Track evicted tool call IDs for faded history
+			for (const candidate of evicted) {
+				if (candidate.item.sourceToolCallId) {
+					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
+				}
+			}
+			if (this.config.onEviction) {
+				this.config.onEviction(evicted);
+			}
 		}
 
 		// Don't block any tool calls - just manage context
@@ -173,13 +217,18 @@ export class VeilHarness {
 	 */
 	private handleToolResult(event: ToolResultEvent): void {
 		if (event.isError) return;
-		this.autoCapture(event.toolName, event.input, event.content);
+		this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
 	}
 
 	/**
 	 * Auto-capture a tool result into the warm cache, respecting rate limits and deduplication.
 	 */
-	private autoCapture(toolName: string, args: unknown, content: Array<{ type: string; text?: string }>): void {
+	private autoCapture(
+		toolName: string,
+		args: unknown,
+		content: Array<{ type: string; text?: string }>,
+		toolCallId?: string,
+	): void {
 		// Check rate limits
 		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
 		if (this.totalCaptures >= this.captureConfig.maxItemsPerSession) return;
@@ -206,8 +255,8 @@ export class VeilHarness {
 		// Generate tags
 		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
 
-		// Store in warm cache
-		this.manager.remember(truncated, rule.type, tags);
+		// Store in warm cache with tool call ID for faded history
+		this.manager.remember(truncated, rule.type, tags, toolCallId);
 		this.capturesThisTurn++;
 		this.totalCaptures++;
 	}
@@ -286,10 +335,20 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Get and clear evicted tool call IDs since last call.
+	 * Used by the Pi extension to dim corresponding messages.
+	 */
+	getAndClearEvictedToolCallIds(): string[] {
+		const ids = Array.from(this.evictedToolCallIds);
+		this.evictedToolCallIds.clear();
+		return ids;
+	}
+
+	/**
 	 * Remember something (store in warm cache).
 	 */
-	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = []) {
-		return this.manager.remember(content, type, tags);
+	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = [], toolCallId?: string) {
+		return this.manager.remember(content, type, tags, toolCallId);
 	}
 
 	/**
@@ -352,7 +411,39 @@ export class VeilHarness {
 	 * Execute a veil tool by name.
 	 */
 	async executeTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
-		return executeVeilTool(name, params, { manager: this.manager });
+		return executeVeilTool(name, params, { manager: this.manager, onRecall: (ids) => this.onRecall(ids) });
+	}
+
+	/**
+	 * Called when items are recalled via veil_recall. Logs hydration events for manifest items.
+	 * Uses the bundled ManifestContext snapshot set by processUserMessage.
+	 * Clears the manifest after logging to prevent stale data reuse.
+	 */
+	private onRecall(ids: string[]): void {
+		const MANIFEST_STALE_MS = 5 * 60 * 1000; // 5 minutes
+		const now = Date.now();
+
+		if (!this.currentManifest) return;
+		if (now - this.currentManifest.timestamp > MANIFEST_STALE_MS) {
+			this.currentManifest = null;
+			return;
+		}
+
+		const manifest = this.currentManifest;
+		this.currentManifest = null; // Clear to prevent stale data reuse
+
+		for (const id of ids) {
+			if (manifest.itemIds.has(id)) {
+				this.manager.getCache().logHydration({
+					sessionId: this.sessionId ?? "unknown",
+					itemId: id,
+					triggerIds: manifest.triggerIds,
+					userMessage: manifest.userMessage,
+					hydratedAt: now,
+					latencyMs: now - manifest.timestamp,
+				});
+			}
+		}
 	}
 
 	/**
@@ -387,6 +478,94 @@ export class VeilHarness {
 		}));
 
 		return formatHydratedBlock(results);
+	}
+
+	/**
+	 * Process user message for anticipatory loading.
+	 * Returns formatted manifest string if triggers match, null otherwise.
+	 */
+	async processUserMessage(message: string): Promise<string | null> {
+		const startTime = Date.now(); // Capture at start to measure full latency
+		const triggers = matchTriggers(message, this.triggers);
+		if (triggers.length === 0) return null;
+
+		const budget = this.getUsage();
+		if (budget.percent > 70) return null;
+
+		let manifest: ContextManifest | null;
+		try {
+			manifest = await buildManifest(triggers, this.manager.getCache(), { percent: budget.percent }, this.config.coldStore);
+		} catch (err) {
+			// Log error, don't block agent flow
+			console.error("[veil] manifest build failed:", err);
+			return null;
+		}
+
+		if (!manifest) return null;
+
+		// Track for Phase 6 learning
+		this.trackManifestItems(manifest, message, startTime);
+
+		// Eager preload if budget allows
+		if (budget.percent < 50) {
+			this.preloadTopItems(manifest, 3);
+		}
+
+		return formatManifest(manifest);
+	}
+
+	/**
+	 * Track manifest items for future learning (Phase 6).
+	 * Bundles all related state into a single ManifestContext snapshot to prevent temporal coupling.
+	 */
+	private trackManifestItems(manifest: ContextManifest, userMessage: string, startTime: number): void {
+		this.currentManifest = {
+			itemIds: new Set(manifest.items.map((item) => item.id)),
+			triggerIds: manifest.triggers,
+			userMessage,
+			timestamp: startTime, // Use startTime to capture full latency from message receipt
+		};
+	}
+
+	/**
+	 * Preload top N manifest items into hot context.
+	 */
+	private preloadTopItems(manifest: ContextManifest, limit: number): void {
+		const ids = manifest.items.slice(0, limit).map((i) => i.id);
+		this.load(ids); // Existing method, handles dedup
+	}
+
+	/**
+	 * Check if an item ID was in the current manifest (for Phase 6 learning).
+	 */
+	wasInManifest(id: string): boolean {
+		return this.currentManifest?.itemIds.has(id) ?? false;
+	}
+
+	/**
+	 * Run pattern learning if enough time has passed and enough hydration events exist.
+	 * Persists newly learned triggers to the cache for reuse across sessions.
+	 */
+	async maybeLearn(): Promise<void> {
+		const now = Date.now();
+		if (now - this.lastLearnTime < this.learningConfig.intervalMs) return;
+
+		const events = this.manager.getCache().getRecentHydrations(1000);
+		if (events.length < this.learningConfig.minHydrations) return;
+
+		this.lastLearnTime = now;
+
+		const patterns = analyzePatterns(
+			events,
+			this.manager.getCache(),
+			this.triggers,
+		);
+
+		for (const pattern of patterns) {
+			const trigger = patternToTrigger(pattern, new Set(this.triggers.map((t) => t.id)));
+			this.triggers.push(trigger);
+			this.manager.getCache().persistTrigger(trigger);
+		}
 	}
 
 	/**

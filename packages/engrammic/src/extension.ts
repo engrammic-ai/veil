@@ -17,8 +17,22 @@ import { formatStatusBar } from "./ux.ts";
  * Minimal subset of the Pi ExtensionAPI used here.
  * The full type lives in @earendil-works/pi-coding-agent.
  */
+interface BeforeAgentStartEvent {
+	type: "before_agent_start";
+	prompt: string;
+	systemPrompt: string;
+}
+
+interface BeforeAgentStartResult {
+	systemPrompt?: string;
+}
+
 interface ExtensionAPI {
 	on(event: "turn_end", handler: (event: unknown, ctx: ExtensionContext) => Promise<void>): void;
+	on(
+		event: "before_agent_start",
+		handler: (event: BeforeAgentStartEvent, ctx: ExtensionContext) => Promise<BeforeAgentStartResult | undefined>,
+	): void;
 	registerFlag(
 		name: string,
 		opts: { description?: string; type: "boolean" | "string"; default?: boolean | string },
@@ -29,6 +43,7 @@ interface ExtensionAPI {
 interface ExtensionContext {
 	ui: {
 		setStatus(key: string, text: string | undefined): void;
+		setToolCallDimmed(toolCallId: string, dimmed: boolean): void;
 		theme: {
 			fg(color: string, text: string): string;
 		};
@@ -54,6 +69,13 @@ export function createVeilExtension(harness: VeilHarness): (pi: ExtensionAPI) =>
 			default: false,
 		});
 
+		pi.on("before_agent_start", async (event) => {
+			const manifest = await harness.processUserMessage(event.prompt);
+			if (manifest) {
+				return { systemPrompt: `${event.systemPrompt}\n\n${manifest}` };
+			}
+		});
+
 		pi.on("turn_end", async (_event, ctx) => {
 			const usage = harness.getUsage();
 			const { text, color } = formatStatusBar(usage.hotTokens, usage.budgetMax, usage.budgetReserve);
@@ -65,6 +87,12 @@ export function createVeilExtension(harness: VeilHarness): (pi: ExtensionAPI) =>
 				ctx.ui.setStatus("veil-tick", ctx.ui.theme.fg("dim", `tick:${turnCount}`));
 			} else {
 				ctx.ui.setStatus("veil-tick", undefined);
+			}
+
+			// Faded history: dim tool executions whose context was evicted
+			const evictedIds = harness.getAndClearEvictedToolCallIds();
+			for (const toolCallId of evictedIds) {
+				ctx.ui.setToolCallDimmed(toolCallId, true);
 			}
 		});
 	};

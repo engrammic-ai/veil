@@ -1,6 +1,6 @@
 # Faded History Display
 
-**Status**: Planning  
+**Status**: Implemented  
 **Date**: 2026-06-14  
 **Depends on**: Phase 4 UX (complete), message dimming patch (complete)
 
@@ -264,3 +264,24 @@ The entry IDs exist in `SessionEntry` but are stripped when building `SessionCon
 - Pi patches: ~2 hours  
 - Testing: ~1 hour
 - Total: ~5 hours
+
+## Implementation Notes (2026-06-14)
+
+Used `toolCallId` as the identifier (Option C from Entry ID Gap finding) since:
+- `tool_result` events include `toolCallId` 
+- Tool execution components are naturally keyed by `toolCallId`
+- Avoids invasive changes to Pi's session entry flow
+
+### Changes Made
+
+**Veil Package:**
+- `types.ts`: Added `sourceToolCallId?: string` to `ContextItem`
+- `cache.ts`: Updated `createItem()` to accept `toolCallId`, added `source_tool_call_id` column with migration
+- `harness.ts`: Added `evictedToolCallIds` Set, `getAndClearEvictedToolCallIds()` method, passes `toolCallId` through capture flow
+- `extension.ts`: Calls `ctx.ui.setToolCallDimmed()` on `turn_end` for evicted IDs
+
+**Pi Package:**
+- `types.ts`: Added `setToolCallDimmed(toolCallId, dimmed)` to `ExtensionUIContext`
+- `tool-execution.ts`: Added `_dimmed` flag, `setDimmed()` method, ANSI dim rendering
+- `interactive-mode.ts`: Added `toolComponents` registry, `setToolCallDimmed()` implementation
+- `rpc-mode.ts`, `runner.ts`: Added no-op `setToolCallDimmed` for non-TUI modes

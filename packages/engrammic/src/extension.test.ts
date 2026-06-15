@@ -4,7 +4,10 @@ import type { VeilHarness } from "./harness.ts";
 
 // ---- helpers ----------------------------------------------------------------
 
-function makeHarness(overrides: Partial<ReturnType<VeilHarness["getUsage"]>> = {}): VeilHarness {
+function makeHarness(
+	overrides: Partial<ReturnType<VeilHarness["getUsage"]>> = {},
+	processUserMessageResult: string | null = null,
+): VeilHarness {
 	const defaults = {
 		hotTokens: 2000,
 		hotItems: 5,
@@ -16,6 +19,8 @@ function makeHarness(overrides: Partial<ReturnType<VeilHarness["getUsage"]>> = {
 	return {
 		getUsage: vi.fn(() => ({ ...defaults, ...overrides })),
 		getTurnCount: vi.fn(() => 3),
+		getAndClearEvictedToolCallIds: vi.fn(() => []),
+		processUserMessage: vi.fn(async () => processUserMessageResult),
 	} as unknown as VeilHarness;
 }
 
@@ -30,6 +35,7 @@ interface MockPi {
 interface MockCtx {
 	ui: {
 		setStatus: ReturnType<typeof vi.fn>;
+		setToolCallDimmed: ReturnType<typeof vi.fn>;
 		theme: {
 			fg: (color: string, text: string) => string;
 		};
@@ -55,6 +61,7 @@ function makeCtx(): MockCtx {
 	return {
 		ui: {
 			setStatus: vi.fn(),
+			setToolCallDimmed: vi.fn(),
 			theme: {
 				fg: (color: string, text: string) => `[${color}]${text}`,
 			},
@@ -91,6 +98,39 @@ describe("createVeilExtension", () => {
 		ext(pi as never);
 
 		expect(pi.on).toHaveBeenCalledWith("turn_end", expect.any(Function));
+	});
+
+	test("subscribes to before_agent_start event", () => {
+		const ext = createVeilExtension(harness);
+		ext(pi as never);
+
+		expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function));
+	});
+
+	test("appends manifest to system prompt when triggers match", async () => {
+		const manifest = "<veil-available>\nTest manifest\n</veil-available>";
+		harness = makeHarness({}, manifest);
+		const ext = createVeilExtension(harness);
+		ext(pi as never);
+
+		const handler = pi.handlers.get("before_agent_start")!;
+		const event = { prompt: "fix the tests", systemPrompt: "Base prompt" };
+		const result = await handler(event, ctx);
+
+		expect(harness.processUserMessage).toHaveBeenCalledWith("fix the tests");
+		expect(result).toEqual({ systemPrompt: `Base prompt\n\n${manifest}` });
+	});
+
+	test("returns undefined when no triggers match", async () => {
+		harness = makeHarness({}, null);
+		const ext = createVeilExtension(harness);
+		ext(pi as never);
+
+		const handler = pi.handlers.get("before_agent_start")!;
+		const event = { prompt: "hello world", systemPrompt: "Base prompt" };
+		const result = await handler(event, ctx);
+
+		expect(result).toBeUndefined();
 	});
 
 	test("sets veil-context status on turn_end", async () => {
