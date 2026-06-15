@@ -321,6 +321,23 @@ describe("EvictionController", () => {
 		});
 	});
 
+	describe("EvictionController re-request back-off (AIMD)", () => {
+		test("a single re-request raises the threshold by the back-off step", () => {
+			const config = { ...DEFAULT_CONFIG };
+			const c = new EvictionController(config);
+			const before = c.getThreshold();
+			c.recordReRequest();
+			expect(c.getThreshold()).toBeCloseTo(before + config.reRequestBackoffStep);
+		});
+
+		test("repeated re-requests clamp at evictionThresholdMax", () => {
+			const config = { ...DEFAULT_CONFIG };
+			const c = new EvictionController(config);
+			for (let i = 0; i < 100; i++) c.recordReRequest();
+			expect(c.getThreshold()).toBeCloseTo(config.evictionThresholdMax);
+		});
+	});
+
 	describe("edge cases", () => {
 		test("recordEviction with zero budget tokens", () => {
 			const item = createMockItem({ content: "test" });
