@@ -10,6 +10,7 @@
  */
 
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
+import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { hashContent, type HydrationEvent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
@@ -29,12 +30,20 @@ import type {
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
 
+export interface LearningConfig {
+	/** How often to run pattern learning (ms). Default: 1 hour. */
+	intervalMs: number;
+	/** Minimum hydration events before learning runs. Default: 10. */
+	minHydrations: number;
+}
+
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
 	onEviction?: (evicted: EvictionCandidate[]) => void;
 	onCheckpoint?: (turnCount: number) => void;
 	sessionId?: string; // Tag context items with session
 	captureConfig?: Partial<CaptureConfig>;
+	learningConfig?: Partial<LearningConfig>;
 }
 
 export interface BeforeToolCallContext {
@@ -88,12 +97,20 @@ export class VeilHarness {
 	private lastManifestTime: number = 0;
 	private lastManifestTriggers: string[] = [];
 	private lastUserMessage: string = "";
+	private readonly learningConfig: LearningConfig = {
+		intervalMs: 60 * 60 * 1000, // 1 hour default
+		minHydrations: 10,
+	};
+	private lastLearnTime: number = 0;
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
 		this.captureConfig = { ...DEFAULT_CAPTURE_CONFIG, ...config.captureConfig };
+		this.learningConfig = { ...this.learningConfig, ...config.learningConfig };
 		this.manager = new ContextManager(config, config.coldStore);
+		const customTriggers = this.manager.getCache().loadCustomTriggers();
+		this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
 	}
 
 	/**
@@ -507,6 +524,32 @@ export class VeilHarness {
 	 */
 	wasInManifest(id: string): boolean {
 		return this.manifestItemIds.has(id);
+	}
+
+	/**
+	 * Run pattern learning if enough time has passed and enough hydration events exist.
+	 * Persists newly learned triggers to the cache for reuse across sessions.
+	 */
+	async maybeLearn(): Promise<void> {
+		const now = Date.now();
+		if (now - this.lastLearnTime < this.learningConfig.intervalMs) return;
+
+		const events = this.manager.getCache().getRecentHydrations(1000);
+		if (events.length < this.learningConfig.minHydrations) return;
+
+		this.lastLearnTime = now;
+
+		const patterns = analyzePatterns(
+			events,
+			this.manager.getCache(),
+			this.triggers,
+		);
+
+		for (const pattern of patterns) {
+			const trigger = patternToTrigger(pattern, new Set(this.triggers.map((t) => t.id)));
+			this.triggers.push(trigger);
+			this.manager.getCache().persistTrigger(trigger);
+		}
 	}
 
 	/**

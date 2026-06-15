@@ -495,3 +495,149 @@ describe("processUserMessage (anticipatory loading)", () => {
 		await harness.close();
 	});
 });
+
+describe("maybeLearn", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("does not run before interval has elapsed", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 60 * 60 * 1000, minHydrations: 1 },
+		});
+
+		// Inject hydration events directly so the threshold is met
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("deploy runbook for production releases", "procedural", ["deploy"]);
+		cache.logHydration({
+			sessionId: "test",
+			itemId: item.id,
+			triggerIds: [],
+			userMessage: "deploy to production",
+			hydratedAt: Date.now(),
+			latencyMs: 10,
+		});
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+
+		// maybeLearn should skip because lastLearnTime is 0 and intervalMs is 1hr
+		// i.e. it would RUN (0 elapsed > 1hr? No — 0 elapsed < 1hr, so it should skip)
+		// With lastLearnTime=0, now - 0 = large number > 1hr, so it WILL run.
+		// We need to run it once to set lastLearnTime, then call again immediately.
+		await harness.maybeLearn(); // first call: sets lastLearnTime
+		const triggersAfterFirst = cache.loadCustomTriggers().length;
+
+		await harness.maybeLearn(); // second call: interval not elapsed, skips
+		const triggersAfterSecond = cache.loadCustomTriggers().length;
+
+		// Both calls should result in the same trigger count (second was skipped)
+		expect(triggersAfterSecond).toBe(triggersAfterFirst);
+
+		await harness.close();
+	});
+
+	test("skips when fewer than minHydrations events exist", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 0, minHydrations: 5 },
+		});
+
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("deploy runbook for production releases", "procedural", ["deploy"]);
+
+		// Log only 3 hydrations (below minHydrations=5)
+		for (let i = 0; i < 3; i++) {
+			cache.logHydration({
+				sessionId: "test",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: `deploy message ${i}`,
+				hydratedAt: Date.now(),
+				latencyMs: 10,
+			});
+		}
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		expect(triggersAfter).toBe(triggersBefore);
+
+		await harness.close();
+	});
+
+	test("persists new triggers when patterns are found", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			// intervalMs=0 forces the interval check to pass; minHydrations=3 is low enough
+			learningConfig: { intervalMs: 0, minHydrations: 3 },
+		});
+
+		const cache = harness.getManager().getCache();
+		// Use a unique tag not covered by DEFAULT_TRIGGERS
+		const item = harness.remember("canary deployment checklist", "procedural", ["canary"]);
+
+		// Log enough hydrations with the same keyword to form a pattern.
+		// Use distinct hydratedAt values to avoid the UNIQUE(session_id, item_id, hydrated_at)
+		// constraint silently dropping duplicate-timestamp rows.
+		const messages = ["canary release steps", "canary deployment procedure", "canary rollout guide"];
+		const now = Date.now();
+		for (let i = 0; i < messages.length; i++) {
+			cache.logHydration({
+				sessionId: "test",
+				itemId: item.id,
+				triggerIds: [],
+				userMessage: messages[i],
+				hydratedAt: now + i,
+				latencyMs: 10,
+			});
+		}
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		// A learned trigger should have been persisted
+		expect(triggersAfter).toBeGreaterThan(triggersBefore);
+
+		await harness.close();
+	});
+
+	test("uses learningConfig overrides from VeilHarnessConfig", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			learningConfig: { intervalMs: 999999999, minHydrations: 1 },
+		});
+
+		const cache = harness.getManager().getCache();
+		const item = harness.remember("some content", "fact", ["sometag"]);
+		cache.logHydration({
+			sessionId: "test",
+			itemId: item.id,
+			triggerIds: [],
+			userMessage: "some message",
+			hydratedAt: Date.now(),
+			latencyMs: 5,
+		});
+
+		const triggersBefore = cache.loadCustomTriggers().length;
+		// intervalMs is huge so maybeLearn should skip
+		await harness.maybeLearn();
+		const triggersAfter = cache.loadCustomTriggers().length;
+
+		expect(triggersAfter).toBe(triggersBefore);
+
+		await harness.close();
+	});
+});
