@@ -9,11 +9,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MemoryColdStore } from "./cold/memory.ts";
 import type { ConvergenceState, EscalationResult } from "./convergence.ts";
+import type { ToolResultEvent, VeilHarnessConfig } from "./harness.ts";
 import { VeilHarness } from "./harness.ts";
-import type { ToolResultEvent } from "./harness.ts";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -23,7 +23,7 @@ function makeTmpDir(): string {
 	return mkdtempSync(join(tmpdir(), "veil-scenario-"));
 }
 
-function makeHarness(tmpDir: string, extra: Parameters<typeof VeilHarness>[0] = {}): VeilHarness {
+function makeHarness(tmpDir: string, extra: VeilHarnessConfig = {}): VeilHarness {
 	return new VeilHarness({
 		dbPath: join(tmpDir, "context.db"),
 		coldStore: new MemoryColdStore(),
@@ -239,7 +239,7 @@ describe("Scenario 3: Convergence escalation on repeated failures", () => {
 
 		const harness = makeHarness(testDir, {
 			convergenceThresholds: { maxConsecutiveFailures: 3 },
-			onConvergenceWarning: (state, result) => {
+			onConvergenceWarning: (state: ConvergenceState, result: EscalationResult) => {
 				warnings.push({ state, result });
 			},
 		});
@@ -310,7 +310,7 @@ describe("Scenario 3: Convergence escalation on repeated failures", () => {
 
 		const harness = makeHarness(testDir, {
 			convergenceThresholds: { maxConsecutiveFailures: 5 },
-			onConvergenceWarning: (state, result) => {
+			onConvergenceWarning: (state: ConvergenceState, result: EscalationResult) => {
 				warnings.push({ state, result });
 			},
 		});
