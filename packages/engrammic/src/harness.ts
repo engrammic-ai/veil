@@ -10,7 +10,7 @@
  */
 
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
-import { hashContent } from "./cache.ts";
+import { hashContent, type HydrationEvent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
@@ -85,6 +85,9 @@ export class VeilHarness {
 	private evictedToolCallIds: Set<string> = new Set();
 	private triggers: Trigger[] = DEFAULT_TRIGGERS;
 	private manifestItemIds: Set<string> = new Set(); // For Phase 6 learning
+	private lastManifestTime: number = 0;
+	private lastManifestTriggers: string[] = [];
+	private lastUserMessage: string = "";
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -391,10 +394,22 @@ export class VeilHarness {
 	}
 
 	/**
-	 * Called when items are recalled via veil_recall. Stub — will be implemented in Task 4.
+	 * Called when items are recalled via veil_recall. Logs hydration events for manifest items.
 	 */
-	onRecall(_ids: string[]): void {
-		// stub: hydration logic will be wired here in Task 4
+	private onRecall(ids: string[]): void {
+		const now = Date.now();
+		for (const id of ids) {
+			if (this.manifestItemIds.has(id)) {
+				this.manager.getCache().logHydration({
+					sessionId: this.sessionId ?? "unknown",
+					itemId: id,
+					triggerIds: this.lastManifestTriggers,
+					userMessage: this.lastUserMessage,
+					hydratedAt: now,
+					latencyMs: now - this.lastManifestTime,
+				});
+			}
+		}
 	}
 
 	/**
@@ -454,7 +469,7 @@ export class VeilHarness {
 		if (!manifest) return null;
 
 		// Track for Phase 6 learning
-		this.trackManifestItems(manifest);
+		this.trackManifestItems(manifest, message);
 
 		// Eager preload if budget allows
 		if (budget.percent < 50) {
@@ -467,11 +482,15 @@ export class VeilHarness {
 	/**
 	 * Track manifest items for future learning (Phase 6).
 	 */
-	private trackManifestItems(manifest: ContextManifest): void {
+	private trackManifestItems(manifest: ContextManifest, userMessage: string): void {
 		this.manifestItemIds.clear();
 		for (const item of manifest.items) {
 			this.manifestItemIds.add(item.id);
 		}
+		// Track for hydration learning
+		this.lastManifestTime = Date.now();
+		this.lastManifestTriggers = manifest.triggers;
+		this.lastUserMessage = userMessage;
 	}
 
 	/**
