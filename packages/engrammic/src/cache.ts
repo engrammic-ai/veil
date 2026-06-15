@@ -168,9 +168,9 @@ export class ContextCache {
 		`);
 
 		this.stmtGetRelatedEpisodes = this.db.prepare(`
-			SELECT target_id, relation FROM episode_links WHERE source_id = ?
+			SELECT target_id AS linked_id, relation FROM episode_links WHERE source_id = ?
 			UNION
-			SELECT source_id, relation FROM episode_links WHERE target_id = ?
+			SELECT source_id AS linked_id, relation FROM episode_links WHERE target_id = ?
 		`);
 	}
 
@@ -517,14 +517,13 @@ export class ContextCache {
 
 	getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
 		const rows = this.stmtGetRelatedEpisodes.all(itemId, itemId) as Array<{
-			target_id?: string;
-			source_id?: string;
+			linked_id: string;
 			relation: string;
 		}>;
 
 		return rows
 			.map((row) => {
-				const item = this.get(row.target_id ?? row.source_id!);
+				const item = this.get(row.linked_id);
 				return item ? { item, relation: row.relation } : null;
 			})
 			.filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
