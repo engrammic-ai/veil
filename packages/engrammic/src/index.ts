@@ -3,6 +3,7 @@
  * Context management for Veil - dynamic loading, heuristic eviction, episodic memory
  */
 
+export { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
@@ -56,16 +57,20 @@ export {
 	type CaptureRule,
 	type ContextBudget,
 	type ContextItem,
+	type ContextItemType,
 	type ContextManagerConfig,
+	type ContextManifest,
 	type ContextWindow,
 	DEFAULT_CAPTURE_CONFIG,
 	DEFAULT_CONFIG,
 	DEFAULT_EVICTION_NOTIFY_CONFIG,
 	type EvictionCandidate,
 	type EvictionNotifyConfig,
+	type ManifestItem,
 	type TaskContext,
+	type Trigger,
 } from "./types.ts";
-export { estimateTokens, formatTokens, smartTruncate } from "./utils.ts";
+export { estimateTokens, formatRelativeTime, formatTokens, smartTruncate } from "./utils.ts";
 export {
 	formatBox,
 	formatEvictionNotification,

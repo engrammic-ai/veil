@@ -305,6 +305,9 @@ export class InteractiveMode {
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
+	// All tool execution components (persists after streaming for faded history)
+	private toolComponents = new Map<string, ToolExecutionComponent>();
+
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
@@ -2079,6 +2082,7 @@ export class InteractiveMode {
 			},
 			getToolsExpanded: () => this.toolOutputExpanded,
 			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
+			setToolCallDimmed: (toolCallId, dimmed) => this.setToolCallDimmed(toolCallId, dimmed),
 		};
 	}
 
@@ -2815,6 +2819,7 @@ export class InteractiveMode {
 								component.setExpanded(this.toolOutputExpanded);
 								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
+								this.toolComponents.set(content.id, component);
 							} else {
 								const component = this.pendingTools.get(content.id);
 								if (component) {
@@ -2884,6 +2889,7 @@ export class InteractiveMode {
 					component.setExpanded(this.toolOutputExpanded);
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
+					this.toolComponents.set(event.toolCallId, component);
 				}
 				component.markExecutionStarted();
 				this.ui.requestRender();
@@ -3225,6 +3231,7 @@ export class InteractiveMode {
 						);
 						component.setExpanded(this.toolOutputExpanded);
 						this.chatContainer.addChild(component);
+						this.toolComponents.set(content.id, component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -3611,6 +3618,15 @@ export class InteractiveMode {
 			}
 		}
 		this.ui.requestRender();
+	}
+
+	private setToolCallDimmed(toolCallId: string, dimmed: boolean): void {
+		const component = this.toolComponents.get(toolCallId);
+		if (component) {
+			component.setDimmed(dimmed);
+			component.invalidate();
+			this.ui.requestRender();
+		}
 	}
 
 	private toggleThinkingBlockVisibility(): void {

@@ -355,6 +355,51 @@ export class ContextManager {
 	}
 
 	/**
+	 * Link two episodes with a relation type.
+	 */
+	linkEpisodes(
+		sourceId: string,
+		targetId: string,
+		relation: "continues" | "relates" | "supersedes",
+	): void {
+		this.cache.linkEpisodes(sourceId, targetId, relation);
+	}
+
+	/**
+	 * Get episodes related to a given item.
+	 */
+	getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
+		return this.cache.getRelatedEpisodes(itemId);
+	}
+
+	/**
+	 * Search cold storage for historical items matching a query.
+	 */
+	async searchHistory(
+		query: string,
+		since: number,
+	): Promise<
+		Array<{
+			id: string;
+			type: string;
+			summary: string;
+			sessionDate: string;
+		}>
+	> {
+		if (!this.cold?.query) return [];
+
+		const items = await this.cold.query(query, [], 20);
+		return items
+			.filter((i) => i.createdAt >= since)
+			.map((i) => ({
+				id: i.id,
+				type: i.type,
+				summary: i.content.slice(0, 50),
+				sessionDate: new Date(i.createdAt).toLocaleDateString(),
+			}));
+	}
+
+	/**
 	 * Close all connections.
 	 */
 	async close(): Promise<void> {
