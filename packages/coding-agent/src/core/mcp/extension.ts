@@ -138,8 +138,20 @@ export default function mcpExtension(pi: ExtensionAPI): void {
 		}
 	});
 
+	const MCP_SUBCOMMANDS = [
+		{ value: "status", label: "status", description: "Show connected servers and tool count" },
+		{ value: "list", label: "list", description: "List all available tools by server" },
+		{ value: "reconnect", label: "reconnect", description: "Disconnect and reconnect all servers" },
+		{ value: "help", label: "help", description: "Show MCP command help" },
+	];
+
 	pi.registerCommand("mcp", {
 		description: "Manage MCP servers: /mcp [status|reconnect|list|help]",
+		getArgumentCompletions: (prefix) => {
+			const trimmed = prefix.trim().toLowerCase();
+			if (trimmed.includes(" ")) return null;
+			return MCP_SUBCOMMANDS.filter((cmd) => cmd.value.startsWith(trimmed));
+		},
 		handler: async (args, ctx) => {
 			const subcommand = args.trim().split(/\s+/)[0] || "status";
 
