@@ -72,7 +72,7 @@ User input
 
 ## Eviction Strategy
 
-Score = `0.3×recency + 0.2×frequency + 0.3×relevance + 0.15×structural + 0.15×cognitive_weight`
+Score = `0.25×recency + 0.15×frequency + 0.30×relevance + 0.15×structural + 0.15×cognitive_weight`
 
 Cascade:
 1. Hard evict: >2h untouched + single access
