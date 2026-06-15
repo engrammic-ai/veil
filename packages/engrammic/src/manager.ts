@@ -205,6 +205,7 @@ export class ContextManager {
 	 */
 	private async demoteToCold(item: ContextItem): Promise<void> {
 		this.cache.markEvicting(item.id);
+		this.cache.logEviction(item.id, item.contentHash, this.turnCount);
 
 		const pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
 
@@ -293,6 +294,13 @@ export class ContextManager {
 	}
 
 	/**
+	 * Current adaptive eviction threshold (for observability / tuning tests).
+	 */
+	getEvictionThreshold(): number {
+		return this.eviction.getThreshold();
+	}
+
+	/**
 	 * Set a recall cooldown on an item to prevent immediate re-eviction.
 	 */
 	setRecallCooldown(itemId: string): void {
@@ -357,11 +365,7 @@ export class ContextManager {
 	/**
 	 * Link two episodes with a relation type.
 	 */
-	linkEpisodes(
-		sourceId: string,
-		targetId: string,
-		relation: "continues" | "relates" | "supersedes",
-	): void {
+	linkEpisodes(sourceId: string, targetId: string, relation: "continues" | "relates" | "supersedes"): void {
 		this.cache.linkEpisodes(sourceId, targetId, relation);
 	}
 
