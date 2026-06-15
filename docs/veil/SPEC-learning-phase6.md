@@ -31,9 +31,41 @@ Existing interfaces this spec relies on:
 |-----------|----------|----------|
 | `manifestItemIds` | `harness.ts` | Track items shown in manifest |
 | `wasInManifest(id)` | `harness.ts` | Check if item was in last manifest |
-| `recall` tool | `tools.ts` | Agent hydrates items |
-| `ColdStore` | `cold/interface.ts` | Cold storage queries |
+| `executeVeilTool` | `tools.ts` | Tool execution with callbacks |
+| `ColdStore.query()` | `cold/interface.ts` | Cold storage queries (optional) |
 | `ContextCache` | `cache.ts` | Warm cache + SQLite |
+
+## Type Changes Required
+
+### types.ts - Extend Trigger interface
+
+```typescript
+interface Trigger {
+  id: string;
+  pattern: RegExp;
+  negative?: RegExp;
+  type: "keyword" | "file" | "command";
+  action: { tags?: string[]; type?: ContextItemType };
+  priority: number;
+  enabled: boolean;
+  // NEW: Phase 6 learning fields
+  learned?: boolean;       // True if auto-generated
+  confidence?: number;     // 0-1 confidence score
+}
+```
+
+### types.ts - Extend ManifestItem interface
+
+```typescript
+interface ManifestItem {
+  id: string;
+  type: ContextItemType;
+  tags: string[];
+  summary: string;
+  age: string;
+  source?: "warm" | "cold";  // NEW: storage tier indicator
+}
+```
 
 ## Architecture
 
@@ -56,6 +88,50 @@ Existing interfaces this spec relies on:
 └─────────────┘     └──────────────┘     └────────────┘
 ```
 
+## Part 0: Tool Callback Infrastructure
+
+Before hydration learning can work, `executeVeilTool` needs to notify the harness when `veil_recall` executes.
+
+### tools.ts - Add callback to ToolContext
+
+```typescript
+export interface ToolContext {
+  manager: ContextManager;
+  onRecall?: (ids: string[]) => void;  // NEW: callback for hydration tracking
+}
+
+async function executeRecall(
+  params: { ids?: string[]; tags?: string[] },
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  let items: ContextItem[] = [];
+
+  if (params.ids?.length) {
+    items = ctx.manager.load(params.ids);
+    // NEW: notify harness of recalled IDs
+    ctx.onRecall?.(params.ids);
+  } else if (params.tags?.length) {
+    const recalled = ctx.manager.recall(params.tags);
+    items = ctx.manager.load(recalled.map((i) => i.id));
+    // NEW: notify harness of recalled IDs
+    ctx.onRecall?.(recalled.map((i) => i.id));
+  }
+
+  // ... rest unchanged
+}
+```
+
+### harness.ts - Pass callback to executeTool
+
+```typescript
+async executeTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
+  return executeVeilTool(name, params, {
+    manager: this.manager,
+    onRecall: (ids) => this.onRecall(ids),  // NEW
+  });
+}
+```
+
 ## Part 1: Hydration Learning
 
 ### Schema
@@ -75,13 +151,52 @@ CREATE TABLE IF NOT EXISTS hydration_events (
 
 CREATE INDEX idx_hydration_item ON hydration_events(item_id);
 CREATE INDEX idx_hydration_trigger ON hydration_events(trigger_ids);
+CREATE INDEX idx_hydration_session ON hydration_events(session_id);
 ```
 
-### Tracking Flow
+### harness.ts - New instance variables
 
 ```typescript
-// In harness.ts
+// NEW: Add these to VeilHarness class
+private lastManifestTime: number = 0;
+private lastManifestTriggers: string[] = [];
+private lastUserMessage: string = "";
+```
 
+### harness.ts - Update trackManifestItems signature
+
+```typescript
+// CHANGE: Add userMessage parameter (currently takes only manifest)
+private trackManifestItems(manifest: ContextManifest, userMessage: string): void {
+  this.manifestItemIds.clear();
+  for (const item of manifest.items) {
+    this.manifestItemIds.add(item.id);
+  }
+  // NEW: Track for hydration learning
+  this.lastManifestTime = Date.now();
+  this.lastManifestTriggers = manifest.triggers;
+  this.lastUserMessage = userMessage;
+}
+```
+
+### harness.ts - Update processUserMessage to pass userMessage
+
+```typescript
+async processUserMessage(message: string): Promise<string | null> {
+  // ... existing trigger matching ...
+
+  if (!manifest) return null;
+
+  // CHANGE: Pass message to trackManifestItems
+  this.trackManifestItems(manifest, message);
+
+  // ... rest unchanged
+}
+```
+
+### harness.ts - Hydration callback
+
+```typescript
 interface HydrationEvent {
   sessionId: string;
   itemId: string;
@@ -91,23 +206,8 @@ interface HydrationEvent {
   latencyMs: number;
 }
 
-private lastManifestTime: number = 0;
-private lastManifestTriggers: string[] = [];
-private lastUserMessage: string = "";
-
-// Called when manifest is built (existing)
-private trackManifestItems(manifest: ContextManifest, userMessage: string): void {
-  this.manifestItemIds.clear();
-  for (const item of manifest.items) {
-    this.manifestItemIds.add(item.id);
-  }
-  this.lastManifestTime = Date.now();
-  this.lastManifestTriggers = manifest.triggers;
-  this.lastUserMessage = userMessage;
-}
-
-// Called from recall tool handler
-onRecall(ids: string[]): void {
+// Called via onRecall callback from tools.ts
+private onRecall(ids: string[]): void {
   const now = Date.now();
   for (const id of ids) {
     if (this.manifestItemIds.has(id)) {
@@ -128,11 +228,9 @@ private logHydration(event: HydrationEvent): void {
 }
 ```
 
-### Cache Extension
+### cache.ts - Hydration logging methods
 
 ```typescript
-// In cache.ts
-
 logHydration(event: HydrationEvent): void {
   this.db.exec(`
     INSERT OR IGNORE INTO hydration_events 
@@ -148,6 +246,22 @@ logHydration(event: HydrationEvent): void {
   ]);
 }
 
+getRecentHydrations(limit: number): HydrationEvent[] {
+  const rows = this.db.prepare(`
+    SELECT * FROM hydration_events 
+    ORDER BY hydrated_at DESC LIMIT ?
+  `).all(limit);
+  
+  return rows.map(row => ({
+    sessionId: row.session_id,
+    itemId: row.item_id,
+    triggerIds: JSON.parse(row.trigger_ids),
+    userMessage: row.user_message,
+    hydratedAt: row.hydrated_at,
+    latencyMs: row.latency_ms,
+  }));
+}
+
 getHydrationStats(itemId: string): { count: number; avgLatency: number } {
   const row = this.db.prepare(`
     SELECT COUNT(*) as count, AVG(latency_ms) as avg_latency
@@ -161,7 +275,9 @@ getHydrationStats(itemId: string): { count: number; avgLatency: number } {
 
 ### Pattern Analysis
 
-Analyze hydration events to discover new triggers:
+Analyze hydration events to discover new triggers.
+
+**Note**: This is a simple v1 algorithm using word frequency. Future iterations may add stop word filtering, stemming, or TF-IDF scoring.
 
 ```typescript
 // src/learning.ts
@@ -174,7 +290,7 @@ interface LearnedPattern {
 }
 
 /**
- * Analyze hydration events to find keyword → tag patterns.
+ * Analyze hydration events to find keyword -> tag patterns.
  * 
  * Algorithm:
  * 1. Group hydrations by item tags
@@ -184,6 +300,7 @@ interface LearnedPattern {
  */
 export function analyzePatterns(
   events: HydrationEvent[],
+  cache: ContextCache,
   existingTriggers: Trigger[],
   minConfidence: number = 0.7,
   minSamples: number = 3,
@@ -215,15 +332,22 @@ export function analyzePatterns(
     
     if (topWords.length === 0) continue;
     
+    // Validate regex before storing
+    const patternStr = topWords.map(w => `\\b${escapeRegex(w)}\\b`).join('|');
+    try {
+      new RegExp(patternStr, 'i');
+    } catch {
+      continue; // Skip invalid patterns
+    }
+    
     // Calculate confidence: how often do these words appear together?
-    const pattern = topWords.map(w => `\\b${escapeRegex(w)}\\b`).join('|');
-    const regex = new RegExp(pattern, 'i');
+    const regex = new RegExp(patternStr, 'i');
     const matches = messages.filter(m => regex.test(m)).length;
     const confidence = matches / messages.length;
     
     if (confidence >= minConfidence) {
       patterns.push({
-        pattern,
+        pattern: patternStr,
         tags: [tag],
         confidence,
         sampleSize: messages.length,
@@ -233,11 +357,32 @@ export function analyzePatterns(
   
   return patterns;
 }
+
+function countWords(messages: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const msg of messages) {
+    const words = msg.toLowerCase().split(/\s+/);
+    for (const word of words) {
+      if (word.length < 3) continue; // Skip short words
+      counts.set(word, (counts.get(word) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function getTopWords(counts: Map<string, number>, limit: number): string[] {
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([word]) => word);
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 ```
 
 ### Trigger Generation
-
-Convert learned patterns to triggers:
 
 ```typescript
 // src/learning.ts
@@ -268,27 +413,41 @@ export function patternToTrigger(
 
 ### Learning Schedule
 
-Run pattern analysis periodically, not on every request:
+Run pattern analysis periodically, not on every request.
 
 ```typescript
 // In harness.ts
 
+interface LearningConfig {
+  intervalMs: number;       // How often to run learning
+  minHydrations: number;    // Minimum events before learning
+}
+
+private readonly learningConfig: LearningConfig = {
+  intervalMs: 60 * 60 * 1000,  // 1 hour default, configurable
+  minHydrations: 10,
+};
 private lastLearnTime: number = 0;
-private readonly LEARN_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 async maybeLearn(): Promise<void> {
   const now = Date.now();
-  if (now - this.lastLearnTime < this.LEARN_INTERVAL_MS) return;
+  if (now - this.lastLearnTime < this.learningConfig.intervalMs) return;
+  
+  const events = this.manager.getCache().getRecentHydrations(1000);
+  if (events.length < this.learningConfig.minHydrations) return;
   
   this.lastLearnTime = now;
   
-  const events = this.manager.getCache().getRecentHydrations(1000);
-  const patterns = analyzePatterns(events, this.triggers);
+  const patterns = analyzePatterns(
+    events,
+    this.manager.getCache(),
+    this.triggers,
+  );
   
   for (const pattern of patterns) {
     const trigger = patternToTrigger(pattern, new Set(this.triggers.map(t => t.id)));
     this.triggers.push(trigger);
-    this.persistTrigger(trigger);
+    this.manager.getCache().persistTrigger(trigger);
   }
 }
 ```
@@ -314,11 +473,9 @@ CREATE TABLE IF NOT EXISTS custom_triggers (
 );
 ```
 
-### Persistence API
+### cache.ts - Persistence API
 
 ```typescript
-// In cache.ts
-
 persistTrigger(trigger: Trigger): void {
   const now = Date.now();
   this.db.exec(`
@@ -368,25 +525,31 @@ deleteTrigger(id: string): void {
 }
 ```
 
-### Harness Integration
+### harness.ts - Load on startup
 
 ```typescript
-// In harness.ts constructor
-
-// Load custom triggers on startup
+// In VeilHarness constructor, after manager init:
 const customTriggers = this.manager.getCache().loadCustomTriggers();
 this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
 ```
 
 ## Part 4: Cold Storage Queries
 
-### Manifest Extension
+### Using existing ColdStore.query() method
 
-When budget allows, query cold storage for additional context:
+The `ColdStore` interface has an optional `query()` method. Use it instead of inventing `searchByTags()`:
 
 ```typescript
-// In anticipate.ts
+// From cold/interface.ts (existing)
+interface ColdStore {
+  // ... other methods
+  query?(text: string, tags: string[], limit: number): Promise<ContextItem[]>;
+}
+```
 
+### anticipate.ts - Cold storage integration
+
+```typescript
 export async function buildManifest(
   triggers: Trigger[],
   cache: ContextCache,
@@ -405,52 +568,29 @@ export async function buildManifest(
   }
   
   // Query cold storage if budget allows and we have capacity
-  if (cold && budget.percent < 40 && items.length < 10) {
-    const coldItems = await queryCold(triggers, cold, 10 - items.length);
+  if (cold?.query && budget.percent < 40 && items.length < 10) {
+    const tags = triggers.flatMap(t => t.action.tags ?? []);
+    const coldItems = await cold.query("", tags, 10 - items.length);
+    
     for (const item of coldItems) {
       if (seenIds.has(item.id)) continue;
       seenIds.add(item.id);
       items.push({
-        ...item,
-        source: "cold",  // Mark as cold for UI distinction
+        id: item.id,
+        type: item.type,
+        tags: item.tags,
+        summary: item.content.slice(0, 50).replace(/\n/g, " "),
+        age: formatRelativeTime(item.lastAccess),
+        source: "cold",
       });
     }
   }
   
   // ... rest of existing logic ...
 }
-
-async function queryCold(
-  triggers: Trigger[],
-  cold: ColdStore,
-  limit: number,
-): Promise<ManifestItem[]> {
-  if (!cold.capabilities.semantic) {
-    // Fallback: temporal query for recent cold items
-    // Implementation depends on ColdStore interface
-    return [];
-  }
-  
-  // Semantic search if supported
-  const tags = triggers.flatMap(t => t.action.tags ?? []);
-  return cold.searchByTags(tags, limit);
-}
 ```
 
-### Manifest Format Update
-
-```typescript
-interface ManifestItem {
-  id: string;
-  type: ContextItemType;
-  tags: string[];
-  summary: string;
-  age: string;
-  source?: "warm" | "cold";  // NEW: indicate storage tier
-}
-```
-
-### Display Update
+### Display format
 
 ```xml
 <veil-available>
@@ -466,9 +606,7 @@ Budget: 35% used
 
 ## Part 5: Cross-Session Episodes
 
-### Episode Linking
-
-When storing episodic context, link to related previous episodes:
+### Episode Linking Schema
 
 ```sql
 CREATE TABLE IF NOT EXISTS episode_links (
@@ -484,11 +622,39 @@ CREATE INDEX idx_episode_source ON episode_links(source_id);
 CREATE INDEX idx_episode_target ON episode_links(target_id);
 ```
 
-### Linking API
+### cache.ts - Episode linking methods
 
 ```typescript
-// In manager.ts
+linkEpisodes(
+  sourceId: string,
+  targetId: string,
+  relation: "continues" | "relates" | "supersedes",
+): void {
+  this.db.exec(`
+    INSERT OR IGNORE INTO episode_links (source_id, target_id, relation, created_at)
+    VALUES (?, ?, ?, ?)
+  `, [sourceId, targetId, relation, Date.now()]);
+}
 
+getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
+  const rows = this.db.prepare(`
+    SELECT target_id, relation FROM episode_links WHERE source_id = ?
+    UNION
+    SELECT source_id, relation FROM episode_links WHERE target_id = ?
+  `).all(itemId, itemId);
+  
+  return rows
+    .map(row => {
+      const item = this.get(row.target_id ?? row.source_id);
+      return item ? { item, relation: row.relation } : null;
+    })
+    .filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
+}
+```
+
+### manager.ts - Episode API
+
+```typescript
 linkEpisodes(
   sourceId: string,
   targetId: string,
@@ -497,21 +663,34 @@ linkEpisodes(
   this.cache.linkEpisodes(sourceId, targetId, relation);
 }
 
-getRelatedEpisodes(itemId: string): Array<{
-  item: ContextItem;
-  relation: string;
-}> {
+getRelatedEpisodes(itemId: string): Array<{ item: ContextItem; relation: string }> {
   return this.cache.getRelatedEpisodes(itemId);
+}
+
+async searchHistory(query: string, since: number): Promise<Array<{
+  id: string;
+  type: string;
+  summary: string;
+  sessionDate: string;
+}>> {
+  // Search cold storage for historical items
+  if (!this.cold?.query) return [];
+  
+  const items = await this.cold.query(query, [], 20);
+  return items
+    .filter(i => i.createdAt >= since)
+    .map(i => ({
+      id: i.id,
+      type: i.type,
+      summary: i.content.slice(0, 50),
+      sessionDate: new Date(i.createdAt).toLocaleDateString(),
+    }));
 }
 ```
 
-### "What did I try last time?" Query
-
-New tool for cross-session retrieval:
+### tools.ts - veil_history tool
 
 ```typescript
-// In tools.ts
-
 {
   name: "veil_history",
   description: "Search past sessions for related context",
@@ -527,11 +706,10 @@ New tool for cross-session retrieval:
 
 async function executeVeilHistory(
   params: { query: string; days?: number },
-  ctx: { manager: ContextManager },
+  ctx: ToolContext,
 ): Promise<ToolResult> {
   const since = Date.now() - (params.days ?? 7) * 24 * 60 * 60 * 1000;
   
-  // Search cold storage
   const results = await ctx.manager.searchHistory(params.query, since);
   
   if (results.length === 0) {
@@ -548,12 +726,14 @@ async function executeVeilHistory(
 
 ## Testing
 
-1. **Hydration logging**: Verify events are recorded when agent hydrates manifest items
-2. **Pattern analysis**: Test keyword extraction from message sets
-3. **Trigger generation**: Verify learned triggers have correct regex and lower priority
-4. **Persistence**: Triggers survive harness restart
-5. **Cold queries**: Manifest includes cold items when budget allows
-6. **Episode links**: Related episodes are retrievable
+1. **Tool callback**: Verify `onRecall` is called when `veil_recall` executes
+2. **Hydration logging**: Events recorded with correct trigger IDs and latency
+3. **Pattern analysis**: Test keyword extraction, regex validation, confidence scoring
+4. **Trigger generation**: Learned triggers have lower priority than defaults
+5. **Persistence**: Triggers survive harness restart
+6. **Cold queries**: Manifest includes cold items when budget < 40%
+7. **Episode links**: Bidirectional retrieval works
+8. **Edge cases**: Empty hydration history, identical messages, invalid regex patterns
 
 ## Success Criteria
 
@@ -565,15 +745,18 @@ async function executeVeilHistory(
 
 ## Implementation Order
 
-1. **P0**: Hydration logging (foundation for learning)
-2. **P1**: Trigger persistence (needed before learning can persist)
-3. **P1**: Pattern analysis + trigger generation
-4. **P2**: Cold storage queries
-5. **P2**: Episode linking + history tool
-6. **P3**: File/command triggers, observability
+1. **Pre-P0**: Tool callback infrastructure (Part 0)
+2. **P0**: Hydration logging (Part 1)
+3. **P1**: Trigger persistence (Part 3 schema + methods)
+4. **P1**: Pattern analysis + trigger generation (Part 2)
+5. **P2**: Cold storage queries (Part 4)
+6. **P2**: Episode linking + history tool (Part 5)
+7. **P3**: File/command triggers, observability
 
 ## Deferred
 
 - Hysteresis for budget oscillation (add if observed in practice)
 - KG integration beyond episode links (wait for KG maturity)
 - Trigger confidence decay over time
+- Stop word filtering / stemming in pattern analysis
+- Episode relation types beyond continues/relates/supersedes
