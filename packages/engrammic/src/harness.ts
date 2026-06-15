@@ -10,12 +10,12 @@
  */
 
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
-import { analyzePatterns, patternToTrigger } from "./learning.ts";
-import { hashContent, type HydrationEvent } from "./cache.ts";
+import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { buildContextSection } from "./injection.ts";
+import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
@@ -494,7 +494,12 @@ export class VeilHarness {
 
 		let manifest: ContextManifest | null;
 		try {
-			manifest = await buildManifest(triggers, this.manager.getCache(), { percent: budget.percent }, this.config.coldStore);
+			manifest = await buildManifest(
+				triggers,
+				this.manager.getCache(),
+				{ percent: budget.percent },
+				this.config.coldStore,
+			);
 		} catch (err) {
 			// Log error, don't block agent flow
 			console.error("[veil] manifest build failed:", err);
@@ -555,11 +560,7 @@ export class VeilHarness {
 
 		this.lastLearnTime = now;
 
-		const patterns = analyzePatterns(
-			events,
-			this.manager.getCache(),
-			this.triggers,
-		);
+		const patterns = analyzePatterns(events, this.manager.getCache(), this.triggers);
 
 		for (const pattern of patterns) {
 			const trigger = patternToTrigger(pattern, new Set(this.triggers.map((t) => t.id)));
