@@ -383,15 +383,18 @@ describe("custom triggers loaded on startup", () => {
 		// First harness: persist a custom trigger and a matching item
 		const harness1 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
 		harness1.remember("deployment runbook for canary releases", "procedural", ["deploy", "canary"]);
-		harness1.getManager().getCache().persistTrigger({
-			id: "custom-deploy-trigger",
-			pattern: /\bdeploy\b/i,
-			type: "keyword",
-			action: { tags: ["deploy"] },
-			priority: 10,
-			enabled: true,
-			learned: true,
-		});
+		harness1
+			.getManager()
+			.getCache()
+			.persistTrigger({
+				id: "custom-deploy-trigger",
+				pattern: /\bdeploy\b/i,
+				type: "keyword",
+				action: { tags: ["deploy"] },
+				priority: 10,
+				enabled: true,
+				learned: true,
+			});
 		await harness1.close();
 
 		// Second harness: reopen same DB — custom trigger must be loaded
@@ -526,7 +529,7 @@ describe("maybeLearn", () => {
 			latencyMs: 10,
 		});
 
-		const triggersBefore = cache.loadCustomTriggers().length;
+		const _triggersBefore = cache.loadCustomTriggers().length;
 
 		// maybeLearn should skip because lastLearnTime is 0 and intervalMs is 1hr
 		// i.e. it would RUN (0 elapsed > 1hr? No — 0 elapsed < 1hr, so it should skip)
