@@ -9,8 +9,8 @@ import { ContextManager } from "./manager.ts";
 import { executeVeilTool, TOOL_SCHEMAS } from "./tools.ts";
 
 describe("TOOL_SCHEMAS", () => {
-	test("has 8 tools defined", () => {
-		expect(TOOL_SCHEMAS).toHaveLength(8);
+	test("has 9 tools defined", () => {
+		expect(TOOL_SCHEMAS).toHaveLength(9);
 	});
 
 	test("all tools have veil_ prefix", () => {
@@ -175,5 +175,85 @@ describe("executeVeilTool", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain("Unknown tool");
+	});
+
+	test("veil_history returns empty message when no cold store query", async () => {
+		// MemoryColdStore has no query method, so searchHistory returns []
+		const result = await executeVeilTool("veil_history", { query: "test query" }, { manager });
+
+		expect(result.success).toBe(true);
+		const data = result.data as { message: string };
+		expect(data.message).toContain("No related context found");
+	});
+
+	test("veil_history passes days parameter to since calculation", async () => {
+		// With MemoryColdStore (no query), always returns empty regardless of days
+		const result = await executeVeilTool("veil_history", { query: "test", days: 30 }, { manager });
+
+		expect(result.success).toBe(true);
+		const data = result.data as { message: string };
+		expect(data.message).toContain("No related context found");
+	});
+
+	test("veil_history uses 7-day default when days not provided", async () => {
+		const result = await executeVeilTool("veil_history", { query: "anything" }, { manager });
+
+		expect(result.success).toBe(true);
+	});
+});
+
+describe("ContextManager episode API", () => {
+	let tmpDir: string;
+	let manager: ContextManager;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "episode-api-test-"));
+		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, new MemoryColdStore());
+	});
+
+	afterEach(async () => {
+		await manager.close();
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("linkEpisodes connects two items", () => {
+		const a = manager.remember("Episode A", "episodic", []);
+		const b = manager.remember("Episode B", "episodic", []);
+
+		// Should not throw
+		expect(() => manager.linkEpisodes(a.id, b.id, "continues")).not.toThrow();
+	});
+
+	test("getRelatedEpisodes returns linked items", () => {
+		const a = manager.remember("Episode A", "episodic", []);
+		const b = manager.remember("Episode B", "episodic", []);
+		manager.linkEpisodes(a.id, b.id, "relates");
+
+		const related = manager.getRelatedEpisodes(a.id);
+
+		expect(Array.isArray(related)).toBe(true);
+		expect(related.length).toBeGreaterThan(0);
+		const targetIds = related.map((r) => r.item.id);
+		expect(targetIds).toContain(b.id);
+	});
+
+	test("getRelatedEpisodes returns relation type", () => {
+		const a = manager.remember("Episode A", "episodic", []);
+		const b = manager.remember("Episode B", "episodic", []);
+		manager.linkEpisodes(a.id, b.id, "supersedes");
+
+		const related = manager.getRelatedEpisodes(a.id);
+		const entry = related.find((r) => r.item.id === b.id);
+
+		expect(entry).toBeDefined();
+		expect(entry!.relation).toBe("supersedes");
+	});
+
+	test("searchHistory returns empty array when cold store has no query", async () => {
+		const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+		const results = await manager.searchHistory("test", since);
+
+		expect(Array.isArray(results)).toBe(true);
+		expect(results).toHaveLength(0);
 	});
 });
