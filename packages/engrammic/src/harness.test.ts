@@ -366,6 +366,46 @@ describe("autoCapture integration", () => {
 	});
 });
 
+describe("custom triggers loaded on startup", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("custom triggers persisted to DB are merged with DEFAULT_TRIGGERS on harness init", async () => {
+		const dbPath = join(tmpDir, "context.db");
+
+		// First harness: persist a custom trigger and a matching item
+		const harness1 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		harness1.remember("deployment runbook for canary releases", "procedural", ["deploy", "canary"]);
+		harness1.getManager().getCache().persistTrigger({
+			id: "custom-deploy-trigger",
+			pattern: /\bdeploy\b/i,
+			type: "keyword",
+			action: { tags: ["deploy"] },
+			priority: 10,
+			enabled: true,
+			learned: true,
+		});
+		await harness1.close();
+
+		// Second harness: reopen same DB — custom trigger must be loaded
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		const result = await harness2.processUserMessage("how do we deploy to production?");
+		await harness2.close();
+
+		// The custom trigger matched, so a manifest should be returned
+		expect(result).not.toBeNull();
+		expect(result).toContain("<veil-available>");
+		expect(result).toContain("deployment runbook");
+	});
+});
+
 describe("processUserMessage (anticipatory loading)", () => {
 	let tmpDir: string;
 
