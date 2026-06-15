@@ -477,7 +477,7 @@ export class VeilHarness {
 
 		let manifest: ContextManifest | null;
 		try {
-			manifest = await buildManifest(triggers, this.manager.getCache(), { percent: budget.percent });
+			manifest = await buildManifest(triggers, this.manager.getCache(), { percent: budget.percent }, this.config.coldStore);
 		} catch (err) {
 			// Log error, don't block agent flow
 			console.error("[veil] manifest build failed:", err);

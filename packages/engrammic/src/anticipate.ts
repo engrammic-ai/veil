@@ -1,6 +1,7 @@
 // packages/engrammic/src/anticipate.ts
 
 import type { ContextCache } from "./cache.ts";
+import type { ColdStore } from "./cold/interface.ts";
 import type { ContextItem, ContextManifest, ManifestItem, Trigger } from "./types.ts";
 import { formatRelativeTime } from "./utils.ts";
 
@@ -70,12 +71,13 @@ export function matchTriggers(message: string, triggers: Trigger[]): Trigger[] {
 
 /**
  * Build manifest from matched triggers.
- * Queries warm cache only (Phase 5).
+ * Queries warm cache first, then cold storage as fallback when budget < 40% and items < 10.
  */
 export async function buildManifest(
 	triggers: Trigger[],
 	cache: ContextCache,
 	budget: { percent: number },
+	cold?: ColdStore | null,
 ): Promise<ContextManifest | null> {
 	if (triggers.length === 0) return null;
 	if (budget.percent > 70) return null;
@@ -110,6 +112,25 @@ export async function buildManifest(
 		if (items.length >= 10) break;
 	}
 
+	// Query cold storage if budget allows and we have capacity
+	if (cold?.query && budget.percent < 40 && items.length < 10) {
+		const tags = triggers.flatMap((t) => t.action.tags ?? []);
+		const coldItems = await cold.query("", tags, 10 - items.length);
+
+		for (const item of coldItems) {
+			if (seenIds.has(item.id)) continue;
+			seenIds.add(item.id);
+			items.push({
+				id: item.id,
+				type: item.type,
+				tags: item.tags,
+				summary: item.content.slice(0, 50).replace(/\n/g, " "),
+				age: formatRelativeTime(item.lastAccess),
+				source: "cold",
+			});
+		}
+	}
+
 	if (items.length === 0) return null;
 
 	return {
@@ -124,7 +145,8 @@ export function formatManifest(manifest: ContextManifest): string {
 
 	for (const item of manifest.items) {
 		const tags = item.tags.slice(0, 2).join(", ");
-		lines.push(`- ${item.id} [${tags}] "${item.summary}..." (${item.age})`);
+		const coldIndicator = item.source === "cold" ? " [cold]" : "";
+		lines.push(`- ${item.id} [${tags}] "${item.summary}..." (${item.age})${coldIndicator}`);
 	}
 
 	lines.push("", `Budget: ${manifest.budgetPercent.toFixed(0)}% used`, "</veil-available>");

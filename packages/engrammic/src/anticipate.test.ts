@@ -365,4 +365,294 @@ describe("formatManifest", () => {
 		const output = formatManifest(manifest);
 		expect(output).toContain("Budget: 67% used");
 	});
+
+	test("shows [cold] indicator for cold-source items", () => {
+		const manifest: ContextManifest = {
+			triggers: ["auth"],
+			budgetPercent: 30,
+			items: [
+				{
+					id: "warm-1",
+					type: "episodic",
+					tags: ["auth"],
+					summary: "Warm cache item",
+					age: "2min ago",
+				},
+				{
+					id: "cold-1",
+					type: "episodic",
+					tags: ["auth"],
+					summary: "Cold storage item",
+					age: "3hr ago",
+					source: "cold",
+				},
+			],
+		};
+
+		const output = formatManifest(manifest);
+		expect(output).toContain('- warm-1 [auth] "Warm cache item..." (2min ago)');
+		expect(output).not.toContain("warm-1 [auth]" + ' "Warm cache item..." (2min ago) [cold]');
+		expect(output).toContain('- cold-1 [auth] "Cold storage item..." (3hr ago) [cold]');
+	});
+
+	test("does not show [cold] indicator for warm items", () => {
+		const manifest: ContextManifest = {
+			triggers: ["debug"],
+			budgetPercent: 20,
+			items: [
+				{
+					id: "warm-item",
+					type: "fact",
+					tags: ["debug"],
+					summary: "A warm item",
+					age: "5min ago",
+				},
+			],
+		};
+
+		const output = formatManifest(manifest);
+		expect(output).not.toContain("[cold]");
+	});
+});
+
+// -----------------------------------------------------------------------
+// buildManifest — cold storage integration
+// -----------------------------------------------------------------------
+
+describe("buildManifest cold storage", () => {
+	function makeColdItem(overrides: Partial<ContextItem> = {}): ContextItem {
+		return {
+			id: "cold-item-1",
+			content: "cold storage content here",
+			contentHash: "cold123",
+			createdAt: Date.now() - 3600000,
+			lastAccess: Date.now() - 1800000,
+			accessCount: 1,
+			decayScore: 0,
+			cognitiveWeight: 0,
+			type: "episodic",
+			tags: ["auth"],
+			pinned: false,
+			source: "auto",
+			...overrides,
+		};
+	}
+
+	function makeColdStore(items: ContextItem[] = []) {
+		return {
+			query: vi.fn(async (_text: string, _tags: string[], limit: number) => items.slice(0, limit)),
+			demote: vi.fn(),
+			fetch: vi.fn(),
+			delete: vi.fn(),
+			exists: vi.fn(),
+			count: vi.fn(),
+			close: vi.fn(),
+			capabilities: { semantic: true, temporal: false, provenance: false },
+		};
+	}
+
+	test("queries cold store when budget < 40% and items < 10", async () => {
+		const warmCache = makeCache([]); // empty warm cache
+		const coldItem = makeColdItem({ id: "cold-1", tags: ["auth"] });
+		const cold = makeColdStore([coldItem]);
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		const result = await buildManifest([trigger], warmCache as any, { percent: 30 }, cold as any);
+		expect(cold.query).toHaveBeenCalledWith("", ["auth"], 10);
+		expect(result).not.toBeNull();
+		expect(result!.items).toHaveLength(1);
+		expect(result!.items[0].id).toBe("cold-1");
+		expect(result!.items[0].source).toBe("cold");
+	});
+
+	test("cold items get source: cold", async () => {
+		const warmCache = makeCache([]);
+		const coldItem = makeColdItem({ id: "cold-tagged", tags: ["debug"] });
+		const cold = makeColdStore([coldItem]);
+
+		const trigger: Trigger = {
+			id: "debug",
+			pattern: /debug/i,
+			type: "keyword",
+			action: { tags: ["debug"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		const result = await buildManifest([trigger], warmCache as any, { percent: 20 }, cold as any);
+		expect(result!.items[0].source).toBe("cold");
+	});
+
+	test("does not query cold store when budget >= 40%", async () => {
+		const warmItem = makeItem({ id: "warm-1", tags: ["auth"] });
+		const warmCache = makeCache([warmItem]);
+		const cold = makeColdStore([makeColdItem()]);
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		await buildManifest([trigger], warmCache as any, { percent: 40 }, cold as any);
+		expect(cold.query).not.toHaveBeenCalled();
+	});
+
+	test("does not query cold store when items already >= 10", async () => {
+		const warmItems = Array.from({ length: 10 }, (_, k) => makeItem({ id: `warm-${k}`, tags: ["auth"] }));
+		const warmCache = makeCache(warmItems);
+		warmCache.getByTags.mockImplementation(() => warmItems);
+		const cold = makeColdStore([makeColdItem()]);
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		await buildManifest([trigger], warmCache as any, { percent: 30 }, cold as any);
+		expect(cold.query).not.toHaveBeenCalled();
+	});
+
+	test("cold store not queried when cold is null", async () => {
+		const warmCache = makeCache([]);
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		// Should not throw, returns null because empty warm cache + no cold
+		const result = await buildManifest([trigger], warmCache as any, { percent: 30 }, null);
+		expect(result).toBeNull();
+	});
+
+	test("cold store not queried when cold is undefined", async () => {
+		const warmCache = makeCache([]);
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		const result = await buildManifest([trigger], warmCache as any, { percent: 30 });
+		expect(result).toBeNull();
+	});
+
+	test("deduplicates between warm and cold results", async () => {
+		const sharedId = "item-shared";
+		const warmItem = makeItem({ id: sharedId, tags: ["auth"] });
+		const warmCache = makeCache([warmItem]);
+		// Cold returns same ID
+		const coldItem = makeColdItem({ id: sharedId, tags: ["auth"] });
+		const cold = makeColdStore([coldItem]);
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		const result = await buildManifest([trigger], warmCache as any, { percent: 30 }, cold as any);
+		expect(result).not.toBeNull();
+		const ids = result!.items.map((i) => i.id);
+		expect(ids.filter((id) => id === sharedId)).toHaveLength(1);
+	});
+
+	test("cold query limit is 10 minus warm items count", async () => {
+		const warmItems = Array.from({ length: 7 }, (_, k) => makeItem({ id: `warm-${k}`, tags: ["auth"] }));
+		const warmCache = makeCache(warmItems);
+		warmCache.getByTags.mockImplementation(() => warmItems);
+		const cold = makeColdStore([makeColdItem({ id: "cold-extra" })]);
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		await buildManifest([trigger], warmCache as any, { percent: 30 }, cold as any);
+		expect(cold.query).toHaveBeenCalledWith("", ["auth"], 3); // 10 - 7 = 3
+	});
+
+	test("cold query uses all trigger tags", async () => {
+		const warmCache = makeCache([]);
+		const cold = makeColdStore([]);
+
+		const triggers: Trigger[] = [
+			{
+				id: "t1",
+				pattern: /auth/i,
+				type: "keyword",
+				action: { tags: ["auth", "session"] },
+				priority: 10,
+				enabled: true,
+			},
+			{
+				id: "t2",
+				pattern: /debug/i,
+				type: "keyword",
+				action: { tags: ["debug"] },
+				priority: 8,
+				enabled: true,
+			},
+		];
+
+		await buildManifest(triggers, warmCache as any, { percent: 20 }, cold as any);
+		expect(cold.query).toHaveBeenCalledWith("", ["auth", "session", "debug"], 10);
+	});
+
+	test("cold store without query method is skipped", async () => {
+		const warmCache = makeCache([]);
+		// ColdStore without query capability
+		const coldNoQuery = {
+			demote: vi.fn(),
+			fetch: vi.fn(),
+			delete: vi.fn(),
+			exists: vi.fn(),
+			count: vi.fn(),
+			close: vi.fn(),
+			capabilities: { semantic: false, temporal: false, provenance: false },
+			// No query method
+		};
+
+		const trigger: Trigger = {
+			id: "auth",
+			pattern: /auth/i,
+			type: "keyword",
+			action: { tags: ["auth"] },
+			priority: 10,
+			enabled: true,
+		};
+
+		// Should not throw
+		const result = await buildManifest([trigger], warmCache as any, { percent: 30 }, coldNoQuery as any);
+		expect(result).toBeNull();
+	});
 });
