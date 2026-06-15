@@ -106,6 +106,24 @@ contentType(chunk) -> code?         -> AST: signature + [IMPL:hash]   (determini
 2. AST compression (`signature + [IMPL:hash]`) — same parse, different consumer,
 3. worldview invalidation — the `path+mtime` cache key *is* the "recompute changed file, decay the rest" mechanism.
 
+### 5a. Integration decision: anticipatory loading first (DECIDED 2026-06-15)
+
+**Question:** How does structural worldview feed into the system — as a 6th scoring factor (eviction), or for anticipatory loading only?
+
+**Decision:** Start with **anticipatory loading only** (Option B). Structural rank decides *what to preload* when the agent touches a file, not whether to evict it. The scorer stays 5-weight.
+
+**Refinement — structural floor:** Preloaded files receive a temporary minimum score that decays over N turns. This prevents thrash (preload → immediate eviction) without committing to a permanent scoring weight. If the agent touches the file, normal scoring takes over; if not, the floor decays and it evicts naturally.
+
+**Rationale:**
+- Clean separation: behavioral worldview is the universal spine, structural is an optional provider
+- Lower risk: structural signal could conflict with behavioral; observe first
+- Reversible: if structurally-important files evict too early, we add the 6th weight
+
+**Signals to switch to scoring factor (Option A):**
+- Preloaded files evicting before use >30% of the time
+- Agent re-requesting the same structurally-central files repeatedly
+- High-PageRank files consistently in bottom quartile of scores
+
 ---
 
 ## 6. Local-first & adapters
@@ -179,7 +197,15 @@ Not on the MVP critical path (self-tuning needs none of it), so deferred to Phas
 1. **Iteration / goal-boundary inference (ambient failure-memory)** — RESOLVED as a cheapest-first cascade (see section 9); deferred behind the MVP. Remaining detail: the ambiguity threshold that triggers the optional tier-3 composer. 
 2. **MVP slice** — the thinnest first build that proves the autonomic thesis (likely: wire the re-request signal -> self-tuning controller, on top of registering the tools).
 3. **Self-tuning control law specifics** — window sizes, clamp bounds, exactly which knobs.
-4. **Living-worldview schema** — how the derived tables lay out on the existing SQLite schema.
+4. **Living-worldview schema** — RESOLVED 2026-06-15. Same SQLite, separate tables. Schema:
+   ```sql
+   -- Behavioral: co-access patterns
+   CREATE TABLE co_access (item_a TEXT, item_b TEXT, count INTEGER, last_turn INTEGER, PRIMARY KEY (item_a, item_b));
+   -- Structural: symbol graph from tree-sitter
+   CREATE TABLE symbol_graph (file TEXT, symbol TEXT, kind TEXT, target_file TEXT, target_symbol TEXT, PRIMARY KEY (file, symbol, target_file, target_symbol));
+   -- Structural: PageRank + task bias
+   CREATE TABLE structural_rank (file TEXT PRIMARY KEY, pagerank REAL, task_bias REAL, updated_at INTEGER);
+   ```
 5. **`contentType(chunk)` detection heuristics** — deterministic dispatch (section 4). Shared with Phase 7 (AST compression) in the existing roadmap.
 6. **Re-request signal (the one real prerequisite for self-tuning)** — verified missing today. Needs: (a) a durable eviction ledger `{item_id, evicted_at, eviction_turn}`; (b) `recall`/`fetchFromCold` to cross-check whether a returning item was previously evicted; (c) feed the resulting "miss" events into `eviction.ts` `adjustThreshold`. None exist yet; ephemeral `evictedToolCallIds` + recall cooldown are the only partial pieces.
 7. **Tree-sitter mapper build** (section 5 stack: web-tree-sitter + graphology + better-sqlite3) — also lands the Phase 7 AST-compression groundwork (one parser, both consumers).
@@ -201,8 +227,23 @@ MVP = Phase A + B (smallest thing that visibly "governs itself"; mostly closes l
 4. ~~Self-tuning controller (AIMD on the re-request signal).~~ `recordReRequest()` raises threshold; `runDecaySweep()` now scheduled on tick; ledger pruning added. Commits: `37d00218..a55e5ae0`.
 
 **Phase C — Worldview foundation (triple-payoff brick):** — NEXT
-5. Tree-sitter mapper (web-tree-sitter + Aider .scm queries + graphology + better-sqlite3) -> structural worldview + AST compression + Phase 7 groundwork.
-6. Behavioral worldview from the event log.
+
+### C.1 Tree-sitter mapper (structural worldview)
+5. **Parser setup** — web-tree-sitter WASM + grammar loading for 26 languages. Lazy-load grammars on first file of that type.
+6. **Symbol extraction** — Port Aider's MIT .scm query files. Build `symbol_graph` table (defs/refs per file).
+7. **Graph ranking** — graphology + PageRank. Populate `structural_rank` table with static ranks.
+8. **Task bias** — Personalize ranks to current context (files in hot tier bias the graph).
+9. **Cache invalidation** — `path+mtime` keyed. File change → recompute only that file's symbols, decay others' task_bias.
+10. **Anticipatory loader** — On file access, query structural_rank for dependency frontier, preload top-N.
+11. **Structural floor** — Preloaded files get temporary minimum score (decays over N turns).
+
+### C.2 Behavioral worldview
+12. **Co-access tracking** — On each turn, record which items were accessed together → `co_access` table.
+13. **Behavioral anticipation** — Co-access patterns feed into anticipatory loading alongside structural rank.
+
+### C.3 Integration
+14. **Unified anticipatory loader** — Merge structural + behavioral signals. Weighted blend, configurable.
+15. **AST compression consumer** — Hook the parser output for `signature + [IMPL:hash]` compression (Phase 7 groundwork).
 
 **Phase D — Loops / failure-memory:**
 7. Attempt records + surfacing + convergence/escalation, with the goal-boundary cascade (section 9).

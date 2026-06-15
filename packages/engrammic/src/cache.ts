@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import type { ContextItem, Trigger } from "./types.ts";
+import { CoAccessTracker } from "./worldview/co-access.ts";
 
 export interface HydrationEvent {
 	sessionId: string;
@@ -57,6 +58,9 @@ export class ContextCache {
 	private stmtFindRecentEviction: Database.Statement;
 	private stmtClearEvictionForHash: Database.Statement;
 	private stmtPruneEvictionLog: Database.Statement;
+
+	// Co-access tracker
+	readonly coAccess: CoAccessTracker;
 
 	constructor(dbPath: string) {
 		this.db = new Database(dbPath);
@@ -192,6 +196,16 @@ export class ContextCache {
 		this.stmtClearEvictionForHash = this.db.prepare("DELETE FROM eviction_log WHERE content_hash = ?");
 
 		this.stmtPruneEvictionLog = this.db.prepare("DELETE FROM eviction_log WHERE evicted_at < ?");
+
+		this.coAccess = new CoAccessTracker(this.db);
+	}
+
+	/**
+	 * Get the underlying database connection.
+	 * Use sparingly - prefer using cache methods directly.
+	 */
+	getDb(): Database.Database {
+		return this.db;
 	}
 
 	private init(): void {
@@ -320,6 +334,53 @@ export class ContextCache {
 
 			CREATE INDEX IF NOT EXISTS idx_eviction_hash ON eviction_log(content_hash);
 			CREATE INDEX IF NOT EXISTS idx_eviction_item ON eviction_log(item_id);
+		`);
+
+		// Co-access table for behavioral worldview — feeds anticipatory loading
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS co_access (
+				item_a TEXT NOT NULL,
+				item_b TEXT NOT NULL,
+				count INTEGER NOT NULL DEFAULT 1,
+				last_turn INTEGER NOT NULL,
+				PRIMARY KEY (item_a, item_b)
+			);
+			CREATE INDEX IF NOT EXISTS idx_co_access_a ON co_access(item_a);
+			CREATE INDEX IF NOT EXISTS idx_co_access_b ON co_access(item_b);
+		`);
+
+		// Symbol graph for structural worldview — feeds PageRank ranking
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS symbol_graph (
+				file TEXT NOT NULL,
+				symbol TEXT NOT NULL,
+				kind TEXT NOT NULL,
+				target_file TEXT,
+				target_symbol TEXT,
+				line INTEGER,
+				PRIMARY KEY (file, symbol, kind, line)
+			);
+			CREATE INDEX IF NOT EXISTS idx_symbol_graph_file ON symbol_graph(file);
+			CREATE INDEX IF NOT EXISTS idx_symbol_graph_symbol ON symbol_graph(symbol);
+		`);
+
+		// File mtime tracker — drives mtime-based cache invalidation
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS file_mtime (
+				file TEXT PRIMARY KEY,
+				mtime INTEGER NOT NULL,
+				symbols_updated_at INTEGER NOT NULL
+			);
+		`);
+
+		// Structural rank — PageRank scores for files in the symbol graph
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS structural_rank (
+				file TEXT PRIMARY KEY,
+				pagerank REAL NOT NULL,
+				task_bias REAL NOT NULL DEFAULT 0,
+				updated_at INTEGER NOT NULL
+			);
 		`);
 	}
 

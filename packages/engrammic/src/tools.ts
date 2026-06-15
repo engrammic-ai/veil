@@ -120,7 +120,7 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 			type: "object",
 			properties: {
 				query: { type: "string", description: "What to search for" },
-				days: { type: "number", description: "How far back to search", default: 7 },
+				days: { type: "number", description: "How far back to search (default: 7)" },
 			},
 			required: ["query"],
 		},
@@ -238,10 +238,7 @@ function executeHydrate(params: { stub: string }, ctx: ToolContext): ToolResult 
 	return { success: true, data: { content: result.content } };
 }
 
-async function executeVeilHistory(
-	params: { query: string; days?: number },
-	ctx: ToolContext,
-): Promise<ToolResult> {
+async function executeVeilHistory(params: { query: string; days?: number }, ctx: ToolContext): Promise<ToolResult> {
 	const since = Date.now() - (params.days ?? 7) * 24 * 60 * 60 * 1000;
 
 	const results = await ctx.manager.searchHistory(params.query, since);
@@ -250,9 +247,7 @@ async function executeVeilHistory(
 		return { success: true, data: { message: "No related context found in recent sessions." } };
 	}
 
-	const formatted = results
-		.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`)
-		.join("\n");
+	const formatted = results.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`).join("\n");
 
 	return { success: true, data: { items: results, formatted } };
 }
