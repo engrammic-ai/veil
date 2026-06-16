@@ -1,6 +1,6 @@
 # Veil Roadmap
 
-High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-15.
+High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-16.
 
 ## Vision
 
@@ -20,20 +20,21 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 ---
 
-## Current State (verified against code 2026-06-15)
+## Current State (verified against code 2026-06-16)
 
 ```
 [✓] Fork & Foundation — Pi fork (MIT), packages/engrammic, pnpm workspace
 [✓] Warm cache — SQLite (better-sqlite3, WAL), prepared statements
 [✓] Harness wiring — VeilHarness integrated into AgentSession hooks
-       (agent-session.ts:413-443, main.ts:700-723) — beforeToolCall/afterToolCall fire
 [✓] Capture — auto-capture of tool results into warm cache
-[✓] Injection — <veil-context> stubs; anticipatory manifest (Phase 5 path)
+[✓] Injection — <veil-context> stubs; anticipatory manifest; failure-section surfacing
 [✓] Eviction — 3-stage cascade + adaptive threshold + circuit breaker
-[✓] Cognitive weight — afterToolCall -> recordOutcome -> SQL update -> scorer reads it (FULLY WIRED)
+[✓] Cognitive weight — afterToolCall -> recordOutcome -> SQL update -> scorer reads it
 [~] Cold tier — SqliteColdStore working; KG/engrammic adapter stubbed (throws), optional
 [✓] Agent tools — 8 veil_* tools registered with executors (2026-06-15)
 [✓] Self-tuning — AIMD re-request back-off + decay sweep scheduling (2026-06-15)
+[✓] Worldview — tree-sitter parser, symbol extraction, PageRank, co-access, unified anticipation (2026-06-16)
+[✓] Failure-memory — AttemptStore, ConvergenceMonitor, goal inference, attempt surfacing (2026-06-16)
 ```
 
 ---
@@ -64,24 +65,70 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 **Commits:** `37d00218..a55e5ae0` (10 commits including review fixes)
 
-### Phase C — Worldview foundation — NEXT
+### Phase C — Worldview foundation — DONE 2026-06-16
 **Goal:** Veil learns what matters here, deterministically.
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| C.1 Tree-sitter mapper | web-tree-sitter + Aider `.scm` queries + graphology pagerank + better-sqlite3 cache (build, don't wrap graphify). One parser feeds worldview + AST compression + mtime invalidation | TODO |
-| C.2 Behavioral worldview | co-access / re-request / success correlation from the event log (universal, no model) | TODO |
-| C.3 Structural worldview | code graph as an optional coding-domain provider behind an interface | TODO |
+| C.1 Tree-sitter mapper | `TreeSitterParser` + `SymbolExtractor` + `graphology` pagerank + `better-sqlite3` cache | DONE |
+| C.2 Behavioral worldview | `CoAccessTracker` for co-access patterns from event log | DONE |
+| C.3 Structural worldview | `SymbolStore` + `RankStore` + `UnifiedAnticipator` | DONE |
+| C.4 Harness wiring | `enableWorldview: true` config creates stores in ContextManager | DONE |
 
-### Phase D — Loops & failure-memory (ambient)
+**Commits:** `9b977b92` (C.4 wiring)
+
+### Phase D — Loops & failure-memory (ambient) — DONE 2026-06-16
 **Goal:** make any unattended loop converge instead of repeating dead ends.
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| D.1 Attempt records | retain-high memory of tried-and-failed approaches | TODO |
-| D.2 Surfacing | inject a deterministic "already tried, failed" block per attempt | TODO |
-| D.3 Convergence monitor | escalate/halt on no-progress (autonomic "only bother the human when needed") | TODO |
-| D.4 Goal-boundary cascade | free signals -> mine transcript -> optional cheap-model composer (see DESIGN section 9) | TODO |
+| D.1 Attempt records | `AttemptRecord` + `AttemptStore` for retain-high failure memory | DONE |
+| D.2 Surfacing | `formatFailureSection()` injects "Already tried" block | DONE |
+| D.3 Convergence monitor | `ConvergenceMonitor` with escalation levels 0-3 | DONE |
+| D.4 Goal-boundary cascade | `extractTarget`, `inferGoalId`, `detectRetryMarker`, LLM stub | DONE |
+
+**Commits:** `117a5392` (expanded retry markers)
+
+---
+
+### Phase E — Compression pipeline — DONE 2026-06-16
+**Goal:** route content by type through appropriate compressors; non-destructive (originals recoverable).
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| E.1 Content-type detector | `contentType(chunk)` heuristic: code/prose/config/conversation | DONE |
+| E.2 Compression dispatcher | Route chunks to appropriate compressor by type | DONE |
+| E.3 JSON/config compressor | Task-relevant key extraction (deterministic) | DONE |
+| E.4 Conversation compressor | Head-summary + tail-preserve (deterministic) | DONE |
+| E.5 Prose compressor | Slow-path only, model-gated, optional | DEFERRED |
+| E.6 Integration | Wire into VeilHarness.autoCapture() | DONE |
+
+**New:** `compression/` module — content-type.ts, dispatcher.ts, config-compress.ts, conversation-compress.ts.
+**Existing:** `ast-compress.ts` handles code compression (signature + `[IMPL:hash]`), wrapped by code-compress.ts.
+
+---
+
+### Ship — Distribution
+
+**Goal:** one-liner install for users to try Veil.
+
+```bash
+curl -sSL https://veil.sh/install | sh
+# or
+curl -sSL https://raw.githubusercontent.com/engrammic/veil/main/scripts/install.sh | sh
+```
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| S.1 npm package | Publish `@earendil-works/pi-coding-agent` (includes @engrammic/veil) | TODO |
+| S.2 Install script | `scripts/install.sh` — checks Node 20+, installs via npm | DONE |
+| S.3 Binary builds | Optional: bun compile for macOS/Linux/Windows | LATER |
+| S.4 README + docs | User-facing quick-start in README.md | DONE |
+
+**Remaining for first ship:**
+- Publish to npm (requires npm account + `npm publish`)
+- Host install script (GitHub raw works, or setup veil.sh domain)
+- Write user-facing README with quick-start
 
 ---
 
@@ -97,17 +144,16 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 **Optional cloud (engrammic)**: KG cold adapter for cross-device/cross-session memory; team/shared workspaces. Opt-in, never required — local SQLite is always sufficient.
 
-**Advanced**: AST-aware compression (shares Phase C's parser), confidence-aware retrieval, embedding-based semantic worldview (optional local model).
+**Advanced**: confidence-aware retrieval, embedding-based semantic worldview (optional local model).
 
 ---
 
 ## Sequencing
 
 ```
-Now    → Phase A (foundation hardening)
-Next   → Phase B (self-tuning controller — MVP)
-Then   → Phase C (worldview) → Phase D (loops/failure-memory)
-Later  → validation, CLI/UX finish, extension API, multi-agent (subagents pkg)
+Done   → Phase A (foundation) → Phase B (self-tuning) → Phase C (worldview) → Phase D (failure-memory) → Phase E (compression)
+Now    → Ship (npm + curl installer)
+Later  → CLI/UX finish, extension API, multi-agent (subagents pkg)
 Opt-in → engrammic cloud cold tier, advanced features
 ```
 
@@ -119,7 +165,7 @@ Opt-in → engrammic cloud cold tier, advanced features
 |------------|--------------|--------|
 | Pi Agents fork | All | Done |
 | SQLite (better-sqlite3) | Warm + cold | Done |
-| web-tree-sitter + grammars + graphology | Phase C mapper | Not started |
+| web-tree-sitter + grammars + graphology | Phase C mapper | Done |
 | Community subagents package | Multi-agent | Not started |
 | engrammic KG / `@engrammic/sdk` | Optional cloud cold tier | Stubbed, future, optional |
 

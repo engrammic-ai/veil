@@ -1,84 +1,103 @@
 # Veil
 
-Context-aware agent harness. Memory that fades so you don't have to think about it.
+**Autonomic context for AI agents.** Context that governs itself, so you stop thinking about it.
 
-Part of the [Engrammic](https://engrammic.ai) ecosystem.
+```bash
+curl -sSL https://raw.githubusercontent.com/engrammic/veil/main/scripts/install.sh | sh
+```
 
-> Fork of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner, adding integrated context management and episodic memory.
+## What it does
 
-## What Veil Does
+Veil is a coding agent (like Claude Code, Cursor, Aider) with **self-managing context**:
 
-- **Dynamic context loading** — load what's relevant, not everything
-- **Heuristic eviction** — stale context fades automatically, no LLM calls
-- **Episodic memory** — sessions become episodes, episodes become knowledge  
-- **Rot prevention** — old memories decay gracefully, not abruptly
+- **Auto-eviction** — stale context fades automatically, no manual cleanup
+- **Self-tuning** — learns what matters from its own mistakes (AIMD control)
+- **Failure memory** — remembers what didn't work so loops converge instead of grinding
+- **Compression** — code, config, and conversations compress intelligently
+
+No LLM in the memory loop. Pure deterministic scoring on the hot path. Model intelligence stays off-path where it can't break things.
+
+## Quick start
+
+```bash
+# Install (requires Node.js 20+)
+npm install -g @earendil-works/pi-coding-agent
+
+# Run in any project
+cd your-project
+veil
+```
+
+Or try without installing:
+```bash
+npx @earendil-works/pi-coding-agent
+```
 
 ## Why Veil?
 
-See the [alignment docs](alignment/) for the full picture:
+Every coding agent fails the same way:
+- **Claude Code** — auto-compaction destroys context; no real cross-session memory
+- **Cursor/Windsurf** — silent truncation, stale indexes, "vicious circle" of context loss
+- **Aider/Cline/etc.** — one stale markdown file + an LLM summarizer that loops and burns tokens
 
-- **[VISION.md](alignment/VISION.md)** — The problem, the insight, where we're going
-- **[MANIFESTO.md](alignment/MANIFESTO.md)** — Philosophical stance on memory and forgetting
-- **[PRINCIPLES.md](alignment/PRINCIPLES.md)** — Design decisions and constraints
+Veil is different: **two-speed autonomic design**.
 
-## Packages
+| Fast path (reflexes) | Slow path (deliberation) |
+|---------------------|-------------------------|
+| Deterministic scorer + eviction | Reads event log, writes policy |
+| Runs every turn, sub-10ms | Runs between turns, off critical path |
+| Never blocks, never flakes | Bad policy is bounded + reversible |
 
-| Package | Description |
-|---------|-------------|
-| **[@engrammic/veil-ai](packages/ai)** | Unified multi-provider LLM API (from Pi) |
-| **[@engrammic/veil-agent](packages/agent)** | Agent runtime with context management |
-| **[@engrammic/veil-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@engrammic/veil-tui](packages/tui)** | Terminal UI library |
-| **[@engrammic/veil-context](packages/context)** | Context manager (NEW) |
-| **[@engrammic/veil-memory](packages/memory)** | Memory subsystem (NEW) |
+The slow layer never mutates live context — only the rules. That's why it doesn't rot.
+
+## Features
+
+| Feature | Status |
+|---------|--------|
+| Self-tuning eviction (AIMD) | Done |
+| Worldview (structural + behavioral) | Done |
+| Failure memory + convergence detection | Done |
+| Compression pipeline | Done |
+| CLI (`veil` command) | Done |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│              VEIL HARNESS               │
-│  ┌───────────────────────────────────┐  │
-│  │  Agent Loop (from Pi)             │  │
-│  └───────────────┬───────────────────┘  │
-│                  │                       │
-│  ┌───────────────▼───────────────────┐  │
-│  │  Context Manager (Veil)           │  │
-│  │  - Eviction, scoring, loading     │  │
-│  └───────────────┬───────────────────┘  │
-│                  │                       │
-│  ┌───────────────▼───────────────────┐  │
-│  │  Memory (SQLite + KG adapter)     │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
+Agent Loop (Pi fork)
+    │
+    ▼
+VeilHarness ──► hooks into tool calls
+    │
+    ▼
+ContextManager ──► scorer, eviction, injection
+    │
+    ▼
+SQLite (warm) ──► local-first, no network
+    │
+    ▼
+Cold tier (optional) ──► cross-session, cross-device
 ```
-
-## Status
-
-Early development. Building in public.
-
-For containerization options, see [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [AGENTS.md](AGENTS.md) for project-specific rules.
 
 ## Development
 
 ```bash
+git clone https://github.com/engrammic/veil
+cd veil
 npm install --ignore-scripts
 npm run build
-./veil-test.sh  # Run veil from sources
+./veil-test.sh
 ```
 
-## License
+See [CLAUDE.md](CLAUDE.md) for architecture details.
 
-MIT — See [LICENSE](LICENSE) for Pi attribution.
+## Documentation
+
+- [Design doc](context/DESIGN-autonomic.md) — full technical design
+- [Roadmap](context/ROADMAP.md) — what's done, what's next
+- [Alignment](alignment/) — vision, manifesto, principles
 
 ## Credits
 
-Veil is built on top of [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner and the Earendil team. tysm for making Pi open source <3
+Built on [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner. MIT licensed.
 
-## Links
-
-- [Engrammic](https://engrammic.ai) — Epistemic memory for AI agents
-- [Pi (upstream)](https://github.com/badlogic/pi-mono) — The coding agent Veil is built on
+Part of the [Engrammic](https://engrammic.ai) ecosystem.

@@ -14,6 +14,7 @@ import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import type { ColdStore } from "./cold/interface.ts";
+import { type ContentMetadata, compressSync } from "./compression/index.ts";
 import {
 	buildConvergenceWarning,
 	ConvergenceMonitor,
@@ -318,11 +319,22 @@ export class VeilHarness {
 		const text = extractContent(content);
 		if (text.length < this.captureConfig.minChars) return;
 
-		// Truncate if needed
-		const truncated = smartTruncate(text, this.captureConfig.maxChars);
+		// Build metadata for content-type detection
+		const argObj = args as Record<string, unknown> | undefined;
+		const metadata: ContentMetadata = {
+			filePath: argObj?.file_path as string | undefined,
+			toolName,
+			tags: rule.tags,
+		};
+
+		// Compress by content type (sync path: config, conversation; code needs async parser)
+		const { compressed, ratio } = compressSync(text, { metadata });
+
+		// Use compressed if it saved space, otherwise truncate original
+		const toStore = ratio < 1 ? compressed : smartTruncate(text, this.captureConfig.maxChars);
 
 		// Check for duplicates — use the same hash function as createItem (cache.ts)
-		const hash = hashContent(truncated);
+		const hash = hashContent(toStore);
 		const existing = this.manager.getCache().getByHash(hash);
 		if (existing) {
 			this.manager.getCache().touch(existing.id);
@@ -333,7 +345,7 @@ export class VeilHarness {
 		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
 
 		// Store in warm cache with tool call ID for faded history
-		this.manager.remember(truncated, rule.type, tags, toolCallId);
+		this.manager.remember(toStore, rule.type, tags, toolCallId);
 		this.capturesThisTurn++;
 		this.totalCaptures++;
 	}
