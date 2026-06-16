@@ -1,6 +1,6 @@
 # DESIGN: Autonomic Veil
 
-Status: Draft / direction doc — 2026-06-15. Brainstorm output, not yet implementation-ready. Open questions are flagged in section 11.
+Status: Living doc — updated 2026-06-16. Phases A-E complete; Ship phase next.
 
 Related: [[veil-autonomic-direction]] (memory), [[engrammic-identity]] (memory), `alignment/MANIFESTO.md`, `alignment/PRINCIPLES.md`, `context/SPEC-master.md`.
 
@@ -194,9 +194,9 @@ Not on the MVP critical path (self-tuning needs none of it), so deferred to Phas
 
 ## 11. Open questions (resolve next)
 
-1. **Iteration / goal-boundary inference (ambient failure-memory)** — RESOLVED as a cheapest-first cascade (see section 9); deferred behind the MVP. Remaining detail: the ambiguity threshold that triggers the optional tier-3 composer. 
-2. **MVP slice** — the thinnest first build that proves the autonomic thesis (likely: wire the re-request signal -> self-tuning controller, on top of registering the tools).
-3. **Self-tuning control law specifics** — window sizes, clamp bounds, exactly which knobs.
+1. **Iteration / goal-boundary inference (ambient failure-memory)** — RESOLVED as a cheapest-first cascade (see section 9). Goal inference implemented in D.4; LLM tier stubbed for future.
+2. ~~**MVP slice**~~ — RESOLVED. Phase A+B delivered the MVP (re-request signal + self-tuning controller).
+3. **Self-tuning control law specifics** — RESOLVED. AIMD implemented: `reRequestBackoffStep: 0.05`, `decaySweepIntervalTurns: 50`. Bounds in `EvictionController`.
 4. **Living-worldview schema** — RESOLVED 2026-06-15. Same SQLite, separate tables. Schema:
    ```sql
    -- Behavioral: co-access patterns
@@ -206,9 +206,9 @@ Not on the MVP critical path (self-tuning needs none of it), so deferred to Phas
    -- Structural: PageRank + task bias
    CREATE TABLE structural_rank (file TEXT PRIMARY KEY, pagerank REAL, task_bias REAL, updated_at INTEGER);
    ```
-5. **`contentType(chunk)` detection heuristics** — deterministic dispatch (section 4). Shared with Phase 7 (AST compression) in the existing roadmap.
-6. **Re-request signal (the one real prerequisite for self-tuning)** — verified missing today. Needs: (a) a durable eviction ledger `{item_id, evicted_at, eviction_turn}`; (b) `recall`/`fetchFromCold` to cross-check whether a returning item was previously evicted; (c) feed the resulting "miss" events into `eviction.ts` `adjustThreshold`. None exist yet; ephemeral `evictedToolCallIds` + recall cooldown are the only partial pieces.
-7. **Tree-sitter mapper build** (section 5 stack: web-tree-sitter + graphology + better-sqlite3) — also lands the Phase 7 AST-compression groundwork (one parser, both consumers).
+5. ~~**`contentType(chunk)` detection heuristics**~~ — RESOLVED 2026-06-16. `compression/content-type.ts` implements deterministic dispatch by extension + content patterns. Phase E.
+6. ~~**Re-request signal**~~ — RESOLVED 2026-06-15. Eviction ledger + detection in `remember()` and `fetchFromCold()`. Phase A.3.
+7. ~~**Tree-sitter mapper build**~~ — RESOLVED 2026-06-16. Phase C complete: parser, symbols, graph-rank, anticipatory loading all wired.
 
 ---
 
@@ -226,24 +226,65 @@ MVP = Phase A + B (smallest thing that visibly "governs itself"; mostly closes l
 **Phase B — First autonomic organ (MVP):** — DONE 2026-06-15
 4. ~~Self-tuning controller (AIMD on the re-request signal).~~ `recordReRequest()` raises threshold; `runDecaySweep()` now scheduled on tick; ledger pruning added. Commits: `37d00218..a55e5ae0`.
 
-**Phase C — Worldview foundation (triple-payoff brick):** — NEXT
+**Phase C — Worldview foundation (triple-payoff brick):** — DONE 2026-06-16
 
-### C.1 Tree-sitter mapper (structural worldview)
-5. **Parser setup** — web-tree-sitter WASM + grammar loading for 26 languages. Lazy-load grammars on first file of that type.
-6. **Symbol extraction** — Port Aider's MIT .scm query files. Build `symbol_graph` table (defs/refs per file).
-7. **Graph ranking** — graphology + PageRank. Populate `structural_rank` table with static ranks.
-8. **Task bias** — Personalize ranks to current context (files in hot tier bias the graph).
-9. **Cache invalidation** — `path+mtime` keyed. File change → recompute only that file's symbols, decay others' task_bias.
-10. **Anticipatory loader** — On file access, query structural_rank for dependency frontier, preload top-N.
-11. **Structural floor** — Preloaded files get temporary minimum score (decays over N turns).
+### C.1 Tree-sitter mapper (structural worldview) — DONE
+5. ~~Parser setup~~ — `TreeSitterParser` in `worldview/parser.ts`. WASM + 26 language grammars, lazy-loaded.
+6. ~~Symbol extraction~~ — `SymbolExtractor` in `worldview/symbols.ts`. `SymbolStore` + `symbol_graph` schema.
+7. ~~Graph ranking~~ — `RankStore` + `computePageRank` in `worldview/graph-rank.ts`. graphology-based.
+8. ~~Task bias~~ — Integrated into `updateRanks()` via hot-tier file bias.
+9. ~~Cache invalidation~~ — `FileTracker` + `checkAndUpdateFile()` in `worldview/incremental-update.ts`.
+10. ~~Anticipatory loader~~ — `getStructuralSuggestions()` in `worldview/structural-anticipate.ts`.
+11. ~~Structural floor~~ — `worldview/structural-floor.ts` (decay logic).
 
-### C.2 Behavioral worldview
-12. **Co-access tracking** — On each turn, record which items were accessed together → `co_access` table.
-13. **Behavioral anticipation** — Co-access patterns feed into anticipatory loading alongside structural rank.
+### C.2 Behavioral worldview — DONE
+12. ~~Co-access tracking~~ — `CoAccessTracker` in `worldview/co-access.ts`. `co_access` table.
+13. ~~Behavioral anticipation~~ — Integrated into UnifiedAnticipator via co-access patterns.
 
-### C.3 Integration
-14. **Unified anticipatory loader** — Merge structural + behavioral signals. Weighted blend, configurable.
-15. **AST compression consumer** — Hook the parser output for `signature + [IMPL:hash]` compression (Phase 7 groundwork).
+### C.3 Integration — DONE
+14. ~~Unified anticipatory loader~~ — `UnifiedAnticipator` in `worldview/unified-anticipate.ts`.
+15. ~~AST compression consumer~~ — `worldview/ast-compress.ts` (compressFile, extractSignature, hashImplementation).
 
-**Phase D — Loops / failure-memory:**
-7. Attempt records + surfacing + convergence/escalation, with the goal-boundary cascade (section 9).
+### C.4 Harness wiring — DONE 2026-06-16
+16. ~~Instantiate worldview stores~~ — `enableWorldview: boolean` config flag (default false). When enabled, `ContextManager` creates `SymbolStore` + `RankStore` using shared SQLite. Commit: `9b977b92`.
+
+**C.4 review observations (non-blocking):**
+- Passing `symbolStore` without `enableWorldview: true` works (explicit injection) but behavior is subtle — documented as intentional (explicit > implicit)
+- No validation for DB mismatch if caller injects store with different database — low risk since API is internal
+
+**Phase D — Loops / failure-memory:** — DONE 2026-06-16
+
+### D.1-D.2 Attempt foundation — DONE
+- `AttemptRecord` interface + `AttemptStore` in `attempts.ts`
+- `detectFailure()` for error pattern extraction
+
+### D.3 Convergence monitor — DONE
+- `ConvergenceMonitor` class in `convergence.ts`
+- `isProgress()` detection, escalation levels 0-3
+- Wired into `VeilHarness` with config thresholds
+
+### D.4 Goal inference — DONE
+- `extractTarget()` (D.4.1), `inferGoalId()` (D.4.2), `shouldMergeGoals()` (D.4.3)
+- `detectRetryMarker()` (D.4.5), `extractRationale()` (D.4.6), `shouldCloseGoal()` (D.4.7)
+- `inferGoalWithLLM()` stub (D.4.8) for future Haiku-class calls
+- RETRY_MARKERS expanded 2026-06-16: +11 patterns including idioms (stuck, spinning wheels, dead end). Commit: `117a5392`.
+
+**D.4 review observation:** `extractRationale()` uses greedy `.{10,100}` — lazy quantifier would under-capture (min 10 chars). Current behavior + `.slice(0,100)` is correct.
+
+### D.5 Attempt surfacing — DONE
+- `formatFailureSection()` in `injection.ts` — "Already tried" block with capped recent attempts
+
+**Phase E — Compression pipeline:** — DONE 2026-06-16
+
+### E.1-E.4 Core compressors — DONE
+- `compression/content-type.ts` — heuristic detection by extension + content patterns
+- `compression/dispatcher.ts` — routes to appropriate compressor, returns ratio
+- `compression/config-compress.ts` — JSON/YAML key extraction, depth limiting
+- `compression/conversation-compress.ts` — head-summary + tail-preserve
+
+### E.5 Prose compressor — DEFERRED
+Model-gated (LLMLingua / summarization), slow-path only. Not needed for MVP.
+
+### E.6 Integration — DONE
+- `compressSync()` integrated into `VeilHarness.autoCapture()`
+- Compression runs before storage, uses compressed if ratio < 1

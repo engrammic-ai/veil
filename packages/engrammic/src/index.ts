@@ -36,6 +36,22 @@ export {
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
 export { type ContextCommandOutput, renderContextCommand } from "./commands/context.ts";
+// Compression pipeline
+export {
+	type CodeCompressOptions,
+	type CompressionResult,
+	type CompressOptions,
+	type ConfigCompressOptions,
+	type ContentMetadata,
+	type ContentType,
+	type ConversationCompressOptions,
+	compress,
+	compressCode,
+	compressConfig,
+	compressConversation,
+	compressSync,
+	detectContentType,
+} from "./compression/index.ts";
 // Phase D: Convergence monitor
 export {
 	buildConvergenceWarning,
