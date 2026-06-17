@@ -27,10 +27,11 @@ const (
 
 // Release represents a single downloadable release.
 type Release struct {
-	Version  string  `json:"version"`
-	Channel  Channel `json:"channel"`
-	URL      string  `json:"url"`
-	Checksum string  `json:"checksum"`
+	Version  string            `json:"version"`
+	Channel  Channel           `json:"channel"`
+	URL      string            `json:"url"`      // Deprecated: use Assets
+	Checksum string            `json:"checksum"` // Deprecated: use Assets
+	Assets   map[string]string `json:"assets"`   // platform -> download URL
 }
 
 // githubRelease is the GitHub API response shape we care about.
@@ -154,13 +155,20 @@ func toReleases(gr []githubRelease) []Release {
 		rel := Release{
 			Version: strings.TrimPrefix(r.TagName, "v"),
 			Channel: ch,
+			Assets:  make(map[string]string),
 		}
 		for _, a := range r.Assets {
 			if strings.HasSuffix(a.Name, ".sha256") || strings.Contains(a.Name, "checksums") {
-				rel.Checksum = a.BrowserDownloadURL
-			} else if rel.URL == "" {
-				rel.URL = a.BrowserDownloadURL
+				continue
 			}
+			// Map asset name to platform key
+			// e.g., "veil-linux-amd64" -> "linux-amd64"
+			//       "veil-darwin-arm64" -> "darwin-arm64"
+			//       "veil-windows-amd64.exe" -> "windows-amd64"
+			name := a.Name
+			name = strings.TrimPrefix(name, "veil-")
+			name = strings.TrimSuffix(name, ".exe")
+			rel.Assets[name] = a.BrowserDownloadURL
 		}
 		out = append(out, rel)
 	}
@@ -177,6 +185,13 @@ func classifyChannel(tag string, prerelease bool) Channel {
 		return ChannelBeta
 	}
 	return ChannelStable
+}
+
+// GetAssetURL returns the download URL for a specific platform.
+// Platform should be like "linux-amd64", "darwin-arm64", "windows-amd64".
+func (r *Release) GetAssetURL(platform string) (string, bool) {
+	url, ok := r.Assets[platform]
+	return url, ok
 }
 
 func filterByChannel(releases []Release, channel Channel) []Release {
