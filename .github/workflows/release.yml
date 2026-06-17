@@ -51,7 +51,12 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
-        run: pnpm run build
+        run: |
+          pnpm --filter @earendil-works/pi-tui run build
+          pnpm --filter @earendil-works/pi-ai run build
+          pnpm --filter @engrammic/veil run build
+          pnpm --filter @earendil-works/pi-agent-core run build
+          pnpm --filter @earendil-works/pi-coding-agent run build
 
       - name: Compile binary for ${{ matrix.target }}
         working-directory: packages/coding-agent
