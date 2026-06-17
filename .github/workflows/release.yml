@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.0.1)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: bun-linux-x64
+            asset: veil-linux-amd64
+          - target: bun-linux-arm64
+            asset: veil-linux-arm64
+          - target: bun-darwin-x64
+            asset: veil-darwin-amd64
+          - target: bun-darwin-arm64
+            asset: veil-darwin-arm64
+          - target: bun-windows-x64
+            asset: veil-windows-amd64.exe
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Build packages
+        run: |
+          npm --prefix packages/tui run build
+          npm --prefix packages/ai run build
+          npm --prefix packages/agent run build
+          npm --prefix packages/coding-agent run build
+
+      - name: Compile binary for ${{ matrix.target }}
+        working-directory: packages/coding-agent
+        run: |
+          bun build --compile --target=${{ matrix.target }} \
+            ./dist/bun/cli.js ./src/utils/image-resize-worker.ts \
+            --outfile dist/${{ matrix.asset }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: packages/coding-agent/dist/${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ inputs.version }}" \
+            --title "v${{ inputs.version }}" \
+            --generate-notes \
+            ${{ inputs.prerelease && '--prerelease' || '' }} \
+            binaries/*
