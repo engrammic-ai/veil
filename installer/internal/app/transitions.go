@@ -1,0 +1,97 @@
+package app
+
+// Result codes returned by each step's worker command.
+type Result int
+
+const (
+	ResultOK Result = iota
+	ResultUnsupported
+	ResultConflict   // existing install found
+	ResultVersionSet // --version flag provided
+	ResultTimeout
+	ResultError
+	ResultMismatch
+	ResultInvalidSig
+	ResultDenied
+	ResultSkip
+)
+
+// nextState returns the successor state given the current state and step result.
+// Terminal states return themselves unchanged.
+func nextState(current State, result Result) State {
+	if current.IsTerminal() {
+		return current
+	}
+
+	switch current {
+	case StateDetectPlatform:
+		if result == ResultOK {
+			return StateCheckExisting
+		}
+		return StateFailPlatform
+
+	case StateCheckExisting:
+		switch result {
+		case ResultOK:
+			return StateFetchVersions
+		case ResultConflict:
+			return StatePromptUpgrade
+		}
+		return StateFailPlatform
+
+	case StatePromptUpgrade:
+		if result == ResultOK {
+			return StateFetchVersions
+		}
+		// User declined upgrade — treat as success (no-op).
+		return StateSuccess
+
+	case StateFetchVersions:
+		if result == ResultVersionSet {
+			return StateValidateVer
+		}
+		return StatePromptVersion
+
+	case StatePromptVersion, StateValidateVer:
+		if result == ResultOK {
+			return StateDownload
+		}
+		return StateFailPlatform
+
+	case StateDownload:
+		switch result {
+		case ResultOK:
+			return StateVerifySum
+		case ResultTimeout, ResultError:
+			return StateFailNetwork
+		}
+		return StateFailNetwork
+
+	case StateVerifySum:
+		if result == ResultOK {
+			return StateVerifySig
+		}
+		return StateFailVerify
+
+	case StateVerifySig:
+		if result == ResultOK {
+			return StateInstall
+		}
+		return StateFailVerify
+
+	case StateInstall:
+		if result == ResultOK {
+			return StateConfigurePATH
+		}
+		return StateFailPermission
+
+	case StateConfigurePATH:
+		// PATH configuration is best-effort; warn but continue on failure.
+		return StateSuccess
+
+	case StateInstallCompletions:
+		return StateSuccess
+	}
+
+	return current
+}
