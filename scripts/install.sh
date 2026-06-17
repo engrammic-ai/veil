@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
 # Veil installer
-# Usage: curl -sSL https://veil.sh/install | sh
+# Usage: curl -sSL https://veil.engrammic.ai/install | sh
 #
-# This script installs Veil (autonomic context for AI agents).
-# It requires Node.js 20+ and npm.
+# Downloads pre-built binary for your platform.
 #
 
 set -euo pipefail
 
-REPO="https://github.com/engrammic/veil"
-MIN_NODE_VERSION=20
+REPO="engrammic-ai/veil"
+INSTALL_DIR="${VEIL_INSTALL_DIR:-$HOME/.veil}"
+BIN_DIR="${VEIL_BIN_DIR:-$HOME/.local/bin}"
 
-# Colors (disable if not a terminal)
+# Colors
 if [ -t 1 ]; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
@@ -20,73 +20,78 @@ if [ -t 1 ]; then
     BLUE='\033[0;34m'
     NC='\033[0m'
 else
-    RED=''
-    GREEN=''
-    YELLOW=''
-    BLUE=''
-    NC=''
+    RED='' GREEN='' YELLOW='' BLUE='' NC=''
 fi
 
-info() { echo -e "${BLUE}[info]${NC} $1"; }
-success() { echo -e "${GREEN}[ok]${NC} $1"; }
-warn() { echo -e "${YELLOW}[warn]${NC} $1"; }
-error() { echo -e "${RED}[error]${NC} $1" >&2; exit 1; }
+info() { echo -e "${BLUE}info${NC} $1"; }
+ok() { echo -e "${GREEN}ok${NC} $1"; }
+warn() { echo -e "${YELLOW}warn${NC} $1"; }
+err() { echo -e "${RED}error${NC} $1" >&2; exit 1; }
 
-# Check Node.js
-check_node() {
-    if ! command -v node &> /dev/null; then
-        error "Node.js not found. Install Node.js $MIN_NODE_VERSION+ from https://nodejs.org"
-    fi
+detect_platform() {
+    local os arch
 
-    local version
-    version=$(node -v | sed 's/v//' | cut -d. -f1)
-    if [ "$version" -lt "$MIN_NODE_VERSION" ]; then
-        error "Node.js $MIN_NODE_VERSION+ required, found v$version"
-    fi
-    success "Node.js v$(node -v | sed 's/v//') detected"
+    case "$(uname -s)" in
+        Linux*)  os="linux" ;;
+        Darwin*) os="darwin" ;;
+        MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+        *) err "Unsupported OS: $(uname -s)" ;;
+    esac
+
+    case "$(uname -m)" in
+        x86_64|amd64) arch="x64" ;;
+        arm64|aarch64) arch="arm64" ;;
+        *) err "Unsupported architecture: $(uname -m)" ;;
+    esac
+
+    echo "${os}-${arch}"
 }
 
-# Check npm
-check_npm() {
-    if ! command -v npm &> /dev/null; then
-        error "npm not found. Install npm (usually bundled with Node.js)"
-    fi
-    success "npm $(npm -v) detected"
+get_latest_version() {
+    curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" \
+        | grep '"tag_name"' \
+        | sed -E 's/.*"([^"]+)".*/\1/'
 }
 
-# Install via npm
-install_npm() {
-    info "Installing Veil via npm..."
+download_binary() {
+    local platform="$1"
+    local version="$2"
+    local url="https://github.com/${REPO}/releases/download/${version}/veil-${platform}"
 
-    # Check if already installed
-    if command -v veil &> /dev/null; then
-        warn "Veil already installed at $(which veil)"
-        read -p "Reinstall? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            info "Skipping installation"
-            return 0
-        fi
+    if [ "$platform" = "windows-x64" ]; then
+        url="${url}.exe"
     fi
 
-    npm install -g @earendil-works/pi-coding-agent
-    success "Veil installed!"
-}
+    info "Downloading veil ${version} for ${platform}..."
 
-# Verify installation
-verify() {
-    if command -v veil &> /dev/null; then
-        success "Veil ready: $(veil --version 2>/dev/null || echo 'installed')"
-        echo
-        info "Quick start:"
-        echo "  cd your-project"
-        echo "  veil"
-        echo
-        info "Documentation: $REPO"
+    mkdir -p "$INSTALL_DIR"
+
+    if command -v curl &> /dev/null; then
+        curl -sSL "$url" -o "$INSTALL_DIR/veil"
+    elif command -v wget &> /dev/null; then
+        wget -q "$url" -O "$INSTALL_DIR/veil"
     else
-        warn "Installation completed but 'veil' not in PATH"
-        info "Try: npm bin -g"
+        err "curl or wget required"
     fi
+
+    chmod +x "$INSTALL_DIR/veil"
+    ok "Downloaded to $INSTALL_DIR/veil"
+}
+
+setup_path() {
+    mkdir -p "$BIN_DIR"
+    ln -sf "$INSTALL_DIR/veil" "$BIN_DIR/veil"
+
+    # Check if BIN_DIR is in PATH
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) ;;
+        *)
+            warn "$BIN_DIR is not in PATH"
+            echo
+            echo "Add to your shell config:"
+            echo "  export PATH=\"\$PATH:$BIN_DIR\""
+            ;;
+    esac
 }
 
 main() {
@@ -95,10 +100,25 @@ main() {
     echo "  Autonomic context for AI agents"
     echo
 
-    check_node
-    check_npm
-    install_npm
-    verify
+    local platform version
+
+    platform=$(detect_platform)
+    ok "Platform: $platform"
+
+    version=$(get_latest_version)
+    if [ -z "$version" ]; then
+        err "Could not fetch latest version"
+    fi
+    ok "Version: $version"
+
+    download_binary "$platform" "$version"
+    setup_path
+
+    echo
+    ok "Veil installed!"
+    echo
+    info "Run: veil"
+    echo
 }
 
 main "$@"

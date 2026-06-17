@@ -113,22 +113,22 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 **Goal:** one-liner install for users to try Veil.
 
 ```bash
-curl -sSL https://veil.sh/install | sh
-# or
-curl -sSL https://raw.githubusercontent.com/engrammic/veil/main/scripts/install.sh | sh
+curl -sSL https://veil.engrammic.ai/install | sh
 ```
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| S.1 npm package | Publish `@earendil-works/pi-coding-agent` (includes @engrammic/veil) | TODO |
-| S.2 Install script | `scripts/install.sh` — checks Node 20+, installs via npm | DONE |
-| S.3 Binary builds | Optional: bun compile for macOS/Linux/Windows | LATER |
-| S.4 README + docs | User-facing quick-start in README.md | DONE |
+| S.1 Binary builds | `bun build --compile` for linux-x64, linux-arm64, darwin-x64, darwin-arm64 | TODO |
+| S.2 Install script | `scripts/install.sh` — downloads binary for platform | DONE |
+| S.3 GitHub Releases | Upload binaries on tag push | TODO |
+| S.4 Cloud Run | Host install script at `veil.engrammic.ai` | TODO |
+| S.5 README + docs | User-facing quick-start | DONE |
 
-**Remaining for first ship:**
-- Publish to npm (requires npm account + `npm publish`)
-- Host install script (GitHub raw works, or setup veil.sh domain)
-- Write user-facing README with quick-start
+**Distribution flow:**
+1. `bun build --compile` creates single binary (no Node.js required)
+2. GitHub Actions uploads binaries to Releases on tag
+3. Install script downloads correct binary for platform
+4. Cloud Run serves install script at `veil.engrammic.ai/install`
 
 ---
 

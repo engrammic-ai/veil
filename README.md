@@ -3,7 +3,7 @@
 **Autonomic context for AI agents.** Context that governs itself, so you stop thinking about it.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/engrammic/veil/main/scripts/install.sh | sh
+curl -sSL https://veil.engrammic.ai/install | sh
 ```
 
 ## What it does
@@ -20,17 +20,12 @@ No LLM in the memory loop. Pure deterministic scoring on the hot path. Model int
 ## Quick start
 
 ```bash
-# Install (requires Node.js 20+)
-npm install -g @earendil-works/pi-coding-agent
+# Install
+curl -sSL https://veil.engrammic.ai/install | sh
 
 # Run in any project
 cd your-project
 veil
-```
-
-Or try without installing:
-```bash
-npx @earendil-works/pi-coding-agent
 ```
 
 ## Why Veil?
