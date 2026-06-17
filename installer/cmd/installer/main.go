@@ -198,6 +198,13 @@ func runInstall(cmd *cobra.Command, args []string) {
 		fmt.Printf("Installing veil %s\n", rel.Version)
 	}
 
+	// Get platform-specific download URL.
+	assetKey := plat.AssetKey()
+	downloadURL, ok := rel.GetAssetURL(assetKey)
+	if !ok {
+		exitcodes.Exit(exitcodes.ErrGeneral, fmt.Sprintf("no binary available for platform %q (asset key: %s)", plat, assetKey))
+	}
+
 	destPath, err := resolveInstallPath()
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrGeneral, err)
@@ -218,11 +225,11 @@ func runInstall(cmd *cobra.Command, args []string) {
 	defer os.Remove(tmpBinPath)
 
 	if !quiet {
-		fmt.Printf("Downloading from %s\n", rel.URL)
+		fmt.Printf("Downloading from %s\n", downloadURL)
 	}
 
 	ctx := context.Background()
-	if err := client.Download(ctx, rel.URL, tmpBinPath, nil); err != nil {
+	if err := client.Download(ctx, downloadURL, tmpBinPath, nil); err != nil {
 		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("download binary: %w", err))
 	}
 

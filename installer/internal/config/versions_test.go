@@ -163,11 +163,8 @@ func TestToReleases_populatesURLAndChecksum(t *testing.T) {
 		},
 	}}
 	got := toReleases(gr)
-	if got[0].URL != "https://example.com/bin" {
-		t.Errorf("URL = %q", got[0].URL)
-	}
-	if got[0].Checksum != "https://example.com/checksums" {
-		t.Errorf("Checksum = %q", got[0].Checksum)
+	if url, ok := got[0].Assets["linux-amd64"]; !ok || url != "https://example.com/bin" {
+		t.Errorf("Assets[linux-amd64] = %q, ok = %v", url, ok)
 	}
 }
 

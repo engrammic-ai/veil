@@ -24,6 +24,16 @@ func (p Platform) String() string {
 	return fmt.Sprintf("%s-%s", p.OS, p.Arch)
 }
 
+// AssetKey returns the key used to look up release assets, e.g. "linux-amd64".
+// This maps our internal arch names (x64) to GitHub release naming (amd64).
+func (p Platform) AssetKey() string {
+	arch := p.Arch
+	if arch == "x64" {
+		arch = "amd64"
+	}
+	return fmt.Sprintf("%s-%s", p.OS, arch)
+}
+
 // Detect returns the current host platform.
 func Detect() Platform {
 	p := Platform{
