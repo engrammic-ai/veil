@@ -40,19 +40,20 @@ jobs:
         with:
           bun-version: latest
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: pnpm install
 
       - name: Build packages
-        run: |
-          npm --prefix packages/tui run build
-          npm --prefix packages/ai run build
-          npm --prefix packages/agent run build
-          npm --prefix packages/coding-agent run build
+        run: pnpm run build
 
       - name: Compile binary for ${{ matrix.target }}
         working-directory: packages/coding-agent
