@@ -451,20 +451,30 @@ func (m *Model) runStep(s State) tea.Cmd {
 			if m.tmpBinPath == "" {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no downloaded binary")}
 			}
-
-			binFile, err := os.Open(m.tmpBinPath)
-			if err != nil {
-				return stepDoneMsg{result: ResultError, err: err}
-			}
-			defer binFile.Close()
 			defer os.Remove(m.tmpBinPath)
 
 			if err := os.MkdirAll(filepath.Dir(m.installPath), 0o755); err != nil {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("create dir: %w", err)}
 			}
 
-			if err := install.Install(binFile, m.installPath); err != nil {
-				return stepDoneMsg{result: ResultError, err: fmt.Errorf("install: %w", err)}
+			// Check if the download was an archive by looking at the asset URL
+			assetKey := m.platform.AssetKey()
+			downloadURL, _ := m.release.GetAssetURL(assetKey)
+			isArchive := install.IsArchive(downloadURL)
+
+			if isArchive {
+				if err := install.InstallFromArchive(m.tmpBinPath, m.installPath); err != nil {
+					return stepDoneMsg{result: ResultError, err: fmt.Errorf("install from archive: %w", err)}
+				}
+			} else {
+				binFile, err := os.Open(m.tmpBinPath)
+				if err != nil {
+					return stepDoneMsg{result: ResultError, err: err}
+				}
+				defer binFile.Close()
+				if err := install.Install(binFile, m.installPath); err != nil {
+					return stepDoneMsg{result: ResultError, err: fmt.Errorf("install: %w", err)}
+				}
 			}
 
 			// Write version file

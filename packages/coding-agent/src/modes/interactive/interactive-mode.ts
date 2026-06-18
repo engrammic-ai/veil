@@ -109,6 +109,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent } from "./components/footer.ts";
+import { type CatState, HeaderCat } from "./components/header-cat.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
@@ -368,6 +369,7 @@ export class InteractiveMode {
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
+	private headerCat: HeaderCat | undefined = undefined;
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
@@ -426,6 +428,12 @@ export class InteractiveMode {
 		// Subscribe to VeilHarness memory events for cat widget status
 		if (this.session.veilHarness) {
 			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
+				// Update header cat
+				if (this.headerCat) {
+					this.headerCat.setState(event.type as CatState, event.detail);
+					this.ui.requestRender();
+				}
+				// Update footer status
 				const statusMap: Record<string, string> = {
 					sleeping: "memory: [z] idle",
 					watching: "memory: [.] active",
@@ -746,6 +754,11 @@ export class InteractiveMode {
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));
 			this.headerContainer.addChild(this.builtInHeader);
+			// Add header cat if veil harness is active
+			if (this.session.veilHarness) {
+				this.headerCat = new HeaderCat();
+				this.headerContainer.addChild(this.headerCat);
+			}
 			this.headerContainer.addChild(new Spacer(1));
 		} else {
 			// Minimal header when silenced

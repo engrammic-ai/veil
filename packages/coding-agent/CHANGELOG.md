@@ -2,6 +2,25 @@
 
 All notable changes to Veil will be documented in this file.
 
+## [0.1.7] - 2026-06-19
+
+### Added
+
+- Header cat widget - colored cat face in header that animates with memory state
+- Cat states: sleeping (z.z), watching (o.o), remembering (~.~), learned (^.^), recalled (*.*), conflict (!.!)
+
+### Changed
+
+- Bumped version to 0.1.7 (decoupled from Pi's 0.79.x versioning)
+
+## [0.1.6] - 2026-06-19
+
+### Changed
+
+- Replaced Pi changelog with Veil-specific changelog
+- Fixed /changelog to show newest entries first
+- Updated GitHub links to engrammic-ai/veil
+
 ## [0.1.5] - 2026-06-19
 
 ### Changed
