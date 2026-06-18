@@ -109,7 +109,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent } from "./components/footer.ts";
-import { type CatState, HeaderCat } from "./components/header-cat.ts";
+import { CAT_EMOTICONS, type CatState, HeaderCat } from "./components/header-cat.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
@@ -433,18 +433,9 @@ export class InteractiveMode {
 					this.headerCat.setState(event.type as CatState, event.detail);
 					this.ui.requestRender();
 				}
-				// Update footer status
-				const statusMap: Record<string, string> = {
-					sleeping: "memory: [z] idle",
-					watching: "memory: [.] active",
-					remembering: "memory: [~] searching",
-					learned: "memory: [+] learned",
-					recalled: "memory: [*] recalled",
-					conflict: "memory: [!] conflict",
-				};
-				const status = event.detail
-					? `${statusMap[event.type] ?? "memory: [?]"} ${event.detail.slice(0, 30)}`
-					: (statusMap[event.type] ?? "memory: [?]");
+				// Update footer status with emoticon
+				const emoticon = CAT_EMOTICONS[event.type as CatState] ?? "(?.?)";
+				const status = event.detail ? `${emoticon} ${event.detail.slice(0, 30)}` : emoticon;
 				this.footerDataProvider.setExtensionStatus("memory", status);
 			});
 		}

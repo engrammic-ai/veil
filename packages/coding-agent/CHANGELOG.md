@@ -2,6 +2,14 @@
 
 All notable changes to Veil will be documented in this file.
 
+## [0.1.8] - 2026-06-19
+
+### Changed
+
+- Header cat now shows full ASCII art (3-line cat) instead of just emoticon
+- Statusline shows cat emoticon: (z.z), (o.o), (~.~), (^.^), (*.*), (!.!)
+- Both header cat and statusline emoticon update with memory state
+
 ## [0.1.7] - 2026-06-19
 
 ### Added
