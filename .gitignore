@@ -45,3 +45,6 @@ plans/
 collect.sh
 .test-cache-*
 installer/veil-installer
+
+# Installer binaries
+installer/dist/
