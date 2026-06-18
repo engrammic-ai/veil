@@ -95,7 +95,7 @@ export interface EmbedderConfig {
 
 export const DEFAULT_CONFIG: EmbedderConfig = {
 	tier: "balanced",
-	cachePath: "",
+	cachePath: "~/.cache/veil/models",
 	idleTimeoutMs: 30 * 60 * 1000,
 	port: 19532,
 };

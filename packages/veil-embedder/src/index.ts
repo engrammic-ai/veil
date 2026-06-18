@@ -8,7 +8,19 @@
  * - Ollama fallback support
  */
 
-export { EmbedderClient, type EmbedderClientConfig, getServerPid, isServerProcessRunning } from "./client.ts";
+export {
+	CONFIG_DIR,
+	CONFIG_FILE,
+	EmbedderClient,
+	type EmbedderClientConfig,
+	getServerPid,
+	isServerProcessRunning,
+	LOG_DIR,
+	LOG_FILE,
+	loadConfig,
+	PID_FILE,
+	saveConfig,
+} from "./client.ts";
 export {
 	checkOllamaAvailable,
 	createEmbedder,

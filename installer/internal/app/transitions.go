@@ -97,6 +97,9 @@ func nextState(current State, result Result) State {
 		return StateConfigureEmbedder
 
 	case StateConfigureEmbedder:
+		return StateStartEmbedder
+
+	case StateStartEmbedder:
 		return StateSuccess
 	}
 

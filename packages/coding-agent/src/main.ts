@@ -12,6 +12,7 @@ import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
 import { VeilHarness } from "@engrammic/veil-context";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
+import { handleEmbedderCommand } from "./cli/embedder.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -491,6 +492,10 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (await handleConfigCommand(args, { extensionFactories: options?.extensionFactories })) {
 		return;
+	}
+
+	if (await handleEmbedderCommand(args)) {
+		process.exit(process.exitCode ?? 0);
 	}
 
 	const parsed = parseArgs(args);
