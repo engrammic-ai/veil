@@ -8,6 +8,7 @@ import { loadBetterSqlite3, loadSqliteVec } from "./native-loader.ts";
 
 // Load better-sqlite3 (handles Bun binary vs Node environments)
 const Database = loadBetterSqlite3();
+
 import { ulid } from "ulid";
 import { type FSRSConfig, FSRSEngine } from "./fsrs.ts";
 import { initSchema } from "./schema.ts";
