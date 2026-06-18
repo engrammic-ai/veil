@@ -109,6 +109,41 @@ jobs:
             cp ../tui/native/win32/prebuilds/$win32_arch/win32-console-mode.node binaries/$platform/native/win32/prebuilds/$win32_arch/
           done
 
+          # SQLite native modules for memory features
+          BETTER_SQLITE_VER=$(node -p "require('../../packages/veil-memory/package.json').dependencies['better-sqlite3']")
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64; do
+            mkdir -p binaries/$platform/native/sqlite
+
+            # Map platform to better-sqlite3 naming
+            case "$platform" in
+              darwin-arm64) bs3_plat="darwin-arm64" ;;
+              darwin-x64) bs3_plat="darwin-x64" ;;
+              linux-x64) bs3_plat="linux-x64" ;;
+              linux-arm64) bs3_plat="linux-arm64" ;;
+              windows-x64) bs3_plat="win32-x64" ;;
+              windows-arm64) bs3_plat="win32-arm64" ;;
+            esac
+
+            # Download better-sqlite3 prebuild (node-v127 = Node 22+)
+            curl -sL "https://github.com/WiseLibs/better-sqlite3/releases/download/v${BETTER_SQLITE_VER}/better-sqlite3-v${BETTER_SQLITE_VER}-node-v127-${bs3_plat}.tar.gz" | tar -xz -C binaries/$platform/native/sqlite/
+
+            # Copy sqlite-vec extension
+            case "$platform" in
+              darwin-arm64) vec_pkg="sqlite-vec-darwin-arm64" ;;
+              darwin-x64) vec_pkg="sqlite-vec-darwin-x64" ;;
+              linux-x64) vec_pkg="sqlite-vec-linux-x64" ;;
+              linux-arm64) vec_pkg="sqlite-vec-linux-arm64" ;;
+              windows-x64) vec_pkg="sqlite-vec-windows-x64" ;;
+              windows-arm64) vec_pkg="sqlite-vec-windows-x64" ;; # fallback, may not have arm64
+            esac
+            if [ -d "../../node_modules/$vec_pkg" ]; then
+              cp ../../node_modules/$vec_pkg/*.so binaries/$platform/native/sqlite/ 2>/dev/null || \
+              cp ../../node_modules/$vec_pkg/*.dylib binaries/$platform/native/sqlite/ 2>/dev/null || \
+              cp ../../node_modules/$vec_pkg/*.dll binaries/$platform/native/sqlite/ 2>/dev/null || true
+            fi
+          done
+          done
+
           # Create archives
           cd binaries
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do

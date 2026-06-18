@@ -2,9 +2,12 @@
  * MemoryStore: main interface to the memory system.
  */
 
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 import { createHash } from "crypto";
-import * as sqliteVec from "sqlite-vec";
+import { loadBetterSqlite3, loadSqliteVec } from "./native-loader.ts";
+
+// Load better-sqlite3 (handles Bun binary vs Node environments)
+const Database = loadBetterSqlite3();
 import { ulid } from "ulid";
 import { type FSRSConfig, FSRSEngine } from "./fsrs.ts";
 import { initSchema } from "./schema.ts";
@@ -39,7 +42,7 @@ export interface Embedder {
 }
 
 export class MemoryStore {
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 	private fsrs: FSRSEngine;
 	private namespace: string;
 	private agentId: string;
@@ -48,7 +51,7 @@ export class MemoryStore {
 	constructor(config: StoreConfig) {
 		this.db = new Database(config.dbPath);
 		this.db.pragma("journal_mode = WAL");
-		sqliteVec.load(this.db);
+		loadSqliteVec(this.db);
 		initSchema(this.db);
 
 		this.fsrs = new FSRSEngine(config.fsrs);

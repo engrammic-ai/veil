@@ -9,10 +9,16 @@ const repoRoot = resolve(scriptDir, "..");
 const codingAgentDir = join(repoRoot, "packages/coding-agent");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const shrinkwrapPath = join(codingAgentDir, "npm-shrinkwrap.json");
-const internalPackagePrefix = "@earendil-works/pi-";
+const internalPackagePrefixes = ["@earendil-works/pi-", "@engrammic/", "@veil/"];
+function isInternalPackage(name) {
+	return internalPackagePrefixes.some(prefix => name.startsWith(prefix));
+}
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@1.52.0", "preinstall is a no-op in the published package"],
-	["protobufjs@7.5.9", "postinstall only warns about protobufjs version scheme mismatches"],
+	["better-sqlite3@11.10.0", "compiles or downloads prebuilt native sqlite binary"],
+	["protobufjs@6.11.6", "sub-dependency postinstall to warn about mismatches"],
+	["protobufjs@7.6.4", "postinstall only warns about protobufjs version scheme mismatches"],
+	["sharp@0.32.6", "installs prebuilt libvips binary"],
 ]);
 
 const args = new Set(process.argv.slice(2));
@@ -146,7 +152,7 @@ function getInternalWorkspaces(lockPackages) {
 		if (!lockPath.startsWith("packages/") || lockPath.includes("/node_modules/") || !entry.name || !entry.version) {
 			continue;
 		}
-		if (!entry.name.startsWith(internalPackagePrefix)) {
+		if (!isInternalPackage(entry.name)) {
 			continue;
 		}
 
