@@ -162,10 +162,8 @@ func toReleases(gr []githubRelease) []Release {
 				continue
 			}
 			// Map asset name to platform key
-			// Archives: "veil-linux-amd64.tar.gz" -> "linux-amd64"
-			//           "veil-windows-amd64.zip" -> "windows-amd64"
-			// Legacy:   "veil-linux-amd64" -> "linux-amd64"
-			//           "veil-windows-amd64.exe" -> "windows-amd64"
+			// Archives: "veil-linux-x64.tar.gz" -> "linux-x64"
+			//           "veil-windows-x64.zip" -> "windows-x64"
 			name := a.Name
 			name = strings.TrimPrefix(name, "veil-")
 			name = strings.TrimSuffix(name, ".tar.gz")
@@ -191,7 +189,7 @@ func classifyChannel(tag string, prerelease bool) Channel {
 }
 
 // GetAssetURL returns the download URL for a specific platform.
-// Platform should be like "linux-amd64", "darwin-arm64", "windows-amd64".
+// Platform should be like "linux-x64", "darwin-arm64", "windows-x64".
 func (r *Release) GetAssetURL(platform string) (string, bool) {
 	url, ok := r.Assets[platform]
 	return url, ok
