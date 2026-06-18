@@ -71,6 +71,10 @@ func InstallCompletions(veilBinary, shell string) error {
 		return fmt.Errorf("install completion file: %w", err)
 	}
 
+	if shell == "zsh" {
+		_ = configureZshFpath("")
+	}
+
 	return nil
 }
 

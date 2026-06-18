@@ -8,14 +8,13 @@
 import type BetterSqlite3 from "better-sqlite3";
 import { execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
+import Module from "module";
 import { homedir } from "os";
 import { join } from "path";
 
 // Use Module._load for loading external modules (bypasses Bun's bundled FS)
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Module = require("module");
 function loadExternal(modulePath: string): unknown {
-	return Module._load(modulePath, null, false);
+	return (Module as any)._load(modulePath, null, false);
 }
 
 function getVeilDepsDir(): string {
@@ -72,7 +71,15 @@ export function loadBetterSqlite3(): typeof BetterSqlite3 {
 	if (betterSqlite3Cache) return betterSqlite3Cache;
 
 	ensureNativeModules();
-	const modulePath = join(getVeilDepsDir(), "node_modules", "better-sqlite3");
+	const depsDir = getVeilDepsDir();
+	const modulePath = join(depsDir, "node_modules", "better-sqlite3");
+
+	// Set binding path to bypass bindings module root detection (fails in Bun binary)
+	const bindingPath = join(modulePath, "build", "Release", "better_sqlite3.node");
+	if (existsSync(bindingPath)) {
+		process.env.BETTER_SQLITE3_BINDING = bindingPath;
+	}
+
 	betterSqlite3Cache = loadExternal(modulePath) as typeof BetterSqlite3;
 	return betterSqlite3Cache;
 }

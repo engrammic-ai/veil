@@ -111,3 +111,32 @@ func buildExport(shell platform.ShellConfig, installDir string) string {
 		return shell.Export
 	}
 }
+
+const zshFpathMarker = "# Added by veil-installer completions"
+
+// configureZshFpath appends the zsh completion directory to fpath in the given RC file path.
+// If rcPath is empty, it defaults to ~/.zshrc.
+func configureZshFpath(rcPath string) error {
+	if rcPath == "" {
+		rcPath = "~/.zshrc"
+	}
+	rc, err := expandPath(rcPath)
+	if err != nil {
+		return fmt.Errorf("expand RC path: %w", err)
+	}
+
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read RC file: %w", err)
+	}
+
+	if strings.Contains(string(data), zshFpathMarker) {
+		return nil
+	}
+
+	block := "\n" + zshFpathMarker + "\n" + `fpath=("$HOME/.local/share/zsh/site-functions" $fpath)` + "\n"
+	return atomicAppend(rc, []byte(block))
+}
