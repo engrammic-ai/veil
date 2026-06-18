@@ -2661,6 +2661,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/cat") {
+				this.handleCatCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/arminsayshi") {
 				this.handleArminSaysHi();
 				this.editor.setText("");
@@ -3402,6 +3407,14 @@ export class InteractiveMode {
 
 		this.stop();
 		await this.runtimeHost.dispose();
+
+		// Show session-end cat summary if veil memory is enabled
+		if (this.session.veilHarness?.isCatEnabled()) {
+			const sessionEnd = this.session.veilHarness.renderSessionEnd();
+			if (sessionEnd) {
+				process.stdout.write(`\n${sessionEnd}\n\n`);
+			}
+		}
 
 		const resumeCommand = formatResumeCommand(this.sessionManager);
 		if (resumeCommand) {
@@ -5627,6 +5640,31 @@ export class InteractiveMode {
 			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
 		this.ui.requestRender();
+	}
+
+	private handleCatCommand(): void {
+		if (!this.session.veilHarness) {
+			this.showWarning("Memory companion not active");
+			return;
+		}
+		const enabled = this.session.veilHarness.toggleCat();
+		const status = enabled ? "on" : "off";
+
+		if (enabled) {
+			const catRender = this.session.veilHarness.renderCat();
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(catRender, 1, 1));
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(`${theme.fg("accent", `Memory cat: ${status}`)}`, 1, 1));
+		this.ui.requestRender();
+
+		if (enabled) {
+			this.footerDataProvider.setExtensionStatus("memory", "memory: [.]");
+		} else {
+			this.footerDataProvider.setExtensionStatus("memory", undefined);
+		}
 	}
 
 	private handleArminSaysHi(): void {

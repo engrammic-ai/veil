@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -69,18 +70,29 @@ const (
 
 // Model is the root bubbletea model for the installer TUI.
 type Model struct {
-	state        State
-	platform     platform.Platform
-	version      string       // selected or flagged version
-	embedderTier EmbedderTier // selected embedder model tier
-	spinner      spinner.Model
-	err          error
+	state         State
+	platform      platform.Platform
+	version       string       // selected or flagged version
+	embedderTier  EmbedderTier // selected embedder model tier
+	embedderIndex int          // current selection in embedder menu (0-5)
+	spinner       spinner.Model
+	err           error
 
 	// CLI flags forwarded from cobra.
 	flagVersion string
 	flagYes     bool
 
 	style lipgloss.Style
+}
+
+// embedderTiers is the ordered list of embedder options.
+var embedderTiers = []EmbedderTier{
+	EmbedderNone,
+	EmbedderLight,
+	EmbedderBalanced,
+	EmbedderQuality,
+	EmbedderMax,
+	EmbedderOllama,
 }
 
 // Options configures the Model at construction time.
@@ -94,12 +106,13 @@ func New(opts Options) *Model {
 	sp.Spinner = spinner.Dot
 
 	return &Model{
-		state:        StateDetectPlatform,
-		embedderTier: EmbedderBalanced, // default
-		spinner:      sp,
-		flagVersion:  opts.Version,
-		flagYes:      opts.Yes,
-		style:        lipgloss.NewStyle().Padding(1, 2),
+		state:         StateDetectPlatform,
+		embedderTier:  EmbedderBalanced, // default
+		embedderIndex: 2,                // index of Balanced in embedderTiers
+		spinner:       sp,
+		flagVersion:   opts.Version,
+		flagYes:       opts.Yes,
+		style:         lipgloss.NewStyle().Padding(1, 2),
 	}
 }
 
@@ -112,6 +125,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" || msg.String() == "q" {
 			return m, tea.Quit
+		}
+
+		// Handle embedder selection
+		if m.state == StatePromptEmbedder {
+			switch msg.String() {
+			case "up", "k":
+				if m.embedderIndex > 0 {
+					m.embedderIndex--
+				}
+				return m, nil
+			case "down", "j":
+				if m.embedderIndex < len(embedderTiers)-1 {
+					m.embedderIndex++
+				}
+				return m, nil
+			case "enter":
+				m.embedderTier = embedderTiers[m.embedderIndex]
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+			}
 		}
 
 	case spinner.TickMsg:
@@ -161,19 +193,7 @@ func (m *Model) View() string {
 	case StateInstallCompletions:
 		body = fmt.Sprintf("%s Installing shell completions...", m.spinner.View())
 	case StatePromptEmbedder:
-		body = `Semantic Memory Model:
-
-Select an embedding model for semantic search in memory.
-Models are downloaded on first use.
-
-  ○ None       (keyword search only, 0 RAM)
-  ○ Light      (23MB, ~100MB RAM, English)
-  ● Balanced   (118MB, ~300MB RAM, multilingual) [recommended]
-  ○ Quality    (278MB, ~600MB RAM, multilingual)
-  ○ Max        (560MB, ~1.2GB RAM, multilingual)
-  ○ Ollama     (requires Ollama running locally)
-
-Use ↑/↓ to select, Enter to confirm.`
+		body = m.renderEmbedderMenu()
 	case StateConfigureEmbedder:
 		body = fmt.Sprintf("%s Configuring semantic memory...", m.spinner.View())
 	case StateSuccess:
@@ -281,4 +301,38 @@ func (m *Model) getConfigDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".config", "veil")
+}
+
+func (m *Model) renderEmbedderMenu() string {
+	options := []struct {
+		tier EmbedderTier
+		desc string
+	}{
+		{EmbedderNone, "None       (keyword search only, 0 RAM)"},
+		{EmbedderLight, "Light      (23MB, ~100MB RAM, English)"},
+		{EmbedderBalanced, "Balanced   (118MB, ~300MB RAM, multilingual) [recommended]"},
+		{EmbedderQuality, "Quality    (278MB, ~600MB RAM, multilingual)"},
+		{EmbedderMax, "Max        (560MB, ~1.2GB RAM, multilingual)"},
+		{EmbedderOllama, "Ollama     (requires Ollama running locally)"},
+	}
+
+	var lines []string
+	lines = append(lines, "Semantic Memory Model:")
+	lines = append(lines, "")
+	lines = append(lines, "Select an embedding model for semantic search in memory.")
+	lines = append(lines, "Models are downloaded on first use.")
+	lines = append(lines, "")
+
+	for i, opt := range options {
+		marker := "○"
+		if i == m.embedderIndex {
+			marker = "●"
+		}
+		lines = append(lines, fmt.Sprintf("  %s %s", marker, opt.desc))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, "Use ↑/↓ to select, Enter to confirm.")
+
+	return strings.Join(lines, "\n")
 }
