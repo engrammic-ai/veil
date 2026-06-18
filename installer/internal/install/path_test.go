@@ -151,3 +151,50 @@ func TestAtomicAppend_CreatesFileInNewDir(t *testing.T) {
 		t.Errorf("content = %q, want 'hello\\n'", string(data))
 	}
 }
+
+// TestConfigureZshFpath_AppendsFpath verifies that configureZshFpath
+// correctly appends the fpath setup to the zshrc file.
+func TestConfigureZshFpath_AppendsFpath(t *testing.T) {
+	dir := t.TempDir()
+	rc := filepath.Join(dir, ".zshrc")
+
+	// Missing RC file should be a graceful no-op.
+	if err := configureZshFpath(rc); err != nil {
+		t.Fatalf("configureZshFpath on missing file: %v", err)
+	}
+
+	// Create existing content.
+	existing := "alias gs='git status'\n"
+	if err := os.WriteFile(rc, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := configureZshFpath(rc); err != nil {
+		t.Fatalf("configureZshFpath: %v", err)
+	}
+
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, existing) {
+		t.Errorf("existing content not preserved; got:\n%s", content)
+	}
+	if !strings.Contains(content, zshFpathMarker) {
+		t.Errorf("missing fpath marker; got:\n%s", content)
+	}
+	if !strings.Contains(content, `fpath=("$HOME/.local/share/zsh/site-functions" $fpath)`) {
+		t.Errorf("missing fpath config line; got:\n%s", content)
+	}
+
+	// Idempotency check.
+	if err := configureZshFpath(rc); err != nil {
+		t.Fatalf("configureZshFpath second call: %v", err)
+	}
+	data2, _ := os.ReadFile(rc)
+	count := strings.Count(string(data2), zshFpathMarker)
+	if count != 1 {
+		t.Errorf("marker appears %d times, want 1", count)
+	}
+}

@@ -78,6 +78,10 @@ func TestInstallCompletions_CreatesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	defer withFakeRunner([]byte("# completions"), nil)()
 
+	origConfigure := configureZshFpathFn
+	configureZshFpathFn = func(rcPath string) error { return nil }
+	defer func() { configureZshFpathFn = origConfigure }()
+
 	nested := filepath.Join(dir, "a", "b", "c", "_veil")
 	orig := CompletionPaths["zsh"]
 	CompletionPaths["zsh"] = nested

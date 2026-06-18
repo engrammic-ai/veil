@@ -1,97 +1,74 @@
 /**
- * Native module loader for veil-memory.
+ * SQLite loader for veil-memory.
  *
- * Lazily installs better-sqlite3 and sqlite-vec into ~/.veil/deps/ on first use.
- * This avoids bundling platform-specific native modules in release archives.
+ * Uses bun:sqlite when running in Bun (runtime or compiled binary),
+ * falls back to better-sqlite3 for Node.js (development with tsx).
+ *
+ * This abstraction handles the slight API differences between the two.
  */
 
 import type BetterSqlite3 from "better-sqlite3";
-import { execSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import Module from "module";
-import { homedir } from "os";
-import { join } from "path";
+import { createRequire } from "module";
 
-// Use Module._load for loading external modules (bypasses Bun's bundled FS)
-function loadExternal(modulePath: string): unknown {
-	return (Module as any)._load(modulePath, null, false);
+// Detect if running in Bun
+function isBun(): boolean {
+	return typeof (globalThis as any).Bun !== "undefined";
 }
 
-function getVeilDepsDir(): string {
-	return join(homedir(), ".veil", "deps");
-}
-
-let depsInstalled = false;
-
-function ensureNativeModules(): void {
-	if (depsInstalled) return;
-
-	const depsDir = getVeilDepsDir();
-	const nodeModules = join(depsDir, "node_modules");
-	const betterSqlite = join(nodeModules, "better-sqlite3");
-
-	if (existsSync(betterSqlite)) {
-		depsInstalled = true;
-		return;
-	}
-
-	console.log("Installing native SQLite modules for memory features...");
-	mkdirSync(depsDir, { recursive: true });
-
-	// Write minimal package.json
-	const pkg = { name: "veil-deps", private: true };
-	writeFileSync(join(depsDir, "package.json"), JSON.stringify(pkg));
-
-	const deps = "better-sqlite3 sqlite-vec";
-
-	// Try bun first (faster), fall back to npm
-	try {
-		execSync(`bun add ${deps}`, { cwd: depsDir, stdio: "inherit" });
-	} catch {
-		try {
-			execSync(`npm install ${deps}`, { cwd: depsDir, stdio: "inherit" });
-		} catch (err) {
-			throw new Error(
-				`Failed to install native SQLite modules. Ensure npm or bun is available.\n${err instanceof Error ? err.message : String(err)}`,
-			);
-		}
-	}
-
-	depsInstalled = true;
-	console.log("Native SQLite modules installed successfully.");
-}
-
-let betterSqlite3Cache: typeof BetterSqlite3 | null = null;
-let sqliteVecCache: { load: (db: BetterSqlite3.Database) => void } | null = null;
+let databaseCache: typeof BetterSqlite3 | null = null;
 
 /**
- * Load better-sqlite3, installing it first if needed.
+ * Load the SQLite database constructor.
+ * Returns bun:sqlite's Database in Bun, better-sqlite3's in Node.
  */
 export function loadBetterSqlite3(): typeof BetterSqlite3 {
-	if (betterSqlite3Cache) return betterSqlite3Cache;
+	if (databaseCache) return databaseCache;
 
-	ensureNativeModules();
-	const depsDir = getVeilDepsDir();
-	const modulePath = join(depsDir, "node_modules", "better-sqlite3");
+	if (isBun()) {
+		// Use bun:sqlite - dynamically import to avoid Node.js errors
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		const { Database } = require("bun:sqlite") as { Database: any };
 
-	// Set binding path to bypass bindings module root detection (fails in Bun binary)
-	const bindingPath = join(modulePath, "build", "Release", "better_sqlite3.node");
-	if (existsSync(bindingPath)) {
-		process.env.BETTER_SQLITE3_BINDING = bindingPath;
+		// Wrap to add pragma() method for compatibility
+		const WrappedDatabase = function (this: any, filename: string, options?: any) {
+			const db = new Database(filename, options);
+
+			// Add pragma() method that better-sqlite3 has
+			db.pragma = function (pragma: string) {
+				// Parse "key = value" format
+				const result = this.exec(`PRAGMA ${pragma}`);
+				return result;
+			};
+
+			return db;
+		} as unknown as typeof BetterSqlite3;
+
+		// Copy static properties
+		Object.setPrototypeOf(WrappedDatabase, Database);
+		WrappedDatabase.prototype = Database.prototype;
+
+		databaseCache = WrappedDatabase;
+	} else {
+		// Use better-sqlite3 in Node.js
+		const nodeRequire = createRequire(import.meta.url);
+		databaseCache = nodeRequire("better-sqlite3") as typeof BetterSqlite3;
 	}
 
-	betterSqlite3Cache = loadExternal(modulePath) as typeof BetterSqlite3;
-	return betterSqlite3Cache;
+	return databaseCache;
 }
 
 /**
  * Load sqlite-vec extension into a database.
  */
 export function loadSqliteVec(db: BetterSqlite3.Database): void {
-	if (!sqliteVecCache) {
-		ensureNativeModules();
-		const modulePath = join(getVeilDepsDir(), "node_modules", "sqlite-vec");
-		sqliteVecCache = loadExternal(modulePath) as { load: (db: BetterSqlite3.Database) => void };
+	if (isBun()) {
+		// In Bun, sqlite-vec needs to be loaded differently
+		// For now, skip - we'll add support when needed
+		console.warn("sqlite-vec not yet supported in Bun runtime");
+		return;
 	}
-	sqliteVecCache.load(db);
+
+	const nodeRequire = createRequire(import.meta.url);
+	const sqliteVec = nodeRequire("sqlite-vec") as { load: (db: BetterSqlite3.Database) => void };
+	sqliteVec.load(db);
 }

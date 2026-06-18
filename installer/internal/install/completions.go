@@ -72,7 +72,7 @@ func InstallCompletions(veilBinary, shell string) error {
 	}
 
 	if shell == "zsh" {
-		_ = configureZshFpath("")
+		_ = configureZshFpathFn("")
 	}
 
 	return nil
@@ -91,6 +91,9 @@ func RemoveCompletions(shell string) error {
 	}
 	return nil
 }
+
+// configureZshFpathFn allows mocking configureZshFpath in tests.
+var configureZshFpathFn = configureZshFpath
 
 // runCompletion executes `veilBinary completion <shell>` and returns stdout.
 // Extracted as a variable so tests can replace it.
