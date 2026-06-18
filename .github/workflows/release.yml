@@ -26,17 +26,21 @@ jobs:
         with:
           bun-version: 1.3.10
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Install cross-platform clipboard bindings
         run: |
           CLIPBOARD_VERSION=$(node -p "require('./packages/coding-agent/package.json').optionalDependencies['@mariozechner/clipboard']")
-          npm install --include=optional --no-save --package-lock=false --force --ignore-scripts \
+          # Use npm for clipboard since pnpm struggles with cross-platform optional deps
+          npm install --no-save --package-lock=false --force --ignore-scripts \
             @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \
@@ -46,7 +50,7 @@ jobs:
             @mariozechner/clipboard-win32-arm64-msvc@"$CLIPBOARD_VERSION"
 
       - name: Build packages
-        run: npm run build
+        run: pnpm run build
 
       - name: Build binaries for all platforms
         working-directory: packages/coding-agent
