@@ -46,8 +46,8 @@ importers:
   packages/agent:
     dependencies:
       '@earendil-works/pi-ai':
-        specifier: ^0.79.3
-        version: 0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.79.4
+        version: 0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
       ignore:
         specifier: 7.0.5
         version: 7.0.5
@@ -117,19 +117,19 @@ importers:
   packages/coding-agent:
     dependencies:
       '@earendil-works/pi-agent-core':
-        specifier: ^0.79.3
-        version: 0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.79.4
+        version: 0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
       '@earendil-works/pi-ai':
-        specifier: ^0.79.3
-        version: 0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.79.4
+        version: 0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
       '@earendil-works/pi-tui':
-        specifier: ^0.79.3
-        version: 0.79.3
-      '@engrammic/veil':
+        specifier: ^0.79.4
+        version: 0.79.6
+      '@engrammic/veil-context':
         specifier: workspace:*
         version: link:../engrammic
       '@modelcontextprotocol/sdk':
-        specifier: ^1.29.0
+        specifier: 1.29.0
         version: 1.29.0
       '@silvia-odwyer/photon-node':
         specifier: 0.3.4
@@ -244,14 +244,17 @@ importers:
 
   packages/engrammic:
     dependencies:
+      '@veil/memory':
+        specifier: workspace:*
+        version: link:../veil-memory
       better-sqlite3:
         specifier: 11.10.0
         version: 11.10.0
       graphology:
-        specifier: ^0.26.0
+        specifier: 0.26.0
         version: 0.26.0
       graphology-pagerank:
-        specifier: ^1.1.0
+        specifier: 1.1.0
         version: 1.1.0
       web-tree-sitter:
         specifier: 0.25.6
@@ -291,6 +294,31 @@ importers:
       chalk:
         specifier: 5.6.2
         version: 5.6.2
+
+  packages/veil-memory:
+    dependencies:
+      better-sqlite3:
+        specifier: 11.10.0
+        version: 11.10.0
+      sqlite-vec:
+        specifier: 0.1.9
+        version: 0.1.9
+      ulid:
+        specifier: 2.3.0
+        version: 2.3.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: 7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@24.12.4)(jiti@2.7.0)(tsx@4.22.1)(yaml@2.9.0)
 
 packages:
 
@@ -516,17 +544,17 @@ packages:
     engines: {node: '>=23.6.0'}
     hasBin: true
 
-  '@earendil-works/pi-agent-core@0.79.3':
-    resolution: {integrity: sha512-Ksvnu6CpQLYGbCSgnQEetzliI7yb+QkqtSlmmunJ69QluT45kd3DjQZRNHfRLk++Dd02Y8QvsRKMopSJCcWoWw==}
+  '@earendil-works/pi-agent-core@0.79.6':
+    resolution: {integrity: sha512-SXZc4rQI+3zgUmAJDbU0GzFEHCPHbhItjN7QLsahj3TKfQAon4guwCqsrwZBLH5lPcub2+evTojPNrPItL62tA==}
     engines: {node: '>=22.19.0'}
 
-  '@earendil-works/pi-ai@0.79.3':
-    resolution: {integrity: sha512-lMSput/haP5uZAGbXhS5rAYd3GB7GYdJkoAUxg3VFummBeqGqGqllaTWrbHFN12kVGyVfWHhdySNXkiqVh65Iw==}
+  '@earendil-works/pi-ai@0.79.6':
+    resolution: {integrity: sha512-KGepEdgEeWDs7Imwlp96tBsO8TjSIpcDBvazsCDtHRa81+uwJI/YGetTegI52pMlKhVpJFLIGajRi4PCGC5MUg==}
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-tui@0.79.3':
-    resolution: {integrity: sha512-cpmkEM1aEuGUx6YZM36VlzpulwLzqD5T2cUEkGHndDTNGEbnn5sj/9SYm+QBfKjvZsWoHfZuFBnu4+hh96/FbA==}
+  '@earendil-works/pi-tui@0.79.6':
+    resolution: {integrity: sha512-6JCq780X0UuqvJsUDSJmi4V54ObB8qSwFQiBOI1jhPpC+Ydusd8SEXn2HtyIqve/utMgwcZT9aOyZM72m26A0w==}
     engines: {node: '>=22.19.0'}
 
   '@esbuild/aix-ppc64@0.27.7':
@@ -1944,6 +1972,11 @@ packages:
     engines: {node: '>= 18'}
     hasBin: true
 
+  marked@18.0.5:
+    resolution: {integrity: sha512-S6GcvALHg6K4ohtu4E7x0a1AqhAjp6cV8KhLSyN9qVapnzJkusVBxZRcIU9AeYsbe6P1hKDusSbEOzGyyuce6w==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
@@ -2308,6 +2341,34 @@ packages:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
 
+  sqlite-vec-darwin-arm64@0.1.9:
+    resolution: {integrity: sha512-jSsZpE42OfBkGL/ItyJTVCUwl6o6Ka3U5rc4j+UBDIQzC1ulSSKMEhQLthsOnF/MdAf1MuAkYhkdKmmcjaIZQg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  sqlite-vec-darwin-x64@0.1.9:
+    resolution: {integrity: sha512-KDlVyqQT7pnOhU1ymB9gs7dMbSoVmKHitT+k1/xkjarcX8bBqPxWrGlK/R+C5WmWkfvWwyq5FfXfiBYCBs6PlA==}
+    cpu: [x64]
+    os: [darwin]
+
+  sqlite-vec-linux-arm64@0.1.9:
+    resolution: {integrity: sha512-5wXVJ9c9kR4CHm/wVqXb/R+XUHTdpZ4nWbPHlS+gc9qQFVHs92Km4bPnCKX4rtcPMzvNis+SIzMJR1SCEwpuUw==}
+    cpu: [arm64]
+    os: [linux]
+
+  sqlite-vec-linux-x64@0.1.9:
+    resolution: {integrity: sha512-w3tCH8xK2finW8fQJ/m8uqKodXUZ9KAuAar2UIhz4BHILfpE0WM/MTGCRfa7RjYbrYim5Luk3guvMOGI7T7JQA==}
+    cpu: [x64]
+    os: [linux]
+
+  sqlite-vec-windows-x64@0.1.9:
+    resolution: {integrity: sha512-y3gEIyy/17bq2QFPQOWLE68TYWcRZkBQVA2XLrTPHNTOp55xJi/BBBmOm40tVMDMjtP+Elpk6UBUXdaq+46b0Q==}
+    cpu: [x64]
+    os: [win32]
+
+  sqlite-vec@0.1.9:
+    resolution: {integrity: sha512-L7XJWRIBNvR9O5+vh1FQ+IGkh/3D2AzVksW5gdtk28m78Hy8skFD0pqReKH1Yp0/BUKRGcffgKvyO/EON5JXpA==}
+
   ssh2@1.17.0:
     resolution: {integrity: sha512-wPldCk3asibAjQ/kziWQQt1Wh3PgDFpC0XpwclzKcdT1vql6KeYxf5LIt4nlFkUeR8WuphYMKqUA56X4rjbfgQ==}
     engines: {node: '>=10.16.0'}
@@ -2431,6 +2492,10 @@ packages:
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
+    hasBin: true
+
+  ulid@2.3.0:
+    resolution: {integrity: sha512-keqHubrlpvT6G2wH0OEfSW4mquYRcbe/J8NMmveoQOjUqmo+hXtO+ORCpWhdbZ7k72UtY61BL7haGxW6enBnjw==}
     hasBin: true
 
   undici-types@6.21.0:
@@ -2912,9 +2977,9 @@ snapshots:
       '@earendil-works/gondolin-krun-runner-darwin-arm64': 0.12.0
       '@earendil-works/gondolin-krun-runner-linux-x64': 0.12.0
 
-  '@earendil-works/pi-agent-core@0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)':
+  '@earendil-works/pi-agent-core@0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
-      '@earendil-works/pi-ai': 0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)
       ignore: 7.0.5
       typebox: 1.1.38
       yaml: 2.9.0
@@ -2926,7 +2991,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.79.3(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)':
+  '@earendil-works/pi-ai@0.79.6(@modelcontextprotocol/sdk@1.29.0)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
       '@aws-sdk/client-bedrock-runtime': 3.1048.0
@@ -2946,10 +3011,10 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-tui@0.79.3':
+  '@earendil-works/pi-tui@0.79.6':
     dependencies:
       get-east-asian-width: 1.6.0
-      marked: 15.0.12
+      marked: 18.0.5
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true
@@ -3405,7 +3470,7 @@ snapshots:
 
   '@types/cross-spawn@6.0.6':
     dependencies:
-      '@types/node': 24.12.4
+      '@types/node': 22.19.19
 
   '@types/deep-eql@4.0.2': {}
 
@@ -4240,6 +4305,8 @@ snapshots:
 
   marked@15.0.12: {}
 
+  marked@18.0.5: {}
+
   math-intrinsics@1.1.0: {}
 
   media-typer@1.1.0: {}
@@ -4618,6 +4685,29 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
+  sqlite-vec-darwin-arm64@0.1.9:
+    optional: true
+
+  sqlite-vec-darwin-x64@0.1.9:
+    optional: true
+
+  sqlite-vec-linux-arm64@0.1.9:
+    optional: true
+
+  sqlite-vec-linux-x64@0.1.9:
+    optional: true
+
+  sqlite-vec-windows-x64@0.1.9:
+    optional: true
+
+  sqlite-vec@0.1.9:
+    optionalDependencies:
+      sqlite-vec-darwin-arm64: 0.1.9
+      sqlite-vec-darwin-x64: 0.1.9
+      sqlite-vec-linux-arm64: 0.1.9
+      sqlite-vec-linux-x64: 0.1.9
+      sqlite-vec-windows-x64: 0.1.9
+
   ssh2@1.17.0:
     dependencies:
       asn1: 0.2.6
@@ -4741,6 +4831,8 @@ snapshots:
   typebox@1.1.38: {}
 
   typescript@5.9.3: {}
+
+  ulid@2.3.0: {}
 
   undici-types@6.21.0: {}
 
