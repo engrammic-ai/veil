@@ -9,7 +9,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
-import { VeilHarness } from "@engrammic/veil";
+import { VeilHarness } from "@engrammic/veil-context";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/engrammic-ai/veil-installer/internal/app"
 	"github.com/engrammic-ai/veil-installer/internal/config"
 	"github.com/engrammic-ai/veil-installer/internal/download"
 	"github.com/engrammic-ai/veil-installer/internal/exitcodes"
@@ -31,6 +33,7 @@ var (
 	caCert        string
 	localBinary   string
 	localArchive  string
+	noTUI         bool
 )
 
 func main() {
@@ -93,6 +96,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&path, "path", "", "Installation path (defaults to system path)")
 	rootCmd.PersistentFlags().StringVar(&proxyURL, "proxy", "", "HTTP/HTTPS proxy URL")
 	rootCmd.PersistentFlags().StringVar(&caCert, "ca-cert", "", "Path to CA certificate PEM file")
+	rootCmd.PersistentFlags().BoolVar(&noTUI, "no-tui", false, "Disable interactive TUI (use plain CLI output)")
 
 	installCmd.Flags().BoolVar(&noModifyPath, "no-modify-path", false, "Do not modify shell PATH configuration")
 	installCmd.Flags().BoolVar(&noCompletions, "no-completions", false, "Do not install shell completions")
@@ -152,15 +156,22 @@ func installedVersion(installPath string) string {
 }
 
 func runInstall(cmd *cobra.Command, args []string) {
-	plat := platform.Detect()
-	if !quiet {
-		fmt.Printf("Detected platform: %s\n", plat)
-	}
-
-	// Airgapped install: skip download entirely.
+	// Airgapped install: skip TUI entirely.
 	if localBinary != "" || localArchive != "" {
 		runAirgapInstall(cmd, args)
 		return
+	}
+
+	// Use interactive TUI unless --no-tui or --quiet is set
+	if !noTUI && !quiet {
+		runTUIInstall()
+		return
+	}
+
+	// Fall back to CLI mode
+	plat := platform.Detect()
+	if !quiet {
+		fmt.Printf("Detected platform: %s\n", plat)
 	}
 
 	cache, err := download.NewCache()
@@ -511,6 +522,25 @@ func runReleases(cmd *cobra.Command, args []string) {
 	fmt.Printf("Available releases (channel: %s):\n", channel)
 	for _, r := range releases {
 		fmt.Printf("  %s\n", r.Version)
+	}
+}
+
+// runTUIInstall runs the interactive bubbletea TUI installer.
+func runTUIInstall() {
+	model := app.New(app.Options{
+		Version:      version,
+		Yes:          yes,
+		Channel:      channel,
+		Path:         path,
+		NoModifyPath: noModifyPath,
+		NoComplete:   noCompletions,
+		ProxyURL:     proxyURL,
+		CACert:       caCert,
+	})
+
+	p := tea.NewProgram(model)
+	if _, err := p.Run(); err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, err)
 	}
 }
 

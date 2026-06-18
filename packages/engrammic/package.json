@@ -1,5 +1,5 @@
 {
-	"name": "@engrammic/veil",
+	"name": "@engrammic/veil-context",
 	"version": "0.0.1",
 	"description": "Context management for Veil - dynamic loading, heuristic eviction, episodic memory",
 	"type": "module",
@@ -26,6 +26,7 @@
 		"test": "vitest --run"
 	},
 	"dependencies": {
+		"@veil/memory": "workspace:*",
 		"better-sqlite3": "11.10.0",
 		"graphology": "0.26.0",
 		"graphology-pagerank": "1.1.0",

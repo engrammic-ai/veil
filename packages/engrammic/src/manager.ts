@@ -5,7 +5,7 @@
  * Architecture:
  *   Hot (loaded Map) → Warm (SQLite cache) → Cold (ColdStore adapter)
  *
- * Default cold storage: SqliteColdStore (zero config)
+ * Default cold storage: VeilMemoryColdStore (FSRS decay, semantic search, conflicts)
  */
 
 import { mkdirSync } from "node:fs";
@@ -14,7 +14,7 @@ import { buildBehavioralManifest } from "./anticipate.ts";
 import { ContextCache, createItem } from "./cache.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
-import { SqliteColdStore } from "./cold/sqlite.ts";
+import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { EvictionController } from "./eviction.ts";
 import { findEvictionCandidates, rankItems } from "./scorer.ts";
 import type {
@@ -61,11 +61,11 @@ export class ContextManager {
 
 		this.cache = new ContextCache(this.config.dbPath);
 
-		// Default to SQLite cold store in same directory
+		// Default to VeilMemory cold store (FSRS decay, semantic search)
 		this.cold =
 			coldStore ??
-			new SqliteColdStore({
-				dbPath: join(dirname(this.config.dbPath), "cold.db"),
+			new VeilMemoryColdStore({
+				dbPath: join(dirname(this.config.dbPath), "memory.db"),
 			});
 
 		this.budget = {

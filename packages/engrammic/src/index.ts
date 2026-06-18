@@ -16,6 +16,7 @@ export {
 } from "./attempts.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+export { type CatConfig, type CatState, CatWidget, DEFAULT_CAT_CONFIG, type SessionStats } from "./cat.ts";
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
 // Cold storage adapters
 export {
@@ -89,6 +90,8 @@ export {
 	type AfterToolCallResult,
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
+	type MemoryEvent,
+	type MemoryEventType,
 	type ToolResultEvent,
 	VeilHarness,
 	type VeilHarnessConfig,

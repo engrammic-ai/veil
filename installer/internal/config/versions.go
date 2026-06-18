@@ -162,11 +162,14 @@ func toReleases(gr []githubRelease) []Release {
 				continue
 			}
 			// Map asset name to platform key
-			// e.g., "veil-linux-amd64" -> "linux-amd64"
-			//       "veil-darwin-arm64" -> "darwin-arm64"
-			//       "veil-windows-amd64.exe" -> "windows-amd64"
+			// Archives: "veil-linux-amd64.tar.gz" -> "linux-amd64"
+			//           "veil-windows-amd64.zip" -> "windows-amd64"
+			// Legacy:   "veil-linux-amd64" -> "linux-amd64"
+			//           "veil-windows-amd64.exe" -> "windows-amd64"
 			name := a.Name
 			name = strings.TrimPrefix(name, "veil-")
+			name = strings.TrimSuffix(name, ".tar.gz")
+			name = strings.TrimSuffix(name, ".zip")
 			name = strings.TrimSuffix(name, ".exe")
 			rel.Assets[name] = a.BrowserDownloadURL
 		}

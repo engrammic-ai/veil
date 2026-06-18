@@ -321,6 +321,7 @@ export class InteractiveMode {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
+	private unsubscribeMemoryEvents?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
 
 	// Track if editor is in bash mode (text starts with !)
@@ -421,6 +422,24 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+
+		// Subscribe to VeilHarness memory events for cat widget status
+		if (this.session.veilHarness) {
+			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
+				const statusMap: Record<string, string> = {
+					sleeping: "memory: [z] idle",
+					watching: "memory: [.] active",
+					remembering: "memory: [~] searching",
+					learned: "memory: [+] learned",
+					recalled: "memory: [*] recalled",
+					conflict: "memory: [!] conflict",
+				};
+				const status = event.detail
+					? `${statusMap[event.type] ?? "memory: [?]"} ${event.detail.slice(0, 30)}`
+					: (statusMap[event.type] ?? "memory: [?]");
+				this.footerDataProvider.setExtensionStatus("memory", status);
+			});
+		}
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -2645,6 +2664,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/cat") {
+				this.handleCatCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/arminsayshi") {
 				this.handleArminSaysHi();
 				this.editor.setText("");
@@ -3386,6 +3410,14 @@ export class InteractiveMode {
 
 		this.stop();
 		await this.runtimeHost.dispose();
+
+		// Show session-end cat summary if veil memory is enabled
+		if (this.session.veilHarness?.isCatEnabled()) {
+			const sessionEnd = this.session.veilHarness.renderSessionEnd();
+			if (sessionEnd) {
+				process.stdout.write(`\n${sessionEnd}\n\n`);
+			}
+		}
 
 		const resumeCommand = formatResumeCommand(this.sessionManager);
 		if (resumeCommand) {
@@ -5613,6 +5645,31 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private handleCatCommand(): void {
+		if (!this.session.veilHarness) {
+			this.showWarning("Memory companion not active");
+			return;
+		}
+		const enabled = this.session.veilHarness.toggleCat();
+		const status = enabled ? "on" : "off";
+
+		if (enabled) {
+			const catRender = this.session.veilHarness.renderCat();
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(catRender, 1, 1));
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(`${theme.fg("accent", `Memory cat: ${status}`)}`, 1, 1));
+		this.ui.requestRender();
+
+		if (enabled) {
+			this.footerDataProvider.setExtensionStatus("memory", "memory: [.] active");
+		} else {
+			this.footerDataProvider.setExtensionStatus("memory", undefined);
+		}
+	}
+
 	private handleArminSaysHi(): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new ArminComponent(this.ui));
@@ -5759,6 +5816,9 @@ export class InteractiveMode {
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
+		}
+		if (this.unsubscribeMemoryEvents) {
+			this.unsubscribeMemoryEvents();
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

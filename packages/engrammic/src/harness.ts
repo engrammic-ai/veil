@@ -13,6 +13,7 @@ import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
 import {
@@ -53,13 +54,22 @@ export interface LearningConfig {
 	minHydrations: number;
 }
 
+export type MemoryEventType = "watching" | "remembering" | "learned" | "recalled" | "conflict" | "sleeping";
+
+export interface MemoryEvent {
+	type: MemoryEventType;
+	detail?: string;
+}
+
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
 	onEviction?: (evicted: EvictionCandidate[]) => void;
 	onCheckpoint?: (turnCount: number) => void;
+	onMemoryEvent?: (event: MemoryEvent) => void;
 	sessionId?: string; // Tag context items with session
 	captureConfig?: Partial<CaptureConfig>;
 	learningConfig?: Partial<LearningConfig>;
+	catConfig?: Partial<CatConfig>;
 	// Phase D.3: Convergence callbacks
 	convergenceThresholds?: Partial<ConvergenceThresholds>;
 	onConvergenceWarning?: (state: ConvergenceState, result: EscalationResult) => void;
@@ -126,6 +136,19 @@ export class VeilHarness {
 		minHydrations: 10,
 	};
 	private lastLearnTime: number = 0;
+	private memoryEventListeners: Array<(event: MemoryEvent) => void> = [];
+
+	// Cat widget
+	private catWidget: CatWidget;
+	private catEnabled: boolean = true;
+	private sessionStats: SessionStats = {
+		remembered: 0,
+		learned: 0,
+		recalled: 0,
+		stabilityAvg: 0,
+		conflicts: 0,
+		evicted: 0,
+	};
 
 	// Phase D: Failure-memory
 	private attemptStore: AttemptStore;
@@ -140,6 +163,9 @@ export class VeilHarness {
 		this.manager = new ContextManager(config, config.coldStore);
 		const customTriggers = this.manager.getCache().loadCustomTriggers();
 		this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
+
+		// Initialize cat widget
+		this.catWidget = new CatWidget(config.catConfig);
 
 		// Phase D: Initialize failure-memory
 		this.attemptStore = new AttemptStore(this.manager.getCache().getDb());
@@ -204,6 +230,7 @@ export class VeilHarness {
 				if (candidate.item.sourceToolCallId) {
 					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
 				}
+				this.sessionStats.evicted++;
 			}
 			if (this.config.onEviction) {
 				this.config.onEviction(evicted);
@@ -345,7 +372,9 @@ export class VeilHarness {
 		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
 
 		// Store in warm cache with tool call ID for faded history
+		this.emitMemoryEvent("remembering", toolName);
 		this.manager.remember(toStore, rule.type, tags, toolCallId);
+		this.emitMemoryEvent("learned", `captured ${toolName}`);
 		this.capturesThisTurn++;
 		this.totalCaptures++;
 	}
@@ -495,17 +524,113 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Emit a memory event to registered callbacks and listeners.
+	 * Also updates cat widget state and tracks session stats.
+	 */
+	private emitMemoryEvent(type: MemoryEventType, detail?: string): void {
+		const event = { type, detail };
+
+		// Update cat widget state
+		this.catWidget.setState({ state: type, detail });
+
+		// Track session stats
+		if (type === "remembering") {
+			this.sessionStats.remembered++;
+		} else if (type === "learned") {
+			this.sessionStats.learned++;
+		} else if (type === "recalled") {
+			this.sessionStats.recalled++;
+		} else if (type === "conflict") {
+			this.sessionStats.conflicts++;
+		}
+
+		this.config.onMemoryEvent?.(event);
+		for (const listener of this.memoryEventListeners) {
+			listener(event);
+		}
+	}
+
+	/**
+	 * Subscribe to memory events. Returns an unsubscribe function.
+	 */
+	onMemoryEvent(listener: (event: MemoryEvent) => void): () => void {
+		this.memoryEventListeners.push(listener);
+		return () => {
+			const idx = this.memoryEventListeners.indexOf(listener);
+			if (idx >= 0) this.memoryEventListeners.splice(idx, 1);
+		};
+	}
+
+	/**
+	 * Get the cat widget instance.
+	 */
+	getCatWidget(): CatWidget {
+		return this.catWidget;
+	}
+
+	/**
+	 * Render the cat widget's current state as ASCII art.
+	 */
+	renderCat(): string {
+		if (!this.catEnabled) return "";
+		return this.catWidget.render();
+	}
+
+	/**
+	 * Render session-end summary with the cat.
+	 */
+	renderSessionEnd(): string {
+		if (!this.catEnabled) return "";
+		return this.catWidget.renderSessionEnd(this.sessionStats);
+	}
+
+	/**
+	 * Check if cat widget is enabled.
+	 */
+	isCatEnabled(): boolean {
+		return this.catEnabled;
+	}
+
+	/**
+	 * Toggle cat widget on/off.
+	 */
+	toggleCat(enabled?: boolean): boolean {
+		this.catEnabled = enabled ?? !this.catEnabled;
+		return this.catEnabled;
+	}
+
+	/**
+	 * Get session stats for memory operations.
+	 */
+	getSessionStats(): SessionStats {
+		return { ...this.sessionStats };
+	}
+
+	/**
+	 * Track an eviction in session stats.
+	 */
+	trackEviction(): void {
+		this.sessionStats.evicted++;
+	}
+
+	/**
 	 * Remember something (store in warm cache).
 	 */
 	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = [], toolCallId?: string) {
-		return this.manager.remember(content, type, tags, toolCallId);
+		this.emitMemoryEvent("remembering", content.slice(0, 50));
+		const result = this.manager.remember(content, type, tags, toolCallId);
+		this.emitMemoryEvent("learned", type);
+		return result;
 	}
 
 	/**
 	 * Recall items by tags.
 	 */
 	recall(tags: string[], limit = 10) {
-		return this.manager.recall(tags, limit);
+		this.emitMemoryEvent("watching", `searching ${tags.join(", ")}`);
+		const result = this.manager.recall(tags, limit);
+		this.emitMemoryEvent("recalled", `found ${result.length} items`);
+		return result;
 	}
 
 	/**

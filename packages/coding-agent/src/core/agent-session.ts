@@ -33,7 +33,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai";
-import type { VeilHarness } from "@engrammic/veil";
+import type { VeilHarness } from "@engrammic/veil-context";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";

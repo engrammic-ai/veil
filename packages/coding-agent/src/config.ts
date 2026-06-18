@@ -462,20 +462,33 @@ interface PackageJson {
 	};
 }
 
+// Bun binaries can't read package.json at runtime - use compile-time constants
+// Version can be overridden via VEIL_VERSION env var at build time
+const VEIL_BINARY_DEFAULTS = {
+	name: "@engrammic/veil-coding-agent",
+	version: process.env.VEIL_VERSION ?? "0.1.0",
+	piConfig: { name: "veil", configDir: ".veil" },
+} as const;
+
 let pkg: PackageJson = {};
-try {
-	pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
-} catch (e: unknown) {
-	const err = e as NodeJS.ErrnoException;
-	if (err.code !== "ENOENT") throw e;
+if (isBunBinary) {
+	// Bun binary: use baked-in defaults
+	pkg = VEIL_BINARY_DEFAULTS;
+} else {
+	try {
+		pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
+	} catch (e: unknown) {
+		const err = e as NodeJS.ErrnoException;
+		if (err.code !== "ENOENT") throw e;
+	}
 }
 
 const piConfigName: string | undefined = pkg.piConfig?.name;
-export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
-export const VERSION: string = pkg.version || "0.0.0";
+export const PACKAGE_NAME: string = pkg.name || "@engrammic/veil-coding-agent";
+export const APP_NAME: string = piConfigName || "veil";
+export const APP_TITLE: string = piConfigName ? APP_NAME : "veil";
+export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".veil";
+export const VERSION: string = pkg.version || "0.1.0";
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
