@@ -142,7 +142,6 @@ jobs:
               cp ../../node_modules/$vec_pkg/*.dll binaries/$platform/native/sqlite/ 2>/dev/null || true
             fi
           done
-          done
 
           # Create archives
           cd binaries
