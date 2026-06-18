@@ -1,0 +1,78 @@
+# Veil Installer build recipes
+
+binary_name := "veil-installer"
+cmd_path := "./cmd/installer"
+dist_dir := "dist"
+
+version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
+commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
+date := `date -u +%Y-%m-%dT%H:%M:%SZ`
+
+ldflags := "-s -w -X main.version=" + version + " -X main.commit=" + commit + " -X main.date=" + date
+
+# Show available recipes
+default:
+    @just --list
+
+# Build for current platform
+build:
+    mkdir -p {{dist_dir}}
+    go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}} {{cmd_path}}
+
+# Build for all platforms
+build-all: build-linux-x64 build-linux-arm64 build-darwin-x64 build-darwin-arm64 build-windows-x64
+
+# Build for Linux x64
+build-linux-x64:
+    mkdir -p {{dist_dir}}
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}}-linux-x64 {{cmd_path}}
+
+# Build for Linux arm64
+build-linux-arm64:
+    mkdir -p {{dist_dir}}
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}}-linux-arm64 {{cmd_path}}
+
+# Build for macOS x64
+build-darwin-x64:
+    mkdir -p {{dist_dir}}
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}}-darwin-x64 {{cmd_path}}
+
+# Build for macOS arm64
+build-darwin-arm64:
+    mkdir -p {{dist_dir}}
+    GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}}-darwin-arm64 {{cmd_path}}
+
+# Build for Windows x64
+build-windows-x64:
+    mkdir -p {{dist_dir}}
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "{{ldflags}}" -o {{dist_dir}}/{{binary_name}}-windows-x64.exe {{cmd_path}}
+
+# Run tests
+test:
+    go test ./...
+
+# Run linter
+lint:
+    @if command -v golangci-lint >/dev/null 2>&1; then \
+        golangci-lint run ./...; \
+    else \
+        echo "golangci-lint not found, using go vet"; \
+        go vet ./...; \
+    fi
+
+# Clean build artifacts
+clean:
+    rm -rf {{dist_dir}}
+
+# Build release with checksums
+release: build-all
+    @echo "Generating checksums..."
+    cd {{dist_dir}} && sha256sum {{binary_name}}-* > checksums.sha256
+    @echo "Release artifacts:"
+    @ls -lh {{dist_dir}}
+    @echo ""
+    @cat {{dist_dir}}/checksums.sha256
+
+# Install locally
+install: build
+    cp {{dist_dir}}/{{binary_name}} ~/.local/bin/
