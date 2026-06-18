@@ -75,7 +75,7 @@ jobs:
       - name: Install cross-platform clipboard bindings
         run: |
           CLIPBOARD_VERSION=$(node -p "require('./packages/coding-agent/package.json').optionalDependencies['@mariozechner/clipboard']")
-          pnpm add --save-dev --ignore-scripts \
+          pnpm add -w --save-dev --ignore-scripts \
             @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
             @mariozechner/${{ matrix.clipboard }}@"$CLIPBOARD_VERSION"
 
