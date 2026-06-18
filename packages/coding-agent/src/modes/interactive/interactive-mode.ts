@@ -425,12 +425,12 @@ export class InteractiveMode {
 		if (this.session.veilHarness) {
 			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
 				const statusMap: Record<string, string> = {
-					sleeping: "memory: [z]",
-					watching: "memory: [.]",
-					remembering: "memory: [~]",
-					learned: "memory: [+]",
-					recalled: "memory: [*]",
-					conflict: "memory: [!]",
+					sleeping: "memory: [z] idle",
+					watching: "memory: [.] active",
+					remembering: "memory: [~] searching",
+					learned: "memory: [+] learned",
+					recalled: "memory: [*] recalled",
+					conflict: "memory: [!] conflict",
 				};
 				const status = event.detail
 					? `${statusMap[event.type] ?? "memory: [?]"} ${event.detail.slice(0, 30)}`
@@ -5661,7 +5661,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 
 		if (enabled) {
-			this.footerDataProvider.setExtensionStatus("memory", "memory: [.]");
+			this.footerDataProvider.setExtensionStatus("memory", "memory: [.] active");
 		} else {
 			this.footerDataProvider.setExtensionStatus("memory", undefined);
 		}

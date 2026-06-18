@@ -83,6 +83,7 @@ jobs:
         run: |
           pnpm --filter @earendil-works/pi-tui run build
           pnpm --filter @earendil-works/pi-ai run build
+          pnpm --filter @veil/memory run build
           pnpm --filter @engrammic/veil-context run build
           pnpm --filter @earendil-works/pi-agent-core run build
           pnpm --filter @earendil-works/pi-coding-agent run build
@@ -198,6 +199,7 @@ jobs:
         run: |
           pnpm --filter @earendil-works/pi-tui run build
           pnpm --filter @earendil-works/pi-ai run build
+          pnpm --filter @veil/memory run build
           pnpm --filter @engrammic/veil-context run build
           pnpm --filter @earendil-works/pi-agent-core run build
           pnpm --filter @engrammic/veil run build

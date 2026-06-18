@@ -38,8 +38,18 @@ export class VeilMemoryColdStore implements ColdStore {
 			agentId: config.agentId ?? "veil-harness",
 		};
 
-		// TODO: wire up embedder if enableEmbeddings is true
 		this.store = new MemoryStore(storeConfig);
+
+		// Wire up embedder for semantic search
+		if (config.enableEmbeddings !== false) {
+			try {
+				const { OllamaEmbedder } = require("@veil/memory");
+				const embedder = new OllamaEmbedder(config.ollamaBaseUrl);
+				this.store.setEmbedder(embedder);
+			} catch {
+				// Embedder not available, semantic search disabled
+			}
+		}
 	}
 
 	async demote(item: ContextItem): Promise<string> {

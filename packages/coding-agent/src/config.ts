@@ -463,9 +463,10 @@ interface PackageJson {
 }
 
 // Bun binaries can't read package.json at runtime - use compile-time constants
+// Version can be overridden via VEIL_VERSION env var at build time
 const VEIL_BINARY_DEFAULTS = {
 	name: "@engrammic/veil-coding-agent",
-	version: "0.1.0",
+	version: process.env.VEIL_VERSION ?? "0.1.0",
 	piConfig: { name: "veil", configDir: ".veil" },
 } as const;
 
