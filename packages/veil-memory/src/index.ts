@@ -4,6 +4,7 @@
 
 export type { Embedder as EmbedderInterface } from "./embedder/index.ts";
 export { OllamaEmbedder } from "./embedder/ollama.ts";
+export { ServerEmbedder } from "./embedder/server.ts";
 export { DEFAULT_FSRS_CONFIG, type FSRSConfig, FSRSEngine, type RetrievabilityTier } from "./fsrs.ts";
 export { getSchemaVersion, initSchema, needsMigration, SCHEMA_SQL, SCHEMA_VERSION } from "./schema.ts";
 export { type Embedder, MemoryStore, type StoreConfig } from "./store.ts";

@@ -4,7 +4,7 @@
 
 import type Database from "better-sqlite3";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 -- Events table: append-only, never updated
@@ -108,6 +108,27 @@ CREATE TABLE IF NOT EXISTS schema_version (
   version INTEGER PRIMARY KEY,
   applied_at REAL NOT NULL
 );
+
+-- FTS5 full-text search (baseline, always available)
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  event_id UNINDEXED,
+  content,
+  subject,
+  tags,
+  content='memory_events',
+  content_rowid='rowid'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER IF NOT EXISTS memory_fts_insert AFTER INSERT ON memory_events BEGIN
+  INSERT INTO memory_fts(rowid, event_id, content, subject, tags)
+  VALUES (NEW.rowid, NEW.event_id, NEW.content, NEW.subject, NEW.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS memory_fts_delete AFTER DELETE ON memory_events BEGIN
+  INSERT INTO memory_fts(memory_fts, rowid, event_id, content, subject, tags)
+  VALUES ('delete', OLD.rowid, OLD.event_id, OLD.content, OLD.subject, OLD.tags);
+END;
 `;
 
 export function initSchema(db: Database.Database): void {

@@ -89,6 +89,8 @@ export {
 	type AfterToolCallResult,
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
+	type MemoryEvent,
+	type MemoryEventType,
 	type ToolResultEvent,
 	VeilHarness,
 	type VeilHarnessConfig,

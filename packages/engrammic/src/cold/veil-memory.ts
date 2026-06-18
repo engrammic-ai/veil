@@ -6,17 +6,10 @@
  */
 
 import { createHash } from "node:crypto";
+// Import from veil-memory package
+import { type ConflictPair, type CurrentBelief, MemoryStore, type MemoryStub, type StoreConfig } from "@veil/memory";
 import type { ContextItem } from "../types.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
-
-// Import from veil-memory package
-import {
-	MemoryStore,
-	type StoreConfig,
-	type CurrentBelief,
-	type MemoryStub,
-	type ConflictPair,
-} from "@veil/memory";
 
 export interface VeilMemoryColdStoreConfig extends ColdStoreConfig {
 	dbPath?: string;
@@ -141,7 +134,7 @@ export class VeilMemoryColdStore implements ColdStore {
 		return stats.total;
 	}
 
-	async query(text: string, tags: string[], limit: number): Promise<ContextItem[]> {
+	async query(text: string, _tags: string[], limit: number): Promise<ContextItem[]> {
 		const results = await this.store.recall(text, {
 			namespace: this.namespace,
 			limit,

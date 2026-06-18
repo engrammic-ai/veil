@@ -53,10 +53,18 @@ export interface LearningConfig {
 	minHydrations: number;
 }
 
+export type MemoryEventType = "watching" | "remembering" | "learned" | "recalled" | "conflict" | "sleeping";
+
+export interface MemoryEvent {
+	type: MemoryEventType;
+	detail?: string;
+}
+
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	coldStore?: ColdStore;
 	onEviction?: (evicted: EvictionCandidate[]) => void;
 	onCheckpoint?: (turnCount: number) => void;
+	onMemoryEvent?: (event: MemoryEvent) => void;
 	sessionId?: string; // Tag context items with session
 	captureConfig?: Partial<CaptureConfig>;
 	learningConfig?: Partial<LearningConfig>;
@@ -126,6 +134,7 @@ export class VeilHarness {
 		minHydrations: 10,
 	};
 	private lastLearnTime: number = 0;
+	private memoryEventListeners: Array<(event: MemoryEvent) => void> = [];
 
 	// Phase D: Failure-memory
 	private attemptStore: AttemptStore;
@@ -345,7 +354,9 @@ export class VeilHarness {
 		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
 
 		// Store in warm cache with tool call ID for faded history
+		this.emitMemoryEvent("remembering", toolName);
 		this.manager.remember(toStore, rule.type, tags, toolCallId);
+		this.emitMemoryEvent("learned", `captured ${toolName}`);
 		this.capturesThisTurn++;
 		this.totalCaptures++;
 	}
@@ -495,17 +506,45 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Emit a memory event to registered callbacks and listeners.
+	 */
+	private emitMemoryEvent(type: MemoryEventType, detail?: string): void {
+		const event = { type, detail };
+		this.config.onMemoryEvent?.(event);
+		for (const listener of this.memoryEventListeners) {
+			listener(event);
+		}
+	}
+
+	/**
+	 * Subscribe to memory events. Returns an unsubscribe function.
+	 */
+	onMemoryEvent(listener: (event: MemoryEvent) => void): () => void {
+		this.memoryEventListeners.push(listener);
+		return () => {
+			const idx = this.memoryEventListeners.indexOf(listener);
+			if (idx >= 0) this.memoryEventListeners.splice(idx, 1);
+		};
+	}
+
+	/**
 	 * Remember something (store in warm cache).
 	 */
 	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = [], toolCallId?: string) {
-		return this.manager.remember(content, type, tags, toolCallId);
+		this.emitMemoryEvent("remembering", content.slice(0, 50));
+		const result = this.manager.remember(content, type, tags, toolCallId);
+		this.emitMemoryEvent("learned", type);
+		return result;
 	}
 
 	/**
 	 * Recall items by tags.
 	 */
 	recall(tags: string[], limit = 10) {
-		return this.manager.recall(tags, limit);
+		this.emitMemoryEvent("watching", `searching ${tags.join(", ")}`);
+		const result = this.manager.recall(tags, limit);
+		this.emitMemoryEvent("recalled", `found ${result.length} items`);
+		return result;
 	}
 
 	/**

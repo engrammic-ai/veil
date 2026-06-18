@@ -16,6 +16,8 @@ const (
 	StateInstall
 	StateConfigurePATH
 	StateInstallCompletions
+	StatePromptEmbedder
+	StateConfigureEmbedder
 	StateSuccess
 
 	// Terminal failure states.
@@ -51,6 +53,10 @@ func (s State) String() string {
 		return "ConfigurePATH"
 	case StateInstallCompletions:
 		return "InstallCompletions"
+	case StatePromptEmbedder:
+		return "PromptEmbedder"
+	case StateConfigureEmbedder:
+		return "ConfigureEmbedder"
 	case StateSuccess:
 		return "Success"
 	case StateFailPlatform:

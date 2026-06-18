@@ -87,9 +87,15 @@ func nextState(current State, result Result) State {
 
 	case StateConfigurePATH:
 		// PATH configuration is best-effort; warn but continue on failure.
-		return StateSuccess
+		return StateInstallCompletions
 
 	case StateInstallCompletions:
+		return StatePromptEmbedder
+
+	case StatePromptEmbedder:
+		return StateConfigureEmbedder
+
+	case StateConfigureEmbedder:
 		return StateSuccess
 	}
 

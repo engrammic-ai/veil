@@ -319,6 +319,7 @@ export class InteractiveMode {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
+	private unsubscribeMemoryEvents?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
 
 	// Track if editor is in bash mode (text starts with !)
@@ -419,6 +420,24 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+
+		// Subscribe to VeilHarness memory events for cat widget status
+		if (this.session.veilHarness) {
+			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
+				const statusMap: Record<string, string> = {
+					sleeping: "memory: [z]",
+					watching: "memory: [.]",
+					remembering: "memory: [~]",
+					learned: "memory: [+]",
+					recalled: "memory: [*]",
+					conflict: "memory: [!]",
+				};
+				const status = event.detail
+					? `${statusMap[event.type] ?? "memory: [?]"} ${event.detail.slice(0, 30)}`
+					: (statusMap[event.type] ?? "memory: [?]");
+				this.footerDataProvider.setExtensionStatus("memory", status);
+			});
+		}
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -5756,6 +5775,9 @@ export class InteractiveMode {
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
+		}
+		if (this.unsubscribeMemoryEvents) {
+			this.unsubscribeMemoryEvents();
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

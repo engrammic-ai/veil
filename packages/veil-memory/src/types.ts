@@ -85,6 +85,7 @@ export interface RecallOptions {
 	limit?: number;
 	minRetrievability?: number;
 	includeCold?: boolean;
+	useVectors?: boolean;
 }
 
 export interface LearnOptions {

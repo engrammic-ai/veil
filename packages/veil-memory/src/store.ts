@@ -29,10 +29,12 @@ export interface StoreConfig {
 	namespace: string;
 	agentId: string;
 	fsrs?: Partial<FSRSConfig>;
+	vectorDimensions?: number;
 }
 
 export interface Embedder {
 	embed(text: string): Promise<Float32Array>;
+	embedBatch?(texts: string[]): Promise<Float32Array[]>;
 	readonly dimensions: number;
 }
 
@@ -314,19 +316,44 @@ export class MemoryStore {
 		return eventId;
 	}
 
-	async recall(_query: string, options: RecallOptions = {}): Promise<Array<CurrentBelief | MemoryStub>> {
+	async recall(query: string, options: RecallOptions = {}): Promise<Array<CurrentBelief | MemoryStub>> {
 		const ns = options.namespace ?? this.namespace;
 		const limit = options.limit ?? 10;
 		const minR = options.minRetrievability ?? 0.1;
 		const includeCold = options.includeCold ?? false;
+		const useVectors = options.useVectors ?? true;
 
 		this.refreshRetrievabilities(ns);
 
-		let sql = `
-      SELECT * FROM current_beliefs
-      WHERE namespace = ? AND retrievability >= ?
-    `;
-		const params: (string | number)[] = [ns, minR];
+		let eventIds: string[] = [];
+
+		if (query?.trim()) {
+			if (useVectors && this.embedder) {
+				eventIds = await this.vectorSearch(query, ns, limit * 2);
+			}
+
+			if (eventIds.length === 0) {
+				eventIds = this.ftsSearch(query, ns, limit * 2);
+			}
+		}
+
+		let sql: string;
+		let params: (string | number)[];
+
+		if (eventIds.length > 0) {
+			const placeholders = eventIds.map(() => "?").join(",");
+			sql = `
+        SELECT * FROM current_beliefs
+        WHERE namespace = ? AND retrievability >= ? AND event_id IN (${placeholders})
+      `;
+			params = [ns, minR, ...eventIds];
+		} else {
+			sql = `
+        SELECT * FROM current_beliefs
+        WHERE namespace = ? AND retrievability >= ?
+      `;
+			params = [ns, minR];
+		}
 
 		if (options.types && options.types.length > 0) {
 			sql += ` AND memory_type IN (${options.types.map(() => "?").join(",")})`;
@@ -716,6 +743,58 @@ export class MemoryStore {
 			const R = this.fsrs.computeRetrievability(b.stability, daysSince);
 
 			this.db.prepare("UPDATE current_beliefs SET retrievability = ? WHERE event_id = ?").run(R, b.event_id);
+		}
+	}
+
+	private ftsSearch(query: string, namespace: string, limit: number): string[] {
+		const ftsQuery = query
+			.split(/\s+/)
+			.filter((t) => t.length > 0)
+			.map((t) => `"${t.replace(/"/g, '""')}"`)
+			.join(" OR ");
+
+		if (!ftsQuery) return [];
+
+		try {
+			const rows = this.db
+				.prepare(`
+          SELECT f.event_id, bm25(memory_fts) as score
+          FROM memory_fts f
+          JOIN current_beliefs cb ON f.event_id = cb.event_id
+          WHERE memory_fts MATCH ? AND cb.namespace = ?
+          ORDER BY score
+          LIMIT ?
+        `)
+				.all(ftsQuery, namespace, limit) as Array<{ event_id: string }>;
+
+			return rows.map((r) => r.event_id);
+		} catch {
+			return [];
+		}
+	}
+
+	private async vectorSearch(query: string, namespace: string, limit: number): Promise<string[]> {
+		if (!this.embedder) return [];
+
+		try {
+			const embedding = await this.embedder.embed(query);
+
+			const rows = this.db
+				.prepare(`
+          SELECT m.event_id, distance
+          FROM memory_vectors v
+          JOIN memory_vector_map m ON v.rowid = m.rowid
+          JOIN current_beliefs cb ON m.event_id = cb.event_id
+          WHERE cb.namespace = ?
+          ORDER BY distance
+          LIMIT ?
+        `)
+				.bind(namespace, limit)
+				.all(embedding) as Array<{ event_id: string }>;
+
+			return rows.map((r) => r.event_id);
+		} catch {
+			return [];
 		}
 	}
 

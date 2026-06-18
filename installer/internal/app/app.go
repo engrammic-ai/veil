@@ -1,7 +1,10 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,19 +12,69 @@ import (
 	"github.com/engrammic-ai/veil-installer/internal/platform"
 )
 
+// embedderConfig is the JSON config for the embedder server.
+type embedderConfig struct {
+	Tier          string `json:"tier"`
+	CachePath     string `json:"cachePath"`
+	IdleTimeoutMs int    `json:"idleTimeoutMs"`
+	Port          int    `json:"port"`
+}
+
+func writeEmbedderConfig(configDir, tier string) error {
+	if configDir == "" {
+		return fmt.Errorf("config directory not set")
+	}
+
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	cfg := embedderConfig{
+		Tier:          tier,
+		CachePath:     filepath.Join(configDir, "models"),
+		IdleTimeoutMs: 30 * 60 * 1000, // 30 minutes
+		Port:          19532,
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "embedder.json")
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
+}
+
 // stepDoneMsg is sent by worker commands when a step completes.
 type stepDoneMsg struct {
 	result Result
 	err    error
 }
 
+// EmbedderTier represents a semantic memory model option.
+type EmbedderTier string
+
+const (
+	EmbedderNone     EmbedderTier = "none"
+	EmbedderLight    EmbedderTier = "light"
+	EmbedderBalanced EmbedderTier = "balanced"
+	EmbedderQuality  EmbedderTier = "quality"
+	EmbedderMax      EmbedderTier = "max"
+	EmbedderOllama   EmbedderTier = "ollama"
+)
+
 // Model is the root bubbletea model for the installer TUI.
 type Model struct {
-	state    State
-	platform platform.Platform
-	version  string // selected or flagged version
-	spinner  spinner.Model
-	err      error
+	state        State
+	platform     platform.Platform
+	version      string       // selected or flagged version
+	embedderTier EmbedderTier // selected embedder model tier
+	spinner      spinner.Model
+	err          error
 
 	// CLI flags forwarded from cobra.
 	flagVersion string
@@ -41,11 +94,12 @@ func New(opts Options) *Model {
 	sp.Spinner = spinner.Dot
 
 	return &Model{
-		state:       StateDetectPlatform,
-		spinner:     sp,
-		flagVersion: opts.Version,
-		flagYes:     opts.Yes,
-		style:       lipgloss.NewStyle().Padding(1, 2),
+		state:        StateDetectPlatform,
+		embedderTier: EmbedderBalanced, // default
+		spinner:      sp,
+		flagVersion:  opts.Version,
+		flagYes:      opts.Yes,
+		style:        lipgloss.NewStyle().Padding(1, 2),
 	}
 }
 
@@ -106,6 +160,22 @@ func (m *Model) View() string {
 		body = fmt.Sprintf("%s Configuring PATH...", m.spinner.View())
 	case StateInstallCompletions:
 		body = fmt.Sprintf("%s Installing shell completions...", m.spinner.View())
+	case StatePromptEmbedder:
+		body = `Semantic Memory Model:
+
+Select an embedding model for semantic search in memory.
+Models are downloaded on first use.
+
+  ○ None       (keyword search only, 0 RAM)
+  ○ Light      (23MB, ~100MB RAM, English)
+  ● Balanced   (118MB, ~300MB RAM, multilingual) [recommended]
+  ○ Quality    (278MB, ~600MB RAM, multilingual)
+  ○ Max        (560MB, ~1.2GB RAM, multilingual)
+  ○ Ollama     (requires Ollama running locally)
+
+Use ↑/↓ to select, Enter to confirm.`
+	case StateConfigureEmbedder:
+		body = fmt.Sprintf("%s Configuring semantic memory...", m.spinner.View())
 	case StateSuccess:
 		body = "Veil installed successfully.\nRun 'pi --version' to confirm."
 	case StateFailPlatform:
@@ -173,7 +243,42 @@ func (m *Model) runStep(s State) tea.Cmd {
 
 	case StateInstallCompletions:
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+
+	case StatePromptEmbedder:
+		if m.flagYes {
+			// Auto-mode: use balanced (recommended)
+			m.embedderTier = EmbedderBalanced
+			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		}
+		// Interactive: wait for user selection
+		return nil
+
+	case StateConfigureEmbedder:
+		return m.configureEmbedder()
 	}
 
 	return nil
+}
+
+func (m *Model) configureEmbedder() tea.Cmd {
+	return func() tea.Msg {
+		if m.embedderTier == "" {
+			m.embedderTier = EmbedderBalanced
+		}
+
+		configDir := m.getConfigDir()
+		if err := writeEmbedderConfig(configDir, string(m.embedderTier)); err != nil {
+			return stepDoneMsg{result: ResultError, err: err}
+		}
+
+		return stepDoneMsg{result: ResultOK}
+	}
+}
+
+func (m *Model) getConfigDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "veil")
 }
