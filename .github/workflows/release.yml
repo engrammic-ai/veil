@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. 0.0.1)'
+        description: 'Version to release (e.g. 0.1.0)'
         required: true
         type: string
       prerelease:
@@ -18,204 +18,115 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - target: bun-linux-x64
-            asset: veil-linux-amd64
-            archive: veil-linux-amd64.tar.gz
-            clipboard: clipboard-linux-x64-gnu
-          - target: bun-linux-arm64
-            asset: veil-linux-arm64
-            archive: veil-linux-arm64.tar.gz
-            clipboard: clipboard-linux-arm64-gnu
-          - target: bun-darwin-x64
-            asset: veil-darwin-amd64
-            archive: veil-darwin-amd64.tar.gz
-            clipboard: clipboard-darwin-x64
-            native_helper_src: darwin/prebuilds/darwin-x64/darwin-modifiers.node
-            native_helper_dst: native/darwin/prebuilds/darwin-x64
-          - target: bun-darwin-arm64
-            asset: veil-darwin-arm64
-            archive: veil-darwin-arm64.tar.gz
-            clipboard: clipboard-darwin-arm64
-            native_helper_src: darwin/prebuilds/darwin-arm64/darwin-modifiers.node
-            native_helper_dst: native/darwin/prebuilds/darwin-arm64
-          - target: bun-windows-x64
-            asset: veil-windows-amd64.exe
-            archive: veil-windows-amd64.zip
-            clipboard: clipboard-win32-x64-msvc
-            native_helper_src: win32/prebuilds/win32-x64/win32-console-mode.node
-            native_helper_dst: native/win32/prebuilds/win32-x64
-          - target: bun-windows-arm64
-            asset: veil-windows-arm64.exe
-            archive: veil-windows-arm64.zip
-            clipboard: clipboard-win32-arm64-msvc
-            native_helper_src: win32/prebuilds/win32-arm64/win32-console-mode.node
-            native_helper_dst: native/win32/prebuilds/win32-arm64
-
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
-
-      - uses: pnpm/action-setup@v4
+          bun-version: 1.3.10
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: npm ci --ignore-scripts
 
       - name: Install cross-platform clipboard bindings
         run: |
           CLIPBOARD_VERSION=$(node -p "require('./packages/coding-agent/package.json').optionalDependencies['@mariozechner/clipboard']")
-          pnpm add -w --save-dev --ignore-scripts \
+          npm install --include=optional --no-save --package-lock=false --force --ignore-scripts \
             @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
-            @mariozechner/${{ matrix.clipboard }}@"$CLIPBOARD_VERSION"
+            @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
+            @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \
+            @mariozechner/clipboard-linux-x64-gnu@"$CLIPBOARD_VERSION" \
+            @mariozechner/clipboard-linux-arm64-gnu@"$CLIPBOARD_VERSION" \
+            @mariozechner/clipboard-win32-x64-msvc@"$CLIPBOARD_VERSION" \
+            @mariozechner/clipboard-win32-arm64-msvc@"$CLIPBOARD_VERSION"
 
       - name: Build packages
-        run: |
-          pnpm --filter @earendil-works/pi-tui run build
-          pnpm --filter @earendil-works/pi-ai run build
-          pnpm --filter @veil/embedder run build
-          pnpm --filter @veil/memory run build
-          pnpm --filter @engrammic/veil-context run build
-          pnpm --filter @earendil-works/pi-agent-core run build
-          pnpm --filter @earendil-works/pi-coding-agent run build
+        run: npm run build
 
-      - name: Compile binary for ${{ matrix.target }}
+      - name: Build binaries for all platforms
         working-directory: packages/coding-agent
         run: |
-          bun build --compile --target=${{ matrix.target }} \
-            ./dist/bun/cli.js ./src/utils/image-resize-worker.ts \
-            --outfile dist/${{ matrix.asset }}
+          mkdir -p binaries/{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64,windows-arm64}
 
-      - name: Bundle release archive
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            echo "Building for $platform..."
+            bun build --compile --target=bun-$platform \
+              ./dist/bun/cli.js ./src/utils/image-resize-worker.ts \
+              --outfile binaries/$platform/veil
+          done
+
+          for platform in windows-x64 windows-arm64; do
+            echo "Building for $platform..."
+            bun build --compile --target=bun-$platform \
+              ./dist/bun/cli.js ./src/utils/image-resize-worker.ts \
+              --outfile binaries/$platform/veil.exe
+          done
+
+      - name: Create release archives
         working-directory: packages/coding-agent
         run: |
-          BUNDLE_DIR="dist/bundle"
-          mkdir -p "$BUNDLE_DIR"
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64; do
+            cp package.json binaries/$platform/
+            cp README.md CHANGELOG.md binaries/$platform/
+            cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm binaries/$platform/
+            mkdir -p binaries/$platform/theme
+            cp dist/modes/interactive/theme/*.json binaries/$platform/theme/
+            mkdir -p binaries/$platform/assets
+            cp dist/modes/interactive/assets/* binaries/$platform/assets/
+            cp -r dist/core/export-html binaries/$platform/
+            cp -r docs binaries/$platform/
+            cp -r examples binaries/$platform/
+          done
 
-          # Binary
-          cp dist/${{ matrix.asset }} "$BUNDLE_DIR/"
+          # Clipboard bindings
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64; do
+            case "$platform" in
+              darwin-arm64) clipboard="clipboard-darwin-arm64" ;;
+              darwin-x64) clipboard="clipboard-darwin-x64" ;;
+              linux-x64) clipboard="clipboard-linux-x64-gnu" ;;
+              linux-arm64) clipboard="clipboard-linux-arm64-gnu" ;;
+              windows-x64) clipboard="clipboard-win32-x64-msvc" ;;
+              windows-arm64) clipboard="clipboard-win32-arm64-msvc" ;;
+            esac
+            mkdir -p binaries/$platform/node_modules/@mariozechner
+            cp -r ../../node_modules/@mariozechner/clipboard binaries/$platform/node_modules/@mariozechner/
+            cp -r ../../node_modules/@mariozechner/$clipboard binaries/$platform/node_modules/@mariozechner/
+          done
 
-          # Branding and version (fixes "pi v0.0.0")
-          cp package.json "$BUNDLE_DIR/"
-          cp README.md CHANGELOG.md "$BUNDLE_DIR/"
+          # Native helpers for darwin/windows
+          for platform in darwin-arm64 darwin-x64; do
+            mkdir -p binaries/$platform/native/darwin/prebuilds/$platform
+            cp ../tui/native/darwin/prebuilds/$platform/darwin-modifiers.node binaries/$platform/native/darwin/prebuilds/$platform/
+          done
+          for platform in windows-x64 windows-arm64; do
+            win32_arch=$(echo $platform | sed 's/windows/win32/')
+            mkdir -p binaries/$platform/native/win32/prebuilds/$win32_arch
+            cp ../tui/native/win32/prebuilds/$win32_arch/win32-console-mode.node binaries/$platform/native/win32/prebuilds/$win32_arch/
+          done
 
-          # Runtime assets
-          cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm "$BUNDLE_DIR/"
-          mkdir -p "$BUNDLE_DIR/theme"
-          cp dist/modes/interactive/theme/*.json "$BUNDLE_DIR/theme/"
-          mkdir -p "$BUNDLE_DIR/assets"
-          cp dist/modes/interactive/assets/* "$BUNDLE_DIR/assets/"
-          cp -r dist/core/export-html "$BUNDLE_DIR/"
-          cp -r docs "$BUNDLE_DIR/"
-          cp -r examples "$BUNDLE_DIR/"
+          # Create archives
+          cd binaries
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            mv $platform veil && tar -czf veil-$platform.tar.gz veil && mv veil $platform
+          done
+          for platform in windows-x64 windows-arm64; do
+            (cd $platform && zip -r ../veil-$platform.zip .)
+          done
 
-          # Clipboard native bindings
-          mkdir -p "$BUNDLE_DIR/node_modules/@mariozechner"
-          cp -r ../../node_modules/@mariozechner/clipboard "$BUNDLE_DIR/node_modules/@mariozechner/"
-          cp -r ../../node_modules/@mariozechner/${{ matrix.clipboard }} "$BUNDLE_DIR/node_modules/@mariozechner/"
+          sha256sum veil-*.tar.gz veil-*.zip > checksums.sha256
 
-          # Platform-specific terminal input helpers (darwin/windows only)
-          if [ -n "${{ matrix.native_helper_src }}" ]; then
-            mkdir -p "$BUNDLE_DIR/${{ matrix.native_helper_dst }}"
-            cp ../tui/native/${{ matrix.native_helper_src }} "$BUNDLE_DIR/${{ matrix.native_helper_dst }}/"
-          fi
-
-          # Create archive
-          if [[ "${{ matrix.archive }}" == *.zip ]]; then
-            (cd "$BUNDLE_DIR" && zip -r ../archive.zip .)
-          else
-            tar -czf dist/archive.tar.gz -C "$BUNDLE_DIR" .
-          fi
-
-          # Rename to final archive name
-          if [[ "${{ matrix.archive }}" == *.zip ]]; then
-            mv dist/archive.zip dist/${{ matrix.archive }}
-          else
-            mv dist/archive.tar.gz dist/${{ matrix.archive }}
-          fi
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.archive }}
-          path: packages/coding-agent/dist/${{ matrix.archive }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: archives
-          merge-multiple: true
-
-      - name: Generate checksums
-        run: |
-          cd archives
-          sha256sum veil-* > checksums.sha256
-          cat checksums.sha256
-
-      - name: Create release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cd packages/coding-agent/binaries
           gh release create "v${{ inputs.version }}" \
             --title "v${{ inputs.version }}" \
             --generate-notes \
             ${{ inputs.prerelease && '--prerelease' || '' }} \
-            archives/*
-
-  npm-publish:
-    needs: release
-    runs-on: ubuntu-latest
-    if: ${{ !inputs.prerelease }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Build packages
-        run: |
-          pnpm --filter @earendil-works/pi-tui run build
-          pnpm --filter @earendil-works/pi-ai run build
-          pnpm --filter @veil/embedder run build
-          pnpm --filter @veil/memory run build
-          pnpm --filter @engrammic/veil-context run build
-          pnpm --filter @earendil-works/pi-agent-core run build
-          pnpm --filter @engrammic/veil run build
-
-      - name: Update version
-        run: npm version ${{ inputs.version }} --no-git-tag-version
-        working-directory: packages/coding-agent
-
-      - name: Generate shrinkwrap
-        run: pnpm run shrinkwrap
-        working-directory: packages/coding-agent
-
-      - name: Publish to npm
-        run: npm publish --access public
-        working-directory: packages/coding-agent
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            veil-*.tar.gz veil-*.zip checksums.sha256
