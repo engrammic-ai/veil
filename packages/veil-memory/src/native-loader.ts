@@ -8,9 +8,15 @@
 import type BetterSqlite3 from "better-sqlite3";
 import { execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { createRequire } from "module";
 import { homedir } from "os";
 import { join } from "path";
+
+// Use Module._load for loading external modules (bypasses Bun's bundled FS)
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Module = require("module");
+function loadExternal(modulePath: string): unknown {
+	return Module._load(modulePath, null, false);
+}
 
 function getVeilDepsDir(): string {
 	return join(homedir(), ".veil", "deps");
@@ -56,21 +62,29 @@ function ensureNativeModules(): void {
 	console.log("Native SQLite modules installed successfully.");
 }
 
+let betterSqlite3Cache: typeof BetterSqlite3 | null = null;
+let sqliteVecCache: { load: (db: BetterSqlite3.Database) => void } | null = null;
+
 /**
  * Load better-sqlite3, installing it first if needed.
  */
 export function loadBetterSqlite3(): typeof BetterSqlite3 {
+	if (betterSqlite3Cache) return betterSqlite3Cache;
+
 	ensureNativeModules();
-	const req = createRequire(join(getVeilDepsDir(), "package.json"));
-	return req("better-sqlite3");
+	const modulePath = join(getVeilDepsDir(), "node_modules", "better-sqlite3");
+	betterSqlite3Cache = loadExternal(modulePath) as typeof BetterSqlite3;
+	return betterSqlite3Cache;
 }
 
 /**
  * Load sqlite-vec extension into a database.
  */
 export function loadSqliteVec(db: BetterSqlite3.Database): void {
-	ensureNativeModules();
-	const req = createRequire(join(getVeilDepsDir(), "package.json"));
-	const sqliteVec = req("sqlite-vec");
-	sqliteVec.load(db);
+	if (!sqliteVecCache) {
+		ensureNativeModules();
+		const modulePath = join(getVeilDepsDir(), "node_modules", "sqlite-vec");
+		sqliteVecCache = loadExternal(modulePath) as { load: (db: BetterSqlite3.Database) => void };
+	}
+	sqliteVecCache.load(db);
 }
