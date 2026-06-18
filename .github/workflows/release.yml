@@ -39,8 +39,11 @@ jobs:
       - name: Install cross-platform clipboard bindings
         run: |
           CLIPBOARD_VERSION=$(node -p "require('./packages/coding-agent/package.json').optionalDependencies['@mariozechner/clipboard']")
-          # Use npm for clipboard since pnpm struggles with cross-platform optional deps
-          npm install --no-save --package-lock=false --force --ignore-scripts \
+          # Install to isolated temp dir, then copy to node_modules (avoids npm/pnpm conflict)
+          mkdir -p /tmp/clipboard-deps
+          cd /tmp/clipboard-deps
+          npm init -y
+          npm install --ignore-scripts \
             @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \
@@ -48,6 +51,8 @@ jobs:
             @mariozechner/clipboard-linux-arm64-gnu@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-win32-x64-msvc@"$CLIPBOARD_VERSION" \
             @mariozechner/clipboard-win32-arm64-msvc@"$CLIPBOARD_VERSION"
+          cd -
+          cp -r /tmp/clipboard-deps/node_modules/@mariozechner node_modules/
 
       - name: Build packages
         run: pnpm run build
