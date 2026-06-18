@@ -4,7 +4,8 @@
  */
 
 import { createHash } from "node:crypto";
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
+import Database from "./sqlite.ts";
 import type { ContextItem, Trigger } from "./types.ts";
 import { CoAccessTracker } from "./worldview/co-access.ts";
 
@@ -18,46 +19,46 @@ export interface HydrationEvent {
 }
 
 export class ContextCache {
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 
 	// Prepared statements (initialised once in constructor, reused on every call)
-	private stmtPut: Database.Statement;
-	private stmtGet: Database.Statement;
-	private stmtGetByHash: Database.Statement;
-	private stmtTouch: Database.Statement;
-	private stmtUpdateCognitiveWeight: Database.Statement;
-	private stmtDelete: Database.Statement;
-	private stmtGetAll: Database.Statement;
-	private stmtGetStale: Database.Statement;
-	private stmtApplyDecay: Database.Statement;
-	private stmtPruneByDecaySelect: Database.Statement;
-	private stmtPruneByDecayDelete: Database.Statement;
-	private stmtGetAllByRecency: Database.Statement;
-	private stmtGetTypeCounts: Database.Statement;
-	private stmtMarkEvicting: Database.Statement;
-	private stmtUnmarkEvicting: Database.Statement;
-	private stmtDeleteEvicting: Database.Statement;
-	private stmtRecoverEvicting: Database.Statement;
+	private stmtPut: BetterSqlite3.Statement;
+	private stmtGet: BetterSqlite3.Statement;
+	private stmtGetByHash: BetterSqlite3.Statement;
+	private stmtTouch: BetterSqlite3.Statement;
+	private stmtUpdateCognitiveWeight: BetterSqlite3.Statement;
+	private stmtDelete: BetterSqlite3.Statement;
+	private stmtGetAll: BetterSqlite3.Statement;
+	private stmtGetStale: BetterSqlite3.Statement;
+	private stmtApplyDecay: BetterSqlite3.Statement;
+	private stmtPruneByDecaySelect: BetterSqlite3.Statement;
+	private stmtPruneByDecayDelete: BetterSqlite3.Statement;
+	private stmtGetAllByRecency: BetterSqlite3.Statement;
+	private stmtGetTypeCounts: BetterSqlite3.Statement;
+	private stmtMarkEvicting: BetterSqlite3.Statement;
+	private stmtUnmarkEvicting: BetterSqlite3.Statement;
+	private stmtDeleteEvicting: BetterSqlite3.Statement;
+	private stmtRecoverEvicting: BetterSqlite3.Statement;
 
 	// Hydration event statements
-	private stmtLogHydration: Database.Statement;
-	private stmtGetRecentHydrations: Database.Statement;
-	private stmtGetHydrationStats: Database.Statement;
+	private stmtLogHydration: BetterSqlite3.Statement;
+	private stmtGetRecentHydrations: BetterSqlite3.Statement;
+	private stmtGetHydrationStats: BetterSqlite3.Statement;
 
 	// Custom trigger statements
-	private stmtPersistTrigger: Database.Statement;
-	private stmtLoadCustomTriggers: Database.Statement;
-	private stmtDeleteTrigger: Database.Statement;
+	private stmtPersistTrigger: BetterSqlite3.Statement;
+	private stmtLoadCustomTriggers: BetterSqlite3.Statement;
+	private stmtDeleteTrigger: BetterSqlite3.Statement;
 
 	// Episode link statements
-	private stmtLinkEpisodes: Database.Statement;
-	private stmtGetRelatedEpisodes: Database.Statement;
+	private stmtLinkEpisodes: BetterSqlite3.Statement;
+	private stmtGetRelatedEpisodes: BetterSqlite3.Statement;
 
 	// Eviction ledger statements
-	private stmtLogEviction: Database.Statement;
-	private stmtFindRecentEviction: Database.Statement;
-	private stmtClearEvictionForHash: Database.Statement;
-	private stmtPruneEvictionLog: Database.Statement;
+	private stmtLogEviction: BetterSqlite3.Statement;
+	private stmtFindRecentEviction: BetterSqlite3.Statement;
+	private stmtClearEvictionForHash: BetterSqlite3.Statement;
+	private stmtPruneEvictionLog: BetterSqlite3.Statement;
 
 	// Co-access tracker
 	readonly coAccess: CoAccessTracker;
@@ -204,7 +205,7 @@ export class ContextCache {
 	 * Get the underlying database connection.
 	 * Use sparingly - prefer using cache methods directly.
 	 */
-	getDb(): Database.Database {
+	getDb(): BetterSqlite3.Database {
 		return this.db;
 	}
 

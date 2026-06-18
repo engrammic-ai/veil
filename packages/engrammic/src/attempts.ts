@@ -6,7 +6,7 @@
  * detectFailure(): classify tool results into outcome buckets.
  */
 
-import type Database from "better-sqlite3";
+import type * as BetterSqlite3 from "better-sqlite3";
 import { isTestRunner } from "./goal-inference.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,18 +47,18 @@ export interface AttemptDetection {
  * Prepared statements are initialised once in the constructor.
  */
 export class AttemptStore {
-	private stmtPut: Database.Statement;
-	private stmtGet: Database.Statement;
-	private stmtGetByGoal: Database.Statement;
-	private stmtGetBySession: Database.Statement;
-	private stmtMarkResolved: Database.Statement;
-	private stmtCountByGoal: Database.Statement;
-	private stmtGetOpenByGoal: Database.Statement;
-	private stmtDelete: Database.Statement;
+	private stmtPut: BetterSqlite3.Statement;
+	private stmtGet: BetterSqlite3.Statement;
+	private stmtGetByGoal: BetterSqlite3.Statement;
+	private stmtGetBySession: BetterSqlite3.Statement;
+	private stmtMarkResolved: BetterSqlite3.Statement;
+	private stmtCountByGoal: BetterSqlite3.Statement;
+	private stmtGetOpenByGoal: BetterSqlite3.Statement;
+	private stmtDelete: BetterSqlite3.Statement;
 
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 
-	constructor(db: Database.Database) {
+	constructor(db: BetterSqlite3.Database) {
 		this.db = db;
 		this.stmtPut = this.db.prepare(`
 			INSERT OR REPLACE INTO attempts (

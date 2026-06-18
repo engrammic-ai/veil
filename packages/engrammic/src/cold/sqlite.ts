@@ -6,7 +6,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
+import Database from "../sqlite.ts";
 import type { ContextItem } from "../types.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
 
@@ -15,7 +16,7 @@ export interface SqliteColdStoreConfig extends ColdStoreConfig {
 }
 
 export class SqliteColdStore implements ColdStore {
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 	private namespace: string;
 
 	readonly capabilities: ColdStoreCapabilities = {

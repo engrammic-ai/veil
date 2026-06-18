@@ -6,9 +6,10 @@
  * Results are persisted to the structural_rank table.
  */
 
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 import Graph from "graphology";
 import pagerank from "graphology-pagerank";
+import Database from "../sqlite.ts";
 import { SymbolStore } from "./symbol-store.ts";
 
 // ---------------------------------------------------------------------------
@@ -52,7 +53,7 @@ export interface RankRow {
  * without a resolved target_file are skipped (cross-file resolution is
  * done in a separate pass).
  */
-export function buildFileGraph(db: Database.Database): Graph {
+export function buildFileGraph(db: BetterSqlite3.Database): Graph {
 	const graph = new Graph({ type: "directed", multi: false });
 
 	// Fetch all reference rows that have a resolved target_file
@@ -189,7 +190,7 @@ export function computeTaskBias(graph: Graph, hotFiles: string[], maxHops = 3): 
  * structural_rank table.  Files not reached from any hot file have their
  * task_bias reset to 0 so stale bias doesn't accumulate across tasks.
  */
-export function updateTaskBias(db: Database.Database, hotFiles: string[]): void {
+export function updateTaskBias(db: BetterSqlite3.Database, hotFiles: string[]): void {
 	const graph = buildFileGraph(db);
 	const biasMap = computeTaskBias(graph, hotFiles);
 
@@ -217,13 +218,13 @@ export function updateTaskBias(db: Database.Database, hotFiles: string[]): void 
 // ---------------------------------------------------------------------------
 
 export class RankStore {
-	private db: Database.Database;
-	private stmtUpsert: Database.Statement;
-	private stmtGet: Database.Statement;
-	private stmtGetAll: Database.Statement;
-	private stmtUpdateBias: Database.Statement;
+	private db: BetterSqlite3.Database;
+	private stmtUpsert: BetterSqlite3.Statement;
+	private stmtGet: BetterSqlite3.Statement;
+	private stmtGetAll: BetterSqlite3.Statement;
+	private stmtUpdateBias: BetterSqlite3.Statement;
 
-	constructor(db: Database.Database) {
+	constructor(db: BetterSqlite3.Database) {
 		this.db = db;
 		this.initSchema();
 
@@ -326,7 +327,7 @@ export class RankStore {
  * Idempotent: safe to call repeatedly as the symbol_graph is updated.
  * Returns the number of files ranked.
  */
-export function updateRanks(db: Database.Database): number {
+export function updateRanks(db: BetterSqlite3.Database): number {
 	// Resolve cross-file references before building the graph
 	const symbolStore = new SymbolStore(db);
 	symbolStore.resolveReferences();

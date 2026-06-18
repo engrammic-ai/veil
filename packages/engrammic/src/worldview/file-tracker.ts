@@ -9,7 +9,8 @@
  */
 
 import fs from "node:fs";
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
+import Database from "../sqlite.ts";
 
 // ---------------------------------------------------------------------------
 // Schema (also referenced by cache.ts)
@@ -38,14 +39,14 @@ export interface FileMtimeRow {
 // ---------------------------------------------------------------------------
 
 export class FileTracker {
-	private readonly db: Database.Database;
+	private readonly db: BetterSqlite3.Database;
 
-	private stmtGet: Database.Statement;
-	private stmtUpsert: Database.Statement;
-	private stmtDelete: Database.Statement;
-	private stmtGetAll: Database.Statement;
+	private stmtGet: BetterSqlite3.Statement;
+	private stmtUpsert: BetterSqlite3.Statement;
+	private stmtDelete: BetterSqlite3.Statement;
+	private stmtGetAll: BetterSqlite3.Statement;
 
-	constructor(db: Database.Database) {
+	constructor(db: BetterSqlite3.Database) {
 		this.db = db;
 		this.initSchema();
 

@@ -14,7 +14,7 @@
  * real usage and the floor is no longer needed).
  */
 
-import type Database from "better-sqlite3";
+import type * as BetterSqlite3 from "better-sqlite3";
 
 const DEFAULT_MAX_TURNS = 5;
 const DECAY_RATE = 0.8;
@@ -26,16 +26,16 @@ export interface FloorEntry {
 }
 
 export class StructuralFloor {
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 	private maxTurns: number;
 
-	private stmtAdd: Database.Statement;
-	private stmtGet: Database.Statement;
-	private stmtRemove: Database.Statement;
-	private stmtGetAll: Database.Statement;
-	private stmtPruneExpired: Database.Statement;
+	private stmtAdd: BetterSqlite3.Statement;
+	private stmtGet: BetterSqlite3.Statement;
+	private stmtRemove: BetterSqlite3.Statement;
+	private stmtGetAll: BetterSqlite3.Statement;
+	private stmtPruneExpired: BetterSqlite3.Statement;
 
-	constructor(db: Database.Database, maxTurns: number = DEFAULT_MAX_TURNS) {
+	constructor(db: BetterSqlite3.Database, maxTurns: number = DEFAULT_MAX_TURNS) {
 		this.db = db;
 		this.maxTurns = maxTurns;
 

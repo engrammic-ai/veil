@@ -5,7 +5,8 @@
  * Designed to be used alongside ContextCache (same DB file) or standalone.
  */
 
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
+import Database from "../sqlite.ts";
 import type { ExtractedSymbol } from "./symbols.ts";
 
 // ---------------------------------------------------------------------------
@@ -44,14 +45,14 @@ CREATE INDEX IF NOT EXISTS idx_symbol_graph_symbol ON symbol_graph(symbol);
 // ---------------------------------------------------------------------------
 
 export class SymbolStore {
-	private db: Database.Database;
+	private db: BetterSqlite3.Database;
 
-	private stmtInsert: Database.Statement;
-	private stmtDeleteFile: Database.Statement;
-	private stmtGetByFile: Database.Statement;
-	private stmtGetRefsTo: Database.Statement;
+	private stmtInsert: BetterSqlite3.Statement;
+	private stmtDeleteFile: BetterSqlite3.Statement;
+	private stmtGetByFile: BetterSqlite3.Statement;
+	private stmtGetRefsTo: BetterSqlite3.Statement;
 
-	constructor(db: Database.Database) {
+	constructor(db: BetterSqlite3.Database) {
 		this.db = db;
 		this.initSchema();
 

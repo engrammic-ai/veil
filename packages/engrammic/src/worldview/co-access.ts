@@ -8,7 +8,7 @@
  * Pairs are stored with item_a < item_b (lexical order) to avoid duplicates.
  */
 
-import type Database from "better-sqlite3";
+import type * as BetterSqlite3 from "better-sqlite3";
 
 export interface CoAccessEntry {
 	itemId: string;
@@ -16,12 +16,12 @@ export interface CoAccessEntry {
 }
 
 export class CoAccessTracker {
-	private db: Database.Database;
-	private stmtUpsert: Database.Statement;
-	private stmtGetByA: Database.Statement;
-	private stmtGetByB: Database.Statement;
+	private db: BetterSqlite3.Database;
+	private stmtUpsert: BetterSqlite3.Statement;
+	private stmtGetByA: BetterSqlite3.Statement;
+	private stmtGetByB: BetterSqlite3.Statement;
 
-	constructor(db: Database.Database) {
+	constructor(db: BetterSqlite3.Database) {
 		this.db = db;
 		this.stmtUpsert = this.db.prepare(`
 			INSERT INTO co_access (item_a, item_b, count, last_turn)
