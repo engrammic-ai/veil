@@ -5448,10 +5448,7 @@ export class InteractiveMode {
 
 		const changelogMarkdown =
 			allEntries.length > 0
-				? allEntries
-						.reverse()
-						.map((e) => normalizeChangelogLinks(e.content, e))
-						.join("\n\n")
+				? allEntries.map((e) => normalizeChangelogLinks(e.content, e)).join("\n\n")
 				: "No changelog entries found.";
 
 		this.chatContainer.addChild(new Spacer(1));
