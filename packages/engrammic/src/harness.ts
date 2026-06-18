@@ -218,6 +218,9 @@ export class VeilHarness {
 		context: BeforeToolCallContext,
 		_signal?: AbortSignal,
 	): Promise<BeforeToolCallResult | undefined> {
+		// Emit watching event when tool starts
+		this.emitMemoryEvent("watching", context.toolCall.name);
+
 		// Update task context based on tool being called
 		this.updateTaskContext(context.toolCall.name, context.args);
 

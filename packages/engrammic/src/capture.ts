@@ -9,17 +9,20 @@ import type { CaptureRule } from "./types.ts";
  * or null if it should be skipped.
  */
 export function getCaptureRule(toolName: string, args: unknown): CaptureRule | null {
-	switch (toolName) {
-		case "Read":
+	// Normalize tool name to handle case variations
+	const normalized = toolName.toLowerCase();
+
+	switch (normalized) {
+		case "read":
 			return { type: "episodic", tags: ["file", "read"] };
 
-		case "WebSearch":
+		case "websearch":
 			return { type: "fact", tags: ["web", "search"] };
 
-		case "WebFetch":
+		case "webfetch":
 			return { type: "fact", tags: ["web", "fetch"] };
 
-		case "Bash": {
+		case "bash": {
 			const command = (args as Record<string, unknown> | undefined)?.command ?? "";
 			return classifyBashCommand(String(command));
 		}
