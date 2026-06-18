@@ -47,10 +47,11 @@ func nextState(current State, result Result) State {
 		return StateSuccess
 
 	case StateFetchVersions:
-		if result == ResultVersionSet {
-			return StateValidateVer
+		// Both ResultOK (got latest) and ResultVersionSet (user specified) go straight to download
+		if result == ResultOK || result == ResultVersionSet {
+			return StateDownload
 		}
-		return StatePromptVersion
+		return StateFailNetwork
 
 	case StatePromptVersion, StateValidateVer:
 		if result == ResultOK {

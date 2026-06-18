@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +11,11 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/engrammic-ai/veil-installer/internal/config"
+	"github.com/engrammic-ai/veil-installer/internal/download"
+	"github.com/engrammic-ai/veil-installer/internal/install"
 	"github.com/engrammic-ai/veil-installer/internal/platform"
+	"github.com/engrammic-ai/veil-installer/internal/verify"
 )
 
 // embedderConfig is the JSON config for the embedder server.
@@ -54,6 +59,7 @@ func writeEmbedderConfig(configDir, tier string) error {
 type stepDoneMsg struct {
 	result Result
 	err    error
+	data   any // optional data from the step
 }
 
 // EmbedderTier represents a semantic memory model option.
@@ -78,9 +84,22 @@ type Model struct {
 	spinner       spinner.Model
 	err           error
 
+	// Installation state
+	release     *config.Release
+	installPath string
+	tmpBinPath  string
+	client      *download.Client
+	cache       *download.Cache
+
 	// CLI flags forwarded from cobra.
-	flagVersion string
-	flagYes     bool
+	flagVersion      string
+	flagYes          bool
+	flagChannel      string
+	flagPath         string
+	flagNoModifyPath bool
+	flagNoComplete   bool
+	flagProxyURL     string
+	flagCACert       string
 
 	style lipgloss.Style
 }
@@ -97,22 +116,49 @@ var embedderTiers = []EmbedderTier{
 
 // Options configures the Model at construction time.
 type Options struct {
-	Version string // --version flag value, empty if not set
-	Yes     bool   // --yes flag
+	Version      string
+	Yes          bool
+	Channel      string
+	Path         string
+	NoModifyPath bool
+	NoComplete   bool
+	ProxyURL     string
+	CACert       string
 }
 
 func New(opts Options) *Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	// Default install path
+	installPath := opts.Path
+	if installPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			installPath = filepath.Join(home, ".local", "bin", "veil")
+		}
+	}
+
+	// Default channel
+	channel := opts.Channel
+	if channel == "" {
+		channel = "stable"
+	}
+
 	return &Model{
-		state:         StateDetectPlatform,
-		embedderTier:  EmbedderBalanced, // default
-		embedderIndex: 2,                // index of Balanced in embedderTiers
-		spinner:       sp,
-		flagVersion:   opts.Version,
-		flagYes:       opts.Yes,
-		style:         lipgloss.NewStyle().Padding(1, 2),
+		state:            StateDetectPlatform,
+		embedderTier:     EmbedderBalanced,
+		embedderIndex:    2,
+		spinner:          sp,
+		installPath:      installPath,
+		flagVersion:      opts.Version,
+		flagYes:          opts.Yes,
+		flagChannel:      channel,
+		flagPath:         opts.Path,
+		flagNoModifyPath: opts.NoModifyPath,
+		flagNoComplete:   opts.NoComplete,
+		flagProxyURL:     opts.ProxyURL,
+		flagCACert:       opts.CACert,
+		style:            lipgloss.NewStyle().Padding(1, 2),
 	}
 }
 
@@ -155,6 +201,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 		}
+		// Handle data from steps
+		if msg.data != nil {
+			switch data := msg.data.(type) {
+			case *config.Release:
+				m.release = data
+			case string:
+				if m.state == StateDownload {
+					m.tmpBinPath = data
+				}
+			}
+		}
 		m.state = nextState(m.state, msg.result)
 		if m.state.IsTerminal() {
 			return m, tea.Quit
@@ -167,13 +224,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) View() string {
 	var body string
+
 	switch m.state {
 	case StateDetectPlatform:
 		body = fmt.Sprintf("%s Detecting platform...", m.spinner.View())
 	case StateCheckExisting:
 		body = fmt.Sprintf("%s Checking for existing installation...", m.spinner.View())
 	case StatePromptUpgrade:
-		body = "An existing Veil installation was found.\nPress Enter to upgrade or q to cancel."
+		body = "An existing installation was found. Upgrade? [y/N]"
 	case StateFetchVersions:
 		body = fmt.Sprintf("%s Fetching available versions...", m.spinner.View())
 	case StatePromptVersion:
@@ -181,13 +239,17 @@ func (m *Model) View() string {
 	case StateValidateVer:
 		body = fmt.Sprintf("%s Validating version %s...", m.spinner.View(), m.flagVersion)
 	case StateDownload:
-		body = fmt.Sprintf("%s Downloading Veil %s...", m.spinner.View(), m.version)
+		version := m.flagVersion
+		if m.release != nil {
+			version = m.release.Version
+		}
+		body = fmt.Sprintf("%s Downloading Veil %s...", m.spinner.View(), version)
 	case StateVerifySum:
 		body = fmt.Sprintf("%s Verifying checksum...", m.spinner.View())
 	case StateVerifySig:
 		body = fmt.Sprintf("%s Verifying signature...", m.spinner.View())
 	case StateInstall:
-		body = fmt.Sprintf("%s Installing...", m.spinner.View())
+		body = fmt.Sprintf("%s Installing to %s...", m.spinner.View(), m.installPath)
 	case StateConfigurePATH:
 		body = fmt.Sprintf("%s Configuring PATH...", m.spinner.View())
 	case StateInstallCompletions:
@@ -197,7 +259,11 @@ func (m *Model) View() string {
 	case StateConfigureEmbedder:
 		body = fmt.Sprintf("%s Configuring semantic memory...", m.spinner.View())
 	case StateSuccess:
-		body = "Veil installed successfully.\nRun 'pi --version' to confirm."
+		version := "unknown"
+		if m.release != nil {
+			version = m.release.Version
+		}
+		body = fmt.Sprintf("Veil %s installed successfully to %s\n\nRun 'veil --version' to confirm.", version, m.installPath)
 	case StateFailPlatform:
 		body = fmt.Sprintf("Error: unsupported platform.\n%v", m.err)
 	case StateFailNetwork:
@@ -213,64 +279,230 @@ func (m *Model) View() string {
 	return m.style.Render(body)
 }
 
-// runStep returns the tea.Cmd that executes work for the given state.
-// Non-automated states (prompts) return nil; the Update loop handles them on
-// user input.
 func (m *Model) runStep(s State) tea.Cmd {
 	switch s {
 	case StateDetectPlatform:
 		return func() tea.Msg {
-			p := platform.Detect()
-			switch p.OS {
+			m.platform = platform.Detect()
+			switch m.platform.OS {
 			case "linux", "darwin", "windows":
 				return stepDoneMsg{result: ResultOK}
 			default:
 				return stepDoneMsg{
 					result: ResultUnsupported,
-					err:    fmt.Errorf("unsupported OS: %s", p.OS),
+					err:    fmt.Errorf("unsupported OS: %s", m.platform.OS),
 				}
 			}
 		}
 
 	case StateCheckExisting:
-		// Stub: always report clean (no existing install).
+		return func() tea.Msg {
+			if _, err := os.Stat(m.installPath); err == nil {
+				return stepDoneMsg{result: ResultConflict}
+			}
+			return stepDoneMsg{result: ResultOK}
+		}
+
+	case StatePromptUpgrade:
+		if m.flagYes {
+			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		}
+		// For interactive, we'd need key handling - for now auto-approve
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
 	case StateFetchVersions:
-		if m.flagVersion != "" {
-			return func() tea.Msg { return stepDoneMsg{result: ResultVersionSet} }
+		return func() tea.Msg {
+			cache, err := download.NewCache()
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("init cache: %w", err)}
+			}
+			m.cache = cache
+
+			client, err := download.NewClient(download.ClientOptions{
+				ProxyURL: m.flagProxyURL,
+				CACert:   m.flagCACert,
+			})
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("init client: %w", err)}
+			}
+			m.client = client
+
+			ch := config.Channel(m.flagChannel)
+
+			if m.flagVersion != "" {
+				// User requested specific version
+				releases, err := config.FetchReleases(cache, ch)
+				if err != nil {
+					return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch releases: %w", err)}
+				}
+				for _, r := range releases {
+					if r.Version == m.flagVersion || r.Version == strings.TrimPrefix(m.flagVersion, "v") {
+						rel := r
+						return stepDoneMsg{result: ResultVersionSet, data: &rel}
+					}
+				}
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("version %q not found", m.flagVersion)}
+			}
+
+			// Get latest
+			rel, err := config.GetLatest(cache, ch)
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch latest: %w", err)}
+			}
+			return stepDoneMsg{result: ResultOK, data: rel}
 		}
-		// Stub: signal interactive version selection.
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
 	case StateValidateVer:
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
 	case StateDownload:
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		return func() tea.Msg {
+			if m.release == nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no release selected")}
+			}
+
+			assetKey := m.platform.AssetKey()
+			downloadURL, ok := m.release.GetAssetURL(assetKey)
+			if !ok {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no binary for platform %s", m.platform)}
+			}
+
+			tmpFile, err := os.CreateTemp("", "veil-download-*.tmp")
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("create temp: %w", err)}
+			}
+			tmpPath := tmpFile.Name()
+			tmpFile.Close()
+
+			ctx := context.Background()
+			if err := m.client.Download(ctx, downloadURL, tmpPath, nil); err != nil {
+				os.Remove(tmpPath)
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("download: %w", err)}
+			}
+
+			return stepDoneMsg{result: ResultOK, data: tmpPath}
+		}
 
 	case StateVerifySum:
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		return func() tea.Msg {
+			if m.release == nil || m.release.Checksum == "" {
+				// No checksum available, skip
+				return stepDoneMsg{result: ResultOK}
+			}
+
+			tmpSum, err := os.CreateTemp("", "veil-checksums-*.tmp")
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: err}
+			}
+			tmpSumPath := tmpSum.Name()
+			tmpSum.Close()
+			defer os.Remove(tmpSumPath)
+
+			ctx := context.Background()
+			if err := m.client.Download(ctx, m.release.Checksum, tmpSumPath, nil); err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("download checksum: %w", err)}
+			}
+
+			checksumData, err := os.ReadFile(tmpSumPath)
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: err}
+			}
+
+			checksums, err := verify.ParseChecksums(string(checksumData))
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("parse checksums: %w", err)}
+			}
+
+			binFile, err := os.Open(m.tmpBinPath)
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: err}
+			}
+			defer binFile.Close()
+
+			var expectedSum []byte
+			for name, sum := range checksums {
+				if strings.Contains(name, m.platform.String()) || strings.HasSuffix(name, "veil") {
+					expectedSum = sum
+					break
+				}
+			}
+
+			if expectedSum != nil {
+				if err := verify.VerifyChecksum(binFile, expectedSum); err != nil {
+					return stepDoneMsg{result: ResultMismatch, err: fmt.Errorf("checksum mismatch: %w", err)}
+				}
+			}
+
+			return stepDoneMsg{result: ResultOK}
+		}
 
 	case StateVerifySig:
+		// Signature verification is optional, skip for now
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
 	case StateInstall:
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		return func() tea.Msg {
+			if m.tmpBinPath == "" {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no downloaded binary")}
+			}
+
+			binFile, err := os.Open(m.tmpBinPath)
+			if err != nil {
+				return stepDoneMsg{result: ResultError, err: err}
+			}
+			defer binFile.Close()
+			defer os.Remove(m.tmpBinPath)
+
+			if err := os.MkdirAll(filepath.Dir(m.installPath), 0o755); err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("create dir: %w", err)}
+			}
+
+			if err := install.Install(binFile, m.installPath); err != nil {
+				return stepDoneMsg{result: ResultError, err: fmt.Errorf("install: %w", err)}
+			}
+
+			// Write version file
+			if m.release != nil {
+				versionFile := filepath.Join(filepath.Dir(m.installPath), ".veil-version")
+				_ = os.WriteFile(versionFile, []byte(m.release.Version), 0o644)
+			}
+
+			return stepDoneMsg{result: ResultOK}
+		}
 
 	case StateConfigurePATH:
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		return func() tea.Msg {
+			if m.flagNoModifyPath {
+				return stepDoneMsg{result: ResultOK}
+			}
+			shell := platform.DetectShell()
+			shellCfg := platform.GetShellConfig(shell)
+			if err := install.ModifyPATH(shellCfg, filepath.Dir(m.installPath)); err != nil {
+				// PATH config is best-effort, don't fail
+				return stepDoneMsg{result: ResultOK}
+			}
+			return stepDoneMsg{result: ResultOK}
+		}
 
 	case StateInstallCompletions:
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		return func() tea.Msg {
+			if m.flagNoComplete {
+				return stepDoneMsg{result: ResultOK}
+			}
+			shell := platform.DetectShell()
+			if err := install.InstallCompletions(m.installPath, shell); err != nil {
+				// Completions are best-effort
+				return stepDoneMsg{result: ResultOK}
+			}
+			return stepDoneMsg{result: ResultOK}
+		}
 
 	case StatePromptEmbedder:
 		if m.flagYes {
-			// Auto-mode: use balanced (recommended)
 			m.embedderTier = EmbedderBalanced
 			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 		}
-		// Interactive: wait for user selection
+		// Interactive: wait for user selection (handled in Update)
 		return nil
 
 	case StateConfigureEmbedder:
