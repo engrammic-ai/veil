@@ -306,13 +306,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Install binary.
-	binFile, err := os.Open(tmpBinPath)
-	if err != nil {
-		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("open downloaded binary: %w", err))
-	}
-	defer binFile.Close()
-
+	// Install binary - extract from archive if needed.
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			exitcodes.ExitError(exitcodes.ErrPermission, fmt.Errorf("create install directory: %w", err))
@@ -320,11 +314,27 @@ func runInstall(cmd *cobra.Command, args []string) {
 		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("create install directory: %w", err))
 	}
 
-	if err := install.Install(binFile, destPath); err != nil {
-		if errors.Is(err, os.ErrPermission) {
-			exitcodes.ExitError(exitcodes.ErrPermission, fmt.Errorf("install binary: %w", err))
+	// Check if the download is an archive (based on URL) and extract accordingly.
+	if strings.HasSuffix(downloadURL, ".tar.gz") || strings.HasSuffix(downloadURL, ".zip") {
+		if err := install.InstallFromArchive(tmpBinPath, destPath); err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				exitcodes.ExitError(exitcodes.ErrPermission, fmt.Errorf("install from archive: %w", err))
+			}
+			exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("install from archive: %w", err))
 		}
-		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("install binary: %w", err))
+	} else {
+		binFile, err := os.Open(tmpBinPath)
+		if err != nil {
+			exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("open downloaded binary: %w", err))
+		}
+		defer binFile.Close()
+
+		if err := install.Install(binFile, destPath); err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				exitcodes.ExitError(exitcodes.ErrPermission, fmt.Errorf("install binary: %w", err))
+			}
+			exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("install binary: %w", err))
+		}
 	}
 
 	// Write version file.

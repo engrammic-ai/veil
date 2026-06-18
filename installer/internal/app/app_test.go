@@ -25,6 +25,8 @@ func TestStateString(t *testing.T) {
 		{StateInstall, "Install"},
 		{StateConfigurePATH, "ConfigurePATH"},
 		{StateInstallCompletions, "InstallCompletions"},
+		{StatePromptEmbedder, "PromptEmbedder"},
+		{StateConfigureEmbedder, "ConfigureEmbedder"},
 		{StateSuccess, "Success"},
 		{StateFailPlatform, "FAIL_PLATFORM"},
 		{StateFailNetwork, "FAIL_NETWORK"},
@@ -65,17 +67,17 @@ func TestNextStateHappyPath(t *testing.T) {
 		{StateCheckExisting, ResultOK, StateFetchVersions},
 		{StateCheckExisting, ResultConflict, StatePromptUpgrade},
 		{StatePromptUpgrade, ResultOK, StateFetchVersions},
-		{StateFetchVersions, ResultOK, StatePromptVersion},
-		{StateFetchVersions, ResultVersionSet, StateValidateVer},
-		{StateValidateVer, ResultOK, StateDownload},
-		{StatePromptVersion, ResultOK, StateDownload},
+		{StateFetchVersions, ResultOK, StateDownload},
+		{StateFetchVersions, ResultVersionSet, StateDownload},
 		{StateDownload, ResultOK, StateVerifySum},
 		{StateVerifySum, ResultOK, StateVerifySig},
 		{StateVerifySig, ResultOK, StateInstall},
 		{StateInstall, ResultOK, StateConfigurePATH},
-		{StateConfigurePATH, ResultOK, StateSuccess},
-		{StateConfigurePATH, ResultError, StateSuccess}, // best-effort
-		{StateInstallCompletions, ResultOK, StateSuccess},
+		{StateConfigurePATH, ResultOK, StateInstallCompletions},
+		{StateConfigurePATH, ResultError, StateInstallCompletions}, // best-effort
+		{StateInstallCompletions, ResultOK, StatePromptEmbedder},
+		{StatePromptEmbedder, ResultOK, StateConfigureEmbedder},
+		{StateConfigureEmbedder, ResultOK, StateSuccess},
 	}
 	for _, tr := range transitions {
 		got := nextState(tr.from, tr.result)

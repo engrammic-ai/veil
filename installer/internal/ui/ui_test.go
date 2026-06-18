@@ -12,19 +12,20 @@ func TestColors(t *testing.T) {
 	if string(PinkDim) == "" {
 		t.Fatal("PinkDim color must not be empty")
 	}
-	if string(PinkBright) == "" {
-		t.Fatal("PinkBright color must not be empty")
-	}
 }
 
 func TestStyles(t *testing.T) {
-	got := TitleStyle.Render("hello")
-	if !strings.Contains(got, "hello") {
-		t.Errorf("TitleStyle.Render should contain the input text")
-	}
-	got = SuccessStyle.Render("ok")
+	got := SuccessStyle.Render("ok")
 	if !strings.Contains(got, "ok") {
 		t.Errorf("SuccessStyle.Render should contain the input text")
+	}
+	got = ErrorStyle.Render("err")
+	if !strings.Contains(got, "err") {
+		t.Errorf("ErrorStyle.Render should contain the input text")
+	}
+	got = MutedStyle.Render("muted")
+	if !strings.Contains(got, "muted") {
+		t.Errorf("MutedStyle.Render should contain the input text")
 	}
 }
 
@@ -37,75 +38,11 @@ func TestRenderBanner(t *testing.T) {
 
 func TestRenderMini(t *testing.T) {
 	out := RenderMini("v0.3.1")
-	if !strings.Contains(out, MiniCat) {
+	if !strings.Contains(out, CatMini) {
 		t.Errorf("RenderMini should contain the mini cat")
 	}
 	if !strings.Contains(out, "v0.3.1") {
 		t.Errorf("RenderMini should contain the version")
-	}
-}
-
-func TestCatFrames(t *testing.T) {
-	if len(CatFrames) == 0 {
-		t.Fatal("CatFrames must not be empty")
-	}
-}
-
-func TestSpinners(t *testing.T) {
-	if len(SpinnerDots.Frames) == 0 {
-		t.Error("SpinnerDots must have frames")
-	}
-	if len(SpinnerBounce.Frames) == 0 {
-		t.Error("SpinnerBounce must have frames")
-	}
-	if len(SpinnerCheck.Frames) == 0 {
-		t.Error("SpinnerCheck must have frames")
-	}
-	if len(SpinnerFail.Frames) == 0 {
-		t.Error("SpinnerFail must have frames")
-	}
-	s := NewSpinner()
-	if s.Spinner.FPS == 0 {
-		t.Error("NewSpinner FPS must not be zero")
-	}
-}
-
-func TestNewProgressBar(t *testing.T) {
-	pb := NewProgressBar()
-	_ = pb // just verify it constructs without panic
-}
-
-func TestProgressWithPulse(t *testing.T) {
-	for _, pct := range []float64{0, 0.5, 1.0} {
-		out := ProgressWithPulse(pct, 0)
-		if out == "" {
-			t.Errorf("ProgressWithPulse(%v) returned empty string", pct)
-		}
-	}
-}
-
-func TestSparkline(t *testing.T) {
-	sl := NewSparkline(8)
-	// Empty view should not panic.
-	out := sl.View()
-	if out == "" {
-		t.Error("Sparkline.View() must not return empty string")
-	}
-
-	for _, v := range []float64{10, 20, 5, 40, 30, 15, 25, 35} {
-		sl.Push(v)
-	}
-	out = sl.View()
-	if out == "" {
-		t.Error("Sparkline.View() after Push must not return empty string")
-	}
-
-	// Should not grow past width.
-	for i := 0; i < 20; i++ {
-		sl.Push(float64(i))
-	}
-	if len(sl.history) > sl.width {
-		t.Errorf("Sparkline history grew past width: %d > %d", len(sl.history), sl.width)
 	}
 }
 
