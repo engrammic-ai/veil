@@ -2,7 +2,19 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-const catBanner = `
+var (
+	Pink       = lipgloss.Color("205")
+	PinkDim    = lipgloss.Color("168")
+	Green      = lipgloss.Color("42")
+	Red        = lipgloss.Color("196")
+	Muted      = lipgloss.Color("240")
+
+	MutedStyle   = lipgloss.NewStyle().Foreground(Muted)
+	SuccessStyle = lipgloss.NewStyle().Foreground(Green)
+	ErrorStyle   = lipgloss.NewStyle().Foreground(Red)
+)
+
+const CatBanner = `
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⡖⠒⠲⠶⢤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⢀⣀⣀⣀⣀⢀⣀⣀⣀⠀⠀⠀⠀⠀⠀⠀⢷⡀⠀⠀⠀⠀⠉⠙⢷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣤⣄⠀
 ⠀⣰⡿⠟⠛⠋⠉⠉⠉⠉⠉⠉⠙⠛⠛⠛⠻⠶⣶⣦⣤⣿⣦⡀⠀⠀⠀⠀⠈⠻⣦⣀⢀⣀⣀⣤⣴⠶⠾⠿⠟⠛⠛⠉⠉⠁⠀⠀⠙⡇
@@ -27,30 +39,23 @@ const catBanner = `
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 `
 
-const catMini = "ฅ^>⩊<^ฅ"
-
-// MiniCat is the inline cat string for use in headers.
-const MiniCat = catMini
+const CatMini = "ฅ^>⩊<^ฅ"
 
 var MascotStyle = lipgloss.NewStyle().Foreground(Pink)
 
-// Animation frames for the mini cat.
-var CatFrames = []string{
-	"ฅ^>⩊<^ฅ", // normal
-	"ฅ^-⩊-^ฅ", // blink
-	"ฅ^>⩊<^ฅ", // normal
-	"ฅ^~⩊~^ฅ", // wiggle
-	"ฅ^.⩊.^ฅ", // think
-	"ฅ^o⩊o^ฅ", // shock
-	"ฅ^-⩊-^ฅ", // sleep
-}
-
-// RenderBanner returns the full braille cat for the installer screen.
+// RenderBanner returns the full cat for installer
 func RenderBanner() string {
-	return MascotStyle.Render(catBanner)
+	return MascotStyle.Render(CatBanner)
 }
 
-// RenderMini returns the inline cat with version for the veil CLI header.
+// RenderMini returns the inline cat for veil CLI header
 func RenderMini(version string) string {
-	return MascotStyle.Render(catMini) + "  veil " + version
+	return MascotStyle.Render(CatMini) + "  veil " + version
+}
+
+// RenderHeader renders installer header with version
+func RenderHeader(version string) string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(Pink).Render("veil installer")
+	ver := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v" + version)
+	return RenderBanner() + "\n" + title + ver + "\n"
 }

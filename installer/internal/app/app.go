@@ -15,6 +15,7 @@ import (
 	"github.com/engrammic-ai/veil-installer/internal/download"
 	"github.com/engrammic-ai/veil-installer/internal/install"
 	"github.com/engrammic-ai/veil-installer/internal/platform"
+	"github.com/engrammic-ai/veil-installer/internal/ui"
 	"github.com/engrammic-ai/veil-installer/internal/verify"
 )
 
@@ -223,6 +224,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
+	// Always show cat banner at top
+	header := ui.RenderBanner() + "\n" +
+		lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+
 	var body string
 
 	switch m.state {
@@ -276,7 +282,7 @@ func (m *Model) View() string {
 		body = m.state.String()
 	}
 
-	return m.style.Render(body)
+	return header + m.style.Render(body)
 }
 
 func (m *Model) runStep(s State) tea.Cmd {
