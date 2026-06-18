@@ -113,6 +113,12 @@ jobs:
           BETTER_SQLITE_VER=$(node -p "require('../../packages/veil-memory/package.json').dependencies['better-sqlite3']")
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64; do
             mkdir -p binaries/$platform/native/sqlite
+            mkdir -p binaries/$platform/node_modules
+
+            # Copy better-sqlite3 JS package (native loader sets BETTER_SQLITE3_BINDING)
+            cp -r ../../node_modules/better-sqlite3 binaries/$platform/node_modules/
+            # Remove the platform-specific prebuild, we'll use our own
+            rm -rf binaries/$platform/node_modules/better-sqlite3/prebuilds
 
             # Map platform to better-sqlite3 naming
             case "$platform" in
@@ -127,7 +133,7 @@ jobs:
             # Download better-sqlite3 prebuild (node-v127 = Node 22+)
             curl -sL "https://github.com/WiseLibs/better-sqlite3/releases/download/v${BETTER_SQLITE_VER}/better-sqlite3-v${BETTER_SQLITE_VER}-node-v127-${bs3_plat}.tar.gz" | tar -xz -C binaries/$platform/native/sqlite/
 
-            # Copy sqlite-vec extension
+            # Copy sqlite-vec extension and JS wrapper
             case "$platform" in
               darwin-arm64) vec_pkg="sqlite-vec-darwin-arm64" ;;
               darwin-x64) vec_pkg="sqlite-vec-darwin-x64" ;;
@@ -136,6 +142,7 @@ jobs:
               windows-x64) vec_pkg="sqlite-vec-windows-x64" ;;
               windows-arm64) vec_pkg="sqlite-vec-windows-x64" ;; # fallback, may not have arm64
             esac
+            cp -r ../../node_modules/sqlite-vec binaries/$platform/node_modules/
             if [ -d "../../node_modules/$vec_pkg" ]; then
               cp ../../node_modules/$vec_pkg/*.so binaries/$platform/native/sqlite/ 2>/dev/null || \
               cp ../../node_modules/$vec_pkg/*.dylib binaries/$platform/native/sqlite/ 2>/dev/null || \
