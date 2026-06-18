@@ -24,6 +24,7 @@ export class EmbedderClient {
 	private autoStart: boolean;
 	private startTimeoutMs: number;
 	private baseUrl: string;
+	private starting: Promise<boolean> | null = null;
 
 	constructor(config: EmbedderClientConfig = {}) {
 		this.port = config.port ?? DEFAULT_PORT;
@@ -48,28 +49,40 @@ export class EmbedderClient {
 			return true;
 		}
 
-		const serverPath = join(import.meta.dirname, "server.js");
-		if (!existsSync(serverPath)) {
-			console.error("veil-embedder server not found at", serverPath);
-			return false;
+		if (this.starting) {
+			return this.starting;
 		}
 
-		const child = spawn("node", [serverPath], {
-			detached: true,
-			stdio: "ignore",
-		});
+		this.starting = (async () => {
+			try {
+				const serverPath = join(import.meta.dirname, "server.js");
+				if (!existsSync(serverPath)) {
+					console.error("veil-embedder server not found at", serverPath);
+					return false;
+				}
 
-		child.unref();
+				const child = spawn("node", [serverPath], {
+					detached: true,
+					stdio: "ignore",
+				});
 
-		const startTime = Date.now();
-		while (Date.now() - startTime < this.startTimeoutMs) {
-			await new Promise((r) => setTimeout(r, 500));
-			if (await this.isRunning()) {
-				return true;
+				child.unref();
+
+				const startTime = Date.now();
+				while (Date.now() - startTime < this.startTimeoutMs) {
+					await new Promise((r) => setTimeout(r, 500));
+					if (await this.isRunning()) {
+						return true;
+					}
+				}
+
+				return false;
+			} finally {
+				this.starting = null;
 			}
-		}
+		})();
 
-		return false;
+		return this.starting;
 	}
 
 	async ensureRunning(): Promise<boolean> {

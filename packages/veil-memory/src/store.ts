@@ -749,7 +749,7 @@ export class MemoryStore {
 	private ftsSearch(query: string, namespace: string, limit: number): string[] {
 		const ftsQuery = query
 			.split(/\s+/)
-			.filter((t) => t.length > 0)
+			.filter((t) => t.length >= 2)
 			.map((t) => `"${t.replace(/"/g, '""')}"`)
 			.join(" OR ");
 

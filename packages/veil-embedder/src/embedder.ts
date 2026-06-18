@@ -59,12 +59,31 @@ export class TransformersEmbedder implements Embedder {
 		await this.ensureLoaded();
 		if (!this.pipe) throw new Error("Pipeline not loaded");
 
-		const results: Float32Array[] = [];
-		for (const text of texts) {
-			const output = await this.pipe(text, { pooling: "mean", normalize: true });
-			results.push(new Float32Array(output.data as ArrayLike<number>));
+		if (texts.length === 1) {
+			const output = await this.pipe(texts[0], { pooling: "mean", normalize: true });
+			return [new Float32Array(output.data as ArrayLike<number>)];
 		}
-		return results;
+
+		try {
+			const output = await this.pipe(texts, { pooling: "mean", normalize: true });
+			if (Array.isArray(output)) {
+				return output.map((o: { data: ArrayLike<number> }) => new Float32Array(o.data));
+			}
+			const data = output.data as ArrayLike<number>;
+			const dim = this.dimensions;
+			const results: Float32Array[] = [];
+			for (let i = 0; i < texts.length; i++) {
+				results.push(new Float32Array(Array.from(data).slice(i * dim, (i + 1) * dim)));
+			}
+			return results;
+		} catch {
+			const results: Float32Array[] = [];
+			for (const text of texts) {
+				const output = await this.pipe(text, { pooling: "mean", normalize: true });
+				results.push(new Float32Array(output.data as ArrayLike<number>));
+			}
+			return results;
+		}
 	}
 
 	async unload(): Promise<void> {
@@ -90,6 +109,7 @@ export class OllamaEmbedder implements Embedder {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ model: "nomic-embed-text", prompt: text }),
+				signal: AbortSignal.timeout(30000),
 			});
 
 			if (!res.ok) {

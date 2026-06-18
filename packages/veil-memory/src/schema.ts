@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 -- FTS5 full-text search (baseline, always available)
+-- Note: No UPDATE trigger needed - memory_events is append-only by design
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   event_id UNINDEXED,
   content,
