@@ -2,6 +2,14 @@
 
 All notable changes to Veil will be documented in this file.
 
+## [0.1.9] - 2026-06-19
+
+### Fixed
+
+- Fixed sqlite-vec extension loading in Bun - vector search now works
+- Fixed cat emoticon not showing on startup - now shows (z.z) initially
+- Removed noisy "sqlite-vec not supported" warning on startup
+
 ## [0.1.8] - 2026-06-19
 
 ### Changed

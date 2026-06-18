@@ -427,6 +427,9 @@ export class InteractiveMode {
 
 		// Subscribe to VeilHarness memory events for cat widget status
 		if (this.session.veilHarness) {
+			// Set initial sleeping state
+			this.footerDataProvider.setExtensionStatus("memory", CAT_EMOTICONS.sleeping);
+
 			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
 				// Update header cat
 				if (this.headerCat) {

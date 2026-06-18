@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -63,6 +65,23 @@ type stepDoneMsg struct {
 	data   any // optional data from the step
 }
 
+// progressMsg updates download progress.
+type progressMsg struct {
+	pct  float64
+	info string
+}
+
+// debugMsg adds a debug log line.
+type debugMsg string
+
+// Helper to add debug log (keeps last 5)
+func (m *Model) addDebug(msg string) {
+	m.debugLogs = append(m.debugLogs, msg)
+	if len(m.debugLogs) > 5 {
+		m.debugLogs = m.debugLogs[1:]
+	}
+}
+
 // EmbedderTier represents a semantic memory model option.
 type EmbedderTier string
 
@@ -83,14 +102,20 @@ type Model struct {
 	embedderTier  EmbedderTier // selected embedder model tier
 	embedderIndex int          // current selection in embedder menu (0-5)
 	spinner       spinner.Model
+	progress      progress.Model
+	miniCat       *ui.MiniCat
+	showBanner    bool // show big banner (only at start)
 	err           error
 
 	// Installation state
-	release     *config.Release
-	installPath string
-	tmpBinPath  string
-	client      *download.Client
-	cache       *download.Cache
+	release      *config.Release
+	installPath  string
+	tmpBinPath   string
+	client       *download.Client
+	cache        *download.Cache
+	downloadPct  float64   // download progress 0.0-1.0
+	downloadInfo string    // download speed/ETA info
+	debugLogs    []string  // recent debug messages (max 5)
 
 	// CLI flags forwarded from cobra.
 	flagVersion      string
@@ -131,6 +156,13 @@ func New(opts Options) *Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	// Progress bar with pink gradient
+	prog := progress.New(
+		progress.WithScaledGradient("#ff69b4", "#ff1493"),
+		progress.WithWidth(40),
+		progress.WithoutPercentage(),
+	)
+
 	// Default install path
 	installPath := opts.Path
 	if installPath == "" {
@@ -150,6 +182,10 @@ func New(opts Options) *Model {
 		embedderTier:     EmbedderBalanced,
 		embedderIndex:    2,
 		spinner:          sp,
+		progress:         prog,
+		miniCat:          ui.NewMiniCat(),
+		showBanner:       true,
+		debugLogs:        make([]string, 0, 5),
 		installPath:      installPath,
 		flagVersion:      opts.Version,
 		flagYes:          opts.Yes,
@@ -164,7 +200,7 @@ func New(opts Options) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.runStep(m.state))
+	return tea.Batch(m.spinner.Tick, m.miniCat.Tick(), m.runStep(m.state))
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -198,6 +234,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case ui.TickMsg:
+		cmd := m.miniCat.Update(msg)
+		return m, cmd
+
+	case progressMsg:
+		m.downloadPct = msg.pct
+		m.downloadInfo = msg.info
+		return m, nil
+
+	case debugMsg:
+		m.addDebug(string(msg))
+		return m, nil
+
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
+
 	case stepDoneMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -213,6 +267,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		// Hide banner after first step completes
+		m.showBanner = false
 		m.state = nextState(m.state, msg.result)
 		if m.state.IsTerminal() {
 			return m, tea.Quit
@@ -224,62 +280,104 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	// Always show cat banner at top
-	header := ui.RenderBanner() + "\n" +
-		lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
-		lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+	var header string
+
+	// Show big banner only at start, then switch to mini cat
+	if m.showBanner && m.state == StateDetectPlatform {
+		header = ui.RenderBanner() + "\n" +
+			lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+	} else {
+		// Use mini cat for progress
+		header = lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
+			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+	}
 
 	var body string
 
+	// Update cat state based on installer state
+	switch {
+	case m.state == StateSuccess:
+		m.miniCat.SetState(ui.CatSuccess)
+	case m.state.IsTerminal() && m.state != StateSuccess:
+		m.miniCat.SetState(ui.CatError)
+	case m.state == StatePromptEmbedder || m.state == StatePromptUpgrade || m.state == StatePromptVersion:
+		m.miniCat.SetState(ui.CatIdle)
+	default:
+		m.miniCat.SetState(ui.CatWorking)
+	}
+
 	switch m.state {
 	case StateDetectPlatform:
-		body = fmt.Sprintf("%s Detecting platform...", m.spinner.View())
+		if m.showBanner {
+			body = fmt.Sprintf("%s Detecting platform...", m.spinner.View())
+		} else {
+			body = m.miniCat.ViewWithStatus("Detecting platform...", m.spinner.View())
+		}
 	case StateCheckExisting:
-		body = fmt.Sprintf("%s Checking for existing installation...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Checking for existing installation...", m.spinner.View())
 	case StatePromptUpgrade:
-		body = "An existing installation was found. Upgrade? [y/N]"
+		body = m.miniCat.View() + "\n\nAn existing installation was found. Upgrade? [y/N]"
 	case StateFetchVersions:
-		body = fmt.Sprintf("%s Fetching available versions...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Fetching available versions...", m.spinner.View())
 	case StatePromptVersion:
-		body = "Select a version to install."
+		body = m.miniCat.View() + "\n\nSelect a version to install."
 	case StateValidateVer:
-		body = fmt.Sprintf("%s Validating version %s...", m.spinner.View(), m.flagVersion)
+		body = m.miniCat.ViewWithStatus(fmt.Sprintf("Validating version %s...", m.flagVersion), m.spinner.View())
 	case StateDownload:
 		version := m.flagVersion
 		if m.release != nil {
 			version = m.release.Version
 		}
-		body = fmt.Sprintf("%s Downloading Veil %s...", m.spinner.View(), version)
+		status := fmt.Sprintf("Downloading Veil %s...", version)
+		body = m.miniCat.ViewWithStatus(status, m.spinner.View())
+		// Show progress bar if we have progress
+		if m.downloadPct > 0 {
+			body += "\n\n" + m.progress.ViewAs(m.downloadPct)
+			if m.downloadInfo != "" {
+				body += "  " + ui.MutedStyle.Render(m.downloadInfo)
+			}
+		}
 	case StateVerifySum:
-		body = fmt.Sprintf("%s Verifying checksum...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Verifying checksum...", m.spinner.View())
 	case StateVerifySig:
-		body = fmt.Sprintf("%s Verifying signature...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Verifying signature...", m.spinner.View())
 	case StateInstall:
-		body = fmt.Sprintf("%s Installing to %s...", m.spinner.View(), m.installPath)
+		body = m.miniCat.ViewWithStatus(fmt.Sprintf("Installing to %s...", m.installPath), m.spinner.View())
 	case StateConfigurePATH:
-		body = fmt.Sprintf("%s Configuring PATH...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Configuring PATH...", m.spinner.View())
 	case StateInstallCompletions:
-		body = fmt.Sprintf("%s Installing shell completions...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Installing shell completions...", m.spinner.View())
 	case StatePromptEmbedder:
-		body = m.renderEmbedderMenu()
+		body = m.miniCat.View() + "\n\n" + m.renderEmbedderMenu()
 	case StateConfigureEmbedder:
-		body = fmt.Sprintf("%s Configuring semantic memory...", m.spinner.View())
+		body = m.miniCat.ViewWithStatus("Configuring semantic memory...", m.spinner.View())
 	case StateSuccess:
 		version := "unknown"
 		if m.release != nil {
 			version = m.release.Version
 		}
-		body = fmt.Sprintf("Veil %s installed successfully to %s\n\nRun 'veil --version' to confirm.", version, m.installPath)
+		body = m.miniCat.View() + "\n\n" +
+			ui.SuccessStyle.Render(fmt.Sprintf("Veil %s installed successfully to %s", version, m.installPath)) +
+			"\n\nRun 'veil --version' to confirm."
 	case StateFailPlatform:
-		body = fmt.Sprintf("Error: unsupported platform.\n%v", m.err)
+		body = m.miniCat.View() + "\n\n" + ui.ErrorStyle.Render(fmt.Sprintf("Error: unsupported platform.\n%v", m.err))
 	case StateFailNetwork:
-		body = fmt.Sprintf("Error: network failure.\n%v", m.err)
+		body = m.miniCat.View() + "\n\n" + ui.ErrorStyle.Render(fmt.Sprintf("Error: network failure.\n%v", m.err))
 	case StateFailVerify:
-		body = fmt.Sprintf("Error: verification failed.\n%v", m.err)
+		body = m.miniCat.View() + "\n\n" + ui.ErrorStyle.Render(fmt.Sprintf("Error: verification failed.\n%v", m.err))
 	case StateFailPermission:
-		body = fmt.Sprintf("Error: permission denied.\n%v", m.err)
+		body = m.miniCat.View() + "\n\n" + ui.ErrorStyle.Render(fmt.Sprintf("Error: permission denied.\n%v", m.err))
 	default:
 		body = m.state.String()
+	}
+
+	// Add debug logs at bottom (dimmed)
+	if len(m.debugLogs) > 0 {
+		body += "\n\n"
+		for _, log := range m.debugLogs {
+			body += ui.MutedStyle.Render("  " + log) + "\n"
+		}
 	}
 
 	return header + m.style.Render(body)
@@ -290,6 +388,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 	case StateDetectPlatform:
 		return func() tea.Msg {
 			m.platform = platform.Detect()
+			m.addDebug(fmt.Sprintf("platform: %s", m.platform))
 			switch m.platform.OS {
 			case "linux", "darwin", "windows":
 				return stepDoneMsg{result: ResultOK}
@@ -303,7 +402,9 @@ func (m *Model) runStep(s State) tea.Cmd {
 
 	case StateCheckExisting:
 		return func() tea.Msg {
+			m.addDebug(fmt.Sprintf("checking %s", m.installPath))
 			if _, err := os.Stat(m.installPath); err == nil {
+				m.addDebug("existing installation found")
 				return stepDoneMsg{result: ResultConflict}
 			}
 			return stepDoneMsg{result: ResultOK}
@@ -318,6 +419,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 
 	case StateFetchVersions:
 		return func() tea.Msg {
+			m.addDebug("initializing download client")
 			cache, err := download.NewCache()
 			if err != nil {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("init cache: %w", err)}
@@ -333,6 +435,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 			}
 			m.client = client
 
+			m.addDebug(fmt.Sprintf("fetching releases (channel: %s)", m.flagChannel))
 			ch := config.Channel(m.flagChannel)
 
 			if m.flagVersion != "" {
@@ -355,6 +458,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 			if err != nil {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch latest: %w", err)}
 			}
+			m.addDebug(fmt.Sprintf("found version %s", rel.Version))
 			return stepDoneMsg{result: ResultOK, data: rel}
 		}
 
@@ -362,32 +466,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
 	case StateDownload:
-		return func() tea.Msg {
-			if m.release == nil {
-				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no release selected")}
-			}
-
-			assetKey := m.platform.AssetKey()
-			downloadURL, ok := m.release.GetAssetURL(assetKey)
-			if !ok {
-				return stepDoneMsg{result: ResultError, err: fmt.Errorf("no binary for platform %s", m.platform)}
-			}
-
-			tmpFile, err := os.CreateTemp("", "veil-download-*.tmp")
-			if err != nil {
-				return stepDoneMsg{result: ResultError, err: fmt.Errorf("create temp: %w", err)}
-			}
-			tmpPath := tmpFile.Name()
-			tmpFile.Close()
-
-			ctx := context.Background()
-			if err := m.client.Download(ctx, downloadURL, tmpPath, nil); err != nil {
-				os.Remove(tmpPath)
-				return stepDoneMsg{result: ResultError, err: fmt.Errorf("download: %w", err)}
-			}
-
-			return stepDoneMsg{result: ResultOK, data: tmpPath}
-		}
+		return m.downloadCmd()
 
 	case StateVerifySum:
 		return func() tea.Msg {
@@ -453,6 +532,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 			}
 			defer os.Remove(m.tmpBinPath)
 
+			m.addDebug(fmt.Sprintf("creating %s", filepath.Dir(m.installPath)))
 			if err := os.MkdirAll(filepath.Dir(m.installPath), 0o755); err != nil {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("create dir: %w", err)}
 			}
@@ -463,10 +543,12 @@ func (m *Model) runStep(s State) tea.Cmd {
 			isArchive := install.IsArchive(downloadURL)
 
 			if isArchive {
+				m.addDebug("extracting archive")
 				if err := install.InstallFromArchive(m.tmpBinPath, m.installPath); err != nil {
 					return stepDoneMsg{result: ResultError, err: fmt.Errorf("install from archive: %w", err)}
 				}
 			} else {
+				m.addDebug("copying binary")
 				binFile, err := os.Open(m.tmpBinPath)
 				if err != nil {
 					return stepDoneMsg{result: ResultError, err: err}
@@ -483,6 +565,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 				_ = os.WriteFile(versionFile, []byte(m.release.Version), 0o644)
 			}
 
+			m.addDebug("install complete")
 			return stepDoneMsg{result: ResultOK}
 		}
 
@@ -583,4 +666,54 @@ func (m *Model) renderEmbedderMenu() string {
 	lines = append(lines, "Use ↑/↓ to select, Enter to confirm.")
 
 	return strings.Join(lines, "\n")
+}
+
+// downloadCmd returns a command that downloads with progress reporting.
+func (m *Model) downloadCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.release == nil {
+			return stepDoneMsg{result: ResultError, err: fmt.Errorf("no release selected")}
+		}
+
+		assetKey := m.platform.AssetKey()
+		downloadURL, ok := m.release.GetAssetURL(assetKey)
+		if !ok {
+			return stepDoneMsg{result: ResultError, err: fmt.Errorf("no binary for platform %s", m.platform)}
+		}
+
+		// Add debug log
+		m.addDebug(fmt.Sprintf("GET %s", downloadURL))
+
+		tmpFile, err := os.CreateTemp("", "veil-download-*.tmp")
+		if err != nil {
+			return stepDoneMsg{result: ResultError, err: fmt.Errorf("create temp: %w", err)}
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+
+		m.addDebug(fmt.Sprintf("saving to %s", tmpPath))
+
+		ctx := context.Background()
+
+		// Progress callback - updates model directly (simpler than channels for now)
+		onProgress := func(p download.Progress) {
+			if p.Total > 0 {
+				m.downloadPct = float64(p.Bytes) / float64(p.Total)
+				speed := float64(p.AvgSpeed) / 1024 / 1024 // MB/s
+				if p.ETA > 0 {
+					m.downloadInfo = fmt.Sprintf("%.1f MB/s, %s remaining", speed, p.ETA.Round(time.Second))
+				} else {
+					m.downloadInfo = fmt.Sprintf("%.1f MB/s", speed)
+				}
+			}
+		}
+
+		if err := m.client.Download(ctx, downloadURL, tmpPath, onProgress); err != nil {
+			os.Remove(tmpPath)
+			return stepDoneMsg{result: ResultError, err: fmt.Errorf("download: %w", err)}
+		}
+
+		m.addDebug("download complete")
+		return stepDoneMsg{result: ResultOK, data: tmpPath}
+	}
 }

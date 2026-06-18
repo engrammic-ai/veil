@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // CompletionPaths maps shell names to their default completion install paths.
@@ -102,9 +103,28 @@ var runCompletion = func(veilBinary, shell string) ([]byte, error) {
 		veilBinary += ".exe"
 	}
 	cmd := exec.Command(veilBinary, "completion", shell) //nolint:gosec
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("veil completion %s: %w", shell, err)
+
+	// Set timeout to avoid hanging
+	done := make(chan error, 1)
+	var out []byte
+	var cmdErr error
+
+	go func() {
+		out, cmdErr = cmd.Output()
+		done <- cmdErr
+	}()
+
+	select {
+	case <-done:
+		if cmdErr != nil {
+			return nil, fmt.Errorf("veil completion %s: %w", shell, cmdErr)
+		}
+		return out, nil
+	case <-timeAfter(5 * time.Second):
+		cmd.Process.Kill()
+		return nil, fmt.Errorf("veil completion %s: timeout after 5s", shell)
 	}
-	return out, nil
 }
+
+// timeAfter wraps time.After for testability
+var timeAfter = time.After

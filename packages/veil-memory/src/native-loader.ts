@@ -9,10 +9,28 @@
 
 import type BetterSqlite3 from "better-sqlite3";
 import { createRequire } from "module";
+import { arch, platform } from "process";
 
 // Detect if running in Bun
 function isBun(): boolean {
 	return typeof (globalThis as any).Bun !== "undefined";
+}
+
+// Get the sqlite-vec extension path for the current platform
+function getSqliteVecPath(): string | null {
+	const os = platform === "win32" ? "windows" : platform;
+	const suffix = platform === "win32" ? "dll" : platform === "darwin" ? "dylib" : "so";
+	const packageName = `sqlite-vec-${os}-${arch}`;
+	const fileName = `vec0.${suffix}`;
+
+	// Try to find the extension in node_modules
+	const nodeRequire = createRequire(import.meta.url);
+	try {
+		return nodeRequire.resolve(`${packageName}/${fileName}`);
+	} catch {
+		// Package not installed
+		return null;
+	}
 }
 
 let databaseCache: typeof BetterSqlite3 | null = null;
@@ -61,13 +79,19 @@ export function loadBetterSqlite3(): typeof BetterSqlite3 {
  * Load sqlite-vec extension into a database.
  */
 export function loadSqliteVec(db: BetterSqlite3.Database): void {
-	if (isBun()) {
-		// In Bun, sqlite-vec needs to be loaded differently
-		// For now, skip - we'll add support when needed
-		console.warn("sqlite-vec not yet supported in Bun runtime");
+	const extPath = getSqliteVecPath();
+	if (!extPath) {
+		// Extension not installed - this is fine, vector search just won't be available
 		return;
 	}
 
+	if (isBun()) {
+		// In Bun, use loadExtension directly with the path
+		(db as any).loadExtension(extPath);
+		return;
+	}
+
+	// In Node.js, use the sqlite-vec package's load function
 	const nodeRequire = createRequire(import.meta.url);
 	const sqliteVec = nodeRequire("sqlite-vec") as { load: (db: BetterSqlite3.Database) => void };
 	sqliteVec.load(db);

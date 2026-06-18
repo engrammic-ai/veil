@@ -1,6 +1,6 @@
 {
 	"name": "@engrammic/veil",
-	"version": "0.1.8",
+	"version": "0.1.9",
 	"description": "AI coding agent with dynamic context management - a Pi fork with episodic memory",
 	"type": "module",
 	"piConfig": {
