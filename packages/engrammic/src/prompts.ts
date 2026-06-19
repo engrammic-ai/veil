@@ -6,6 +6,12 @@ You have a managed context window. Items appear as stubs: \`[EPISODE:id:summary]
 
 **The \`<veil-context>\` block** shown each turn is your current working set. Scan it before recalling more; what you need may already be there.
 
+### Reading tool results
+- \`items: [...]\` = array of memories. Non-empty means you found something.
+- \`message\` = human-readable summary of what happened.
+- \`formatted\` = pre-rendered list for display.
+- Empty array = nothing found for that query; try different tags.
+
 ### Core loop
 
 1. **Before diving in:** Glance at \`<veil-context>\`. If gaps exist, \`recall()\` with 1-3 semantic tags (what it's *about*: "user-constraints", "auth-flow", "error-handling").
@@ -21,7 +27,7 @@ Pin sparingly — only user preferences, hard constraints, or decisions that wou
 \`remember()\` your interpretations: implications, connections, non-obvious conclusions. Raw outputs are auto-captured.
 
 ### Cross-session
-Use \`history()\` when resuming work or referencing past sessions.
+Use \`history()\` when resuming work or referencing past sessions. Items from history can be \`promote()\`d into your active context.
 
 ### Anticipated items
 Items may auto-load based on the user's message. Treat them as suggestions — demote if irrelevant.

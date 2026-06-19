@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 // Import from veil-memory package
-import { type ConflictPair, type CurrentBelief, MemoryStore, type MemoryStub, type StoreConfig } from "@veil/memory";
+import { type ConflictPair, type CurrentBelief, MemoryStore, type StoreConfig } from "@veil/memory";
 import type { ContextItem } from "../types.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
 
@@ -82,47 +82,12 @@ export class VeilMemoryColdStore implements ColdStore {
 	}
 
 	async fetch(pointer: string): Promise<ContextItem | null> {
-		const results = await this.store.recall("", {
-			namespace: this.namespace,
-			limit: 100,
-			includeCold: true,
-		});
-
-		// Find by event ID
-		const found = results.find((r) => {
-			if ("eventId" in r) return r.eventId === pointer;
-			if ("id" in r) return r.id === pointer;
-			return false;
-		});
-
-		if (!found) return null;
-
-		// Convert back to ContextItem
-		if ("eventId" in found) {
-			return this.beliefToItem(found as CurrentBelief, pointer);
-		} else {
-			// It's a stub, need to hydrate it
-			const stub = found as MemoryStub;
-			return {
-				id: stub.id,
-				content: stub.summary,
-				contentHash: this.hash(stub.summary),
-				createdAt: Date.now(),
-				lastAccess: Date.now(),
-				accessCount: 1,
-				usedCount: 0,
-				ignoredCount: 0,
-				decayScore: stub.retrievability,
-				cognitiveWeight: 0,
-				stability: 0.5,
-				difficulty: 0.5,
-				type: this.reverseMapType(stub.memoryType),
-				tags: [],
-				pinned: false,
-				kgPointer: pointer,
-				source: "auto",
-			};
+		// Direct lookup by event ID
+		const belief = this.store.getById(pointer);
+		if (belief) {
+			return this.beliefToItem(belief, pointer);
 		}
+		return null;
 	}
 
 	async delete(pointer: string): Promise<void> {
@@ -130,17 +95,7 @@ export class VeilMemoryColdStore implements ColdStore {
 	}
 
 	async exists(pointer: string): Promise<boolean> {
-		const results = await this.store.recall("", {
-			namespace: this.namespace,
-			limit: 100,
-			includeCold: true,
-		});
-
-		return results.some((r) => {
-			if ("eventId" in r) return r.eventId === pointer;
-			if ("id" in r) return r.id === pointer;
-			return false;
-		});
+		return this.store.getById(pointer) !== null;
 	}
 
 	async count(): Promise<number> {

@@ -433,6 +433,58 @@ export class MemoryStore {
 		});
 	}
 
+	getById(eventId: string): CurrentBelief | null {
+		const row = this.db
+			.prepare(`
+        SELECT cb.*, me.tags FROM current_beliefs cb
+        JOIN memory_events me ON cb.event_id = me.event_id
+        WHERE cb.event_id = ?
+      `)
+			.get(eventId) as
+			| {
+					event_id: string;
+					namespace: string;
+					content: string;
+					memory_type: string;
+					subject: string | null;
+					subject_hash: string | null;
+					confidence: number;
+					valid_from: number;
+					recorded_at: number;
+					difficulty: number;
+					stability: number;
+					retrievability: number;
+					last_recall: number | null;
+					recall_count: number;
+					has_conflicts: number;
+					conflict_event_ids: string | null;
+					tags: string;
+			  }
+			| undefined;
+
+		if (!row) return null;
+
+		return {
+			eventId: row.event_id,
+			namespace: row.namespace,
+			content: row.content,
+			memoryType: row.memory_type as MemoryType,
+			subject: row.subject ?? undefined,
+			subjectHash: row.subject_hash ?? undefined,
+			confidence: row.confidence,
+			validFrom: row.valid_from,
+			recordedAt: row.recorded_at,
+			difficulty: row.difficulty,
+			stability: row.stability,
+			retrievability: row.retrievability,
+			lastRecall: row.last_recall ?? undefined,
+			recallCount: row.recall_count,
+			hasConflicts: row.has_conflicts === 1,
+			conflictEventIds: row.conflict_event_ids ? JSON.parse(row.conflict_event_ids) : undefined,
+			tags: JSON.parse(row.tags),
+		};
+	}
+
 	forget(eventId: string, reason: string): void {
 		const now = Date.now();
 

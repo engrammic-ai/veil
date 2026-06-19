@@ -145,7 +145,7 @@ export async function executeVeilTool(
 		case "veil_recall":
 			return executeRecall(params as { tags: string[]; limit?: number }, ctx);
 		case "veil_promote":
-			return executePromote(params as { id: string }, ctx);
+			return await executePromote(params as { id: string }, ctx);
 		case "veil_demote":
 			return executeDemote(params as { id: string }, ctx);
 		case "veil_remember":
@@ -157,7 +157,7 @@ export async function executeVeilTool(
 		case "veil_forget":
 			return await executeForget(params as { id: string }, ctx);
 		case "veil_hydrate":
-			return executeHydrate(params as { stub: string }, ctx);
+			return await executeHydrate(params as { stub: string }, ctx);
 		case "veil_history":
 			return await executeVeilHistory(params as { query: string; days?: number }, ctx);
 		default:
@@ -169,13 +169,22 @@ async function executeRecall(params: { tags: string[]; limit?: number }, ctx: To
 	const items = await ctx.manager.recall(params.tags, params.limit ?? 10);
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
 	ctx.onRecall?.(items.map((i) => i.id));
-	return { success: true, data: { items: result } };
+	const message = result.length > 0 ? `Found ${result.length} matching items.` : "No matching items found.";
+	return { success: true, data: { message, items: result } };
 }
 
-function executePromote(params: { id: string }, ctx: ToolContext): ToolResult {
-	const items = ctx.manager.load([params.id]);
+async function executePromote(params: { id: string }, ctx: ToolContext): Promise<ToolResult> {
+	let items = ctx.manager.load([params.id]);
 	if (items.length === 0) {
-		return { success: false, error: `Item not found: ${params.id}` };
+		// Try fetching from cold storage (this also puts it in cache)
+		const coldItem = await ctx.manager.fetchFromCold(params.id);
+		if (coldItem) {
+			// Now load it into the active set
+			items = ctx.manager.load([coldItem.id]);
+		}
+		if (items.length === 0) {
+			return { success: false, error: `Item not found: ${params.id}` };
+		}
 	}
 	ctx.manager.setRecallCooldown(params.id);
 	const stub = formatStub(items[0]);
@@ -224,14 +233,24 @@ async function executeForget(params: { id: string }, ctx: ToolContext): Promise<
 	return { success: true };
 }
 
-function executeHydrate(params: { stub: string }, ctx: ToolContext): ToolResult {
+async function executeHydrate(params: { stub: string }, ctx: ToolContext): Promise<ToolResult> {
 	const parsed = parseStub(params.stub);
 	if (!parsed) {
+		// Try treating the stub as a raw ID
+		const coldItem = await ctx.manager.fetchFromCold(params.stub);
+		if (coldItem) {
+			return { success: true, data: { content: coldItem.content } };
+		}
 		return { success: false, error: `Invalid stub format: ${params.stub}` };
 	}
 
 	const result = hydrateStub(parsed, ctx.manager.getCache());
 	if (result.error) {
+		// Try cold storage fallback
+		const coldItem = await ctx.manager.fetchFromCold(parsed.id);
+		if (coldItem) {
+			return { success: true, data: { content: coldItem.content } };
+		}
 		return { success: false, error: result.error };
 	}
 
@@ -248,6 +267,7 @@ async function executeVeilHistory(params: { query: string; days?: number }, ctx:
 	}
 
 	const formatted = results.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`).join("\n");
+	const message = `Found ${results.length} memories from past sessions.`;
 
-	return { success: true, data: { items: results, formatted } };
+	return { success: true, data: { message, items: results, formatted } };
 }
