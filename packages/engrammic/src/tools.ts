@@ -165,8 +165,8 @@ export async function executeVeilTool(
 	}
 }
 
-function executeRecall(params: { tags: string[]; limit?: number }, ctx: ToolContext): ToolResult {
-	const items = ctx.manager.recall(params.tags, params.limit ?? 10);
+async function executeRecall(params: { tags: string[]; limit?: number }, ctx: ToolContext): Promise<ToolResult> {
+	const items = await ctx.manager.recall(params.tags, params.limit ?? 10);
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
 	ctx.onRecall?.(items.map((i) => i.id));
 	return { success: true, data: { items: result } };

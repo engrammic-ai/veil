@@ -94,7 +94,7 @@ describe("VeilHarness", () => {
 		expect(item.id).toBeTruthy();
 		expect(item.type).toBe("fact");
 
-		const recalled = harness.recall(["auth"], 10);
+		const recalled = await harness.recall(["auth"], 10);
 		expect(recalled.length).toBe(1);
 		expect(recalled[0].content).toBe("The API uses OAuth2 for authentication");
 
@@ -252,7 +252,7 @@ describe("autoCapture integration", () => {
 		});
 
 		// Content should be stored in warm cache (extracted format, not raw)
-		const recalled = harness.recall(["file", "read"], 10);
+		const recalled = await harness.recall(["file", "read"], 10);
 		expect(recalled.length).toBe(1);
 		expect(recalled[0].content).toContain("[Read] /tmp/test.ts");
 		expect(recalled[0].content).toContain("export function greet");

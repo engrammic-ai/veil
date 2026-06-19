@@ -129,12 +129,25 @@ export class ContextManager {
 
 	/**
 	 * Retrieve relevant items by tags.
+	 * Searches warm cache first, falls back to cold storage if empty.
 	 */
-	recall(tags: string[], limit: number = 10): ContextItem[] {
-		const items = this.cache.getByTags(tags, limit * 2); // fetch more, then rank
-		const taskCtx: TaskContext = { tags };
-		const ranked = rankItems(items, taskCtx, this.config);
-		return ranked.slice(0, limit).map((r) => r.item);
+	async recall(tags: string[], limit: number = 10): Promise<ContextItem[]> {
+		// First check warm cache
+		const warmItems = this.cache.getByTags(tags, limit * 2);
+		if (warmItems.length > 0) {
+			const taskCtx: TaskContext = { tags };
+			const ranked = rankItems(warmItems, taskCtx, this.config);
+			return ranked.slice(0, limit).map((r) => r.item);
+		}
+
+		// Fall back to cold storage
+		if (this.cold?.query) {
+			const query = tags.join(" ");
+			const coldItems = await this.cold.query(query, tags, limit);
+			return coldItems;
+		}
+
+		return [];
 	}
 
 	/**

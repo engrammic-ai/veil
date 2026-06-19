@@ -882,9 +882,9 @@ export class VeilHarness {
 	/**
 	 * Recall items by tags.
 	 */
-	recall(tags: string[], limit = 10) {
+	async recall(tags: string[], limit = 10) {
 		this.emitMemoryEvent("watching", `searching ${tags.join(", ")}`);
-		const result = this.manager.recall(tags, limit);
+		const result = await this.manager.recall(tags, limit);
 		this.emitMemoryEvent("recalled", `found ${result.length} items`);
 		return result;
 	}

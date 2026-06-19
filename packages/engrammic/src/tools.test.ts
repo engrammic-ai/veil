@@ -126,7 +126,7 @@ describe("executeVeilTool", () => {
 		const result = await executeVeilTool("veil_forget", { id: item.id }, { manager });
 		expect(result.success).toBe(true);
 
-		const recalled = manager.recall([], 10);
+		const recalled = await manager.recall([], 10);
 		expect(recalled).toHaveLength(0);
 	});
 
