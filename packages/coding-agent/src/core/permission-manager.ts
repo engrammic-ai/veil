@@ -19,11 +19,147 @@ export type { PermissionMode };
 
 const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"];
 
-// Tools that modify state
-const WRITE_TOOLS = new Set(["bash", "write", "edit", "notebook_edit", "mcp_tool"]);
+// Tools that always modify state (bash handled separately)
+const WRITE_TOOLS = new Set(["write", "edit", "notebook_edit", "mcp_tool"]);
 
 // Tools that only read
 const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "list_directory", "search", "web_search", "web_fetch"]);
+
+// Bash commands that are read-only (prefixes)
+const READ_ONLY_BASH_PREFIXES = [
+	"ls",
+	"cat",
+	"head",
+	"tail",
+	"less",
+	"more",
+	"grep",
+	"egrep",
+	"fgrep",
+	"rg",
+	"find",
+	"locate",
+	"which",
+	"whereis",
+	"type",
+	"file",
+	"stat",
+	"wc",
+	"diff",
+	"echo",
+	"printf",
+	"pwd",
+	"date",
+	"whoami",
+	"id",
+	"hostname",
+	"uname",
+	"env",
+	"printenv",
+	"set",
+	"export",
+	"ps",
+	"top",
+	"htop",
+	"df",
+	"du",
+	"free",
+	"git status",
+	"git log",
+	"git diff",
+	"git show",
+	"git branch",
+	"git remote",
+	"git rev-parse",
+	"git describe",
+	"git ls-files",
+	"git ls-tree",
+	"npm list",
+	"npm ls",
+	"npm view",
+	"npm info",
+	"npm outdated",
+	"npm audit",
+	"node -v",
+	"node --version",
+	"npm -v",
+	"npm --version",
+	"cargo check",
+	"cargo test",
+	"cargo build",
+	"cargo clippy",
+	"python --version",
+	"pip list",
+	"pip show",
+	"go version",
+	"go list",
+	"go mod graph",
+	"tree",
+	"exa",
+	"eza",
+	"bat",
+	"fd",
+	"ag",
+	"ack",
+	"jq",
+	"yq",
+	"xq",
+	"curl -I",
+	"curl --head",
+];
+
+// Bash commands that are destructive (block in plan mode)
+const DESTRUCTIVE_BASH_PATTERNS = [
+	/\brm\s/,
+	/\brmdir\s/,
+	/\bunlink\s/,
+	/\bmv\s/,
+	/\bcp\s.*-[rf]/,
+	/\bchmod\s/,
+	/\bchown\s/,
+	/\bchgrp\s/,
+	/\bmkdir\s/,
+	/\btouch\s/,
+	/\bgit\s+(push|commit|merge|rebase|reset|checkout\s+(-|--)|branch\s+-[dD]|stash\s+(drop|clear)|clean)/,
+	/\bnpm\s+(install|uninstall|update|publish|link|run\s+build)/,
+	/\byarn\s+(add|remove|install)/,
+	/\bpnpm\s+(add|remove|install)/,
+	/\bsudo\s/,
+	/\bkill\s/,
+	/\bpkill\s/,
+	/\bkillall\s/,
+	/>\s*[^&]/, // redirect output (but not >>)
+	/\|\s*tee\s/,
+	/\bdd\s/,
+	/\btruncate\s/,
+	/\bshred\s/,
+];
+
+function isBashReadOnly(command: string): boolean {
+	const trimmed = command.trim();
+
+	// Check if starts with a read-only command
+	for (const prefix of READ_ONLY_BASH_PREFIXES) {
+		if (trimmed === prefix || trimmed.startsWith(`${prefix} `) || trimmed.startsWith(`${prefix}\t`)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function isBashDestructive(command: string): boolean {
+	const trimmed = command.trim();
+
+	// Check against destructive patterns
+	for (const pattern of DESTRUCTIVE_BASH_PATTERNS) {
+		if (pattern.test(trimmed)) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 // Default protected paths that always prompt regardless of mode
 const DEFAULT_PROTECTED_PATHS = [
@@ -240,7 +376,15 @@ export class PermissionManager {
 				return toolName.startsWith("mcp__");
 
 			case "default":
-				return WRITE_TOOLS.has(toolName) || toolName.startsWith("mcp__");
+				// Prompt for write tools and MCP
+				if (WRITE_TOOLS.has(toolName) || toolName.startsWith("mcp__")) {
+					return true;
+				}
+				// For bash, only prompt for non-read-only commands
+				if (toolName === "bash" && args?.command) {
+					return !isBashReadOnly(String(args.command));
+				}
+				return false;
 
 			case "dontAsk":
 				// Auto-deny (handled in shouldBlock)
@@ -314,16 +458,37 @@ export class PermissionManager {
 	 * Check if tool should be blocked entirely (plan/dontAsk modes).
 	 */
 	shouldBlock(ctx: ToolCallContext): { block: boolean; reason?: string } {
-		const { toolName } = ctx;
+		const { toolName, args } = ctx;
 
-		if (this.mode === "plan" && WRITE_TOOLS.has(toolName)) {
-			return { block: true, reason: `Tool "${toolName}" blocked: plan mode is read-only` };
+		if (this.mode === "plan") {
+			// Block write tools
+			if (WRITE_TOOLS.has(toolName)) {
+				return { block: true, reason: `Tool "${toolName}" blocked: plan mode is read-only` };
+			}
+
+			// For bash, check if command is destructive
+			if (toolName === "bash" && args?.command) {
+				const command = String(args.command);
+				if (isBashDestructive(command)) {
+					return { block: true, reason: `Bash command blocked: plan mode is read-only` };
+				}
+			}
 		}
 
-		if (this.mode === "dontAsk" && WRITE_TOOLS.has(toolName)) {
-			// In dontAsk mode, dangerous tools are auto-denied unless explicitly allowed
-			if (!this.sessionAllowed.has(toolName) && !this.config.allowList?.includes(toolName)) {
-				return { block: true, reason: `Tool "${toolName}" auto-denied: dontAsk mode` };
+		if (this.mode === "dontAsk") {
+			// Block write tools unless allowed
+			if (WRITE_TOOLS.has(toolName)) {
+				if (!this.sessionAllowed.has(toolName) && !this.config.allowList?.includes(toolName)) {
+					return { block: true, reason: `Tool "${toolName}" auto-denied: dontAsk mode` };
+				}
+			}
+
+			// For bash, block destructive commands unless allowed
+			if (toolName === "bash" && args?.command) {
+				const command = String(args.command);
+				if (isBashDestructive(command) && !this.sessionAllowed.has("bash")) {
+					return { block: true, reason: `Bash command auto-denied: dontAsk mode` };
+				}
 			}
 		}
 
