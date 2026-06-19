@@ -1186,3 +1186,116 @@ describe("token budget tracking", () => {
 		await harness.close();
 	});
 });
+
+describe("VeilHarness.search", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-search-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("returns hot items first with score 1.0", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const item = harness.remember("OAuth2 authentication flow", "fact", ["auth"]);
+		harness.load([item.id]);
+
+		const results = harness.search("OAuth2");
+		expect(results.length).toBeGreaterThan(0);
+		expect(results[0].tier).toBe("hot");
+		expect(results[0].score).toBe(1.0);
+		expect(results[0].id).toBe(item.id);
+
+		await harness.close();
+	});
+
+	test("returns warm items with score 0.8 when not in hot tier", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		harness.remember("database migration guide", "procedural", ["db"]);
+		// Do NOT load into hot tier
+
+		const results = harness.search("migration");
+		expect(results.length).toBeGreaterThan(0);
+		expect(results[0].tier).toBe("warm");
+		expect(results[0].score).toBe(0.8);
+
+		await harness.close();
+	});
+
+	test("deduplicates: hot item wins over warm copy", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const item = harness.remember("dedup check content", "fact", ["dedup"]);
+		harness.load([item.id]); // now in hot AND warm
+
+		const results = harness.search("dedup check");
+		const ids = results.map((r) => r.id);
+		// Should appear exactly once
+		expect(ids.filter((id) => id === item.id)).toHaveLength(1);
+		// And that one occurrence must be hot
+		const found = results.find((r) => r.id === item.id);
+		expect(found?.tier).toBe("hot");
+
+		await harness.close();
+	});
+
+	test("respects limit parameter", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		for (let i = 0; i < 8; i++) {
+			harness.remember(`searchable content item number ${i}`, "fact", []);
+		}
+
+		const results = harness.search("searchable content", 3);
+		expect(results.length).toBeLessThanOrEqual(3);
+
+		await harness.close();
+	});
+
+	test("returns empty array when nothing matches", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		harness.remember("completely unrelated", "fact", []);
+
+		const results = harness.search("zzznomatch");
+		expect(results).toHaveLength(0);
+
+		await harness.close();
+	});
+
+	test("summary is first 40 chars of content", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const longContent = "A".repeat(100) + " target " + "B".repeat(100);
+		harness.remember(longContent, "fact", ["target"]);
+
+		const results = harness.search("target");
+		expect(results.length).toBeGreaterThan(0);
+		expect(results[0].summary).toHaveLength(40);
+
+		await harness.close();
+	});
+});

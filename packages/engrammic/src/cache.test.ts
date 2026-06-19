@@ -572,3 +572,81 @@ describe("ContextCache memory_links", () => {
 		expect(cache.getLinks(item.id)).toHaveLength(1);
 	});
 });
+
+describe("ContextCache searchItems", () => {
+	let testDir: string;
+	let cache: ContextCache;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-cache-search-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		cache = new ContextCache(join(testDir, "test.db"));
+	});
+
+	afterEach(() => {
+		cache.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("finds items by content substring", () => {
+		const item1 = createItem("The quick brown fox", "fact", []);
+		const item2 = createItem("Lazy dog sleeps here", "fact", []);
+		cache.put(item1);
+		cache.put(item2);
+
+		const results = cache.searchItems("quick");
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe(item1.id);
+	});
+
+	test("finds items by tag substring", () => {
+		const item1 = createItem("some content", "fact", ["auth", "oauth"]);
+		const item2 = createItem("other content", "fact", ["shell"]);
+		cache.put(item1);
+		cache.put(item2);
+
+		const results = cache.searchItems("oauth");
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe(item1.id);
+	});
+
+	test("respects the limit parameter", () => {
+		for (let i = 0; i < 5; i++) {
+			cache.put(createItem(`matching content item ${i}`, "fact", []));
+		}
+
+		const results = cache.searchItems("matching content", 3);
+		expect(results).toHaveLength(3);
+	});
+
+	test("escapes LIKE wildcards in query", () => {
+		const item1 = createItem("100% complete", "fact", []);
+		const item2 = createItem("nothing relevant", "fact", []);
+		cache.put(item1);
+		cache.put(item2);
+
+		// '%' is a LIKE wildcard — without escaping it would match everything
+		const results = cache.searchItems("100%");
+		expect(results).toHaveLength(1);
+		expect(results[0].id).toBe(item1.id);
+	});
+
+	test("returns empty array when nothing matches", () => {
+		cache.put(createItem("hello world", "fact", []));
+		const results = cache.searchItems("zzznomatch");
+		expect(results).toHaveLength(0);
+	});
+
+	test("orders results by last_access descending", () => {
+		const item1 = createItem("shared term old", "fact", []);
+		item1.lastAccess = 1000;
+		const item2 = createItem("shared term new", "fact", []);
+		item2.lastAccess = 2000;
+		cache.put(item1);
+		cache.put(item2);
+
+		const results = cache.searchItems("shared term");
+		expect(results[0].id).toBe(item2.id);
+		expect(results[1].id).toBe(item1.id);
+	});
+});

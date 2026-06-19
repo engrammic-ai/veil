@@ -45,6 +45,7 @@ import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } f
 import { handleTrigger, isDangerousCommand, type TriggerResult } from "./triggers.ts";
 import type {
 	CaptureConfig,
+	ContextItem,
 	ContextManagerConfig,
 	ContextManifest,
 	EvictionCandidate,
@@ -53,6 +54,16 @@ import type {
 } from "./types.ts";
 import { DEFAULT_CAPTURE_CONFIG } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
+
+export interface SearchResult {
+	id: string;
+	tier: "hot" | "warm" | "cold";
+	type: ContextItem["type"];
+	summary: string; // first 40 chars of content
+	tokens: number;
+	score: number; // 1.0 for hot, 0.8 for warm
+	tags: string[];
+}
 
 export interface LearningConfig {
 	/** How often to run pattern learning (ms). Default: 1 hour. */
@@ -888,6 +899,50 @@ export class VeilHarness {
 		const result = await this.manager.recall(tags, limit);
 		this.emitMemoryEvent("recalled", `found ${result.length} items`);
 		return result;
+	}
+
+	/**
+	 * Search across hot (in-memory) and warm (SQLite) context tiers.
+	 * Hot items score 1.0, warm items score 0.8. Hot items win on dedup.
+	 */
+	search(query: string, limit: number = 10): SearchResult[] {
+		const lowerQuery = query.toLowerCase();
+
+		// 1. Filter hot items (in-memory) - score 1.0
+		const window = this.manager.getWindow();
+		const hotResults: SearchResult[] = window.items
+			.filter(
+				(item) =>
+					item.content.toLowerCase().includes(lowerQuery) ||
+					item.tags.some((tag) => tag.toLowerCase().includes(lowerQuery)),
+			)
+			.map((item) => ({
+				id: item.id,
+				tier: "hot" as const,
+				type: item.type,
+				summary: item.content.slice(0, 40),
+				tokens: estimateTokens(item.content),
+				score: 1.0,
+				tags: item.tags,
+			}));
+
+		// 2. Search warm via cache.searchItems() - score 0.8
+		const hotIds = new Set(hotResults.map((r) => r.id));
+		const warmItems = this.manager.getCache().searchItems(query, limit);
+		const warmResults: SearchResult[] = warmItems
+			.filter((item) => !hotIds.has(item.id))
+			.map((item) => ({
+				id: item.id,
+				tier: "warm" as const,
+				type: item.type,
+				summary: item.content.slice(0, 40),
+				tokens: estimateTokens(item.content),
+				score: 0.8,
+				tags: item.tags,
+			}));
+
+		// 3. Merge (hot first), return up to limit
+		return [...hotResults, ...warmResults].slice(0, limit);
 	}
 
 	/**

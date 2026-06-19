@@ -69,6 +69,9 @@ export class ContextCache {
 	private stmtClearEvictionForHash: BetterSqlite3.Statement;
 	private stmtPruneEvictionLog: BetterSqlite3.Statement;
 
+	// Search statement
+	private stmtSearch: BetterSqlite3.Statement;
+
 	// Feedback tracking statements
 	private stmtIncrementUsedCount: BetterSqlite3.Statement;
 	private stmtIncrementIgnoredCount: BetterSqlite3.Statement;
@@ -232,6 +235,10 @@ export class ContextCache {
 		this.stmtClearEvictionForHash = this.db.prepare("DELETE FROM eviction_log WHERE content_hash = ?");
 
 		this.stmtPruneEvictionLog = this.db.prepare("DELETE FROM eviction_log WHERE evicted_at < ?");
+
+		this.stmtSearch = this.db.prepare(
+			"SELECT * FROM items WHERE content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' ORDER BY last_access DESC LIMIT ?",
+		);
 
 		this.stmtIncrementUsedCount = this.db.prepare("UPDATE items SET used_count = used_count + 1 WHERE id = ?");
 
@@ -579,6 +586,15 @@ export class ContextCache {
 			.prepare(`SELECT * FROM items WHERE ${placeholders} ORDER BY last_access DESC LIMIT ?`)
 			.all(...params, limit) as any[];
 
+		return rows.map((row) => this.rowToItem(row));
+	}
+
+	searchItems(query: string, limit: number = 10): ContextItem[] {
+		// Escape LIKE special characters (%, _) to prevent wildcard injection.
+		// SQLite ESCAPE clause uses '\' as the escape character.
+		const escaped = query.replace(/[%_\\]/g, "\\$&");
+		const pattern = `%${escaped}%`;
+		const rows = this.stmtSearch.all(pattern, pattern, limit) as any[];
 		return rows.map((row) => this.rowToItem(row));
 	}
 
