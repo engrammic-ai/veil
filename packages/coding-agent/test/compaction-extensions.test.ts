@@ -104,7 +104,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		const runtime = createExtensionRuntime();
 		const resourceLoader = {
 			...createTestResourceLoader(),
-			getExtensions: () => ({ extensions, errors: [], runtime }),
+			getExtensions: () => ({ extensions, errors: [], warnings: [], runtime }),
 		};
 
 		session = new AgentSession({

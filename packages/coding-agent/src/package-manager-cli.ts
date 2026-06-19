@@ -478,6 +478,9 @@ async function createCommandSettingsManager(options: {
 	for (const error of extensionsResult?.errors ?? []) {
 		projectTrustWarnings.push(`Failed to load extension "${error.path}": ${error.error}`);
 	}
+	for (const warning of extensionsResult?.warnings ?? []) {
+		projectTrustWarnings.push(warning.message);
+	}
 
 	const projectTrusted = await resolveProjectTrusted({
 		cwd: options.cwd,
@@ -492,6 +495,7 @@ async function createCommandSettingsManager(options: {
 			hasUI: appMode === "interactive",
 		}),
 		onExtensionError: (message) => projectTrustWarnings.push(message),
+		onExtensionWarning: (message) => projectTrustWarnings.push(message),
 	});
 	settingsManager.setProjectTrusted(projectTrusted);
 	return { settingsManager, projectTrustWarnings };

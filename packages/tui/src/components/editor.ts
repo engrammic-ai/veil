@@ -568,9 +568,8 @@ export class Editor implements Component, Focusable {
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Add prompt prefix on first content line (if not scrolled)
-			const linePrefix = !promptUsed && this.promptPrefix && this.scrollOffset === 0
-				? this.promptPrefix
-				: " ".repeat(prefixWidth);
+			const linePrefix =
+				!promptUsed && this.promptPrefix && this.scrollOffset === 0 ? this.promptPrefix : " ".repeat(prefixWidth);
 			promptUsed = true;
 
 			// Render the line (no side borders, just horizontal lines above and below)

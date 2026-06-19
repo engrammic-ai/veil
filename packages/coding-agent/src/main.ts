@@ -648,6 +648,7 @@ export async function main(args: string[], options?: MainOptions) {
 										hasUI: isInitialRuntime && trustPromptMode === "interactive",
 									}),
 								onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
+								onExtensionWarning: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
 							});
 							projectTrustByCwd.set(cwd, trusted);
 							return trusted;
@@ -670,13 +671,18 @@ export async function main(args: string[], options?: MainOptions) {
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
+		const extensionsResult = resourceLoader.getExtensions();
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...projectTrustDiagnostics,
 			...services.diagnostics,
 			...collectSettingsDiagnostics(settingsManager, "runtime creation"),
-			...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
+			...extensionsResult.errors.map(({ path, error }) => ({
 				type: "error" as const,
 				message: `Failed to load extension "${path}": ${error}`,
+			})),
+			...extensionsResult.warnings.map(({ message }) => ({
+				type: "warning" as const,
+				message,
 			})),
 		];
 

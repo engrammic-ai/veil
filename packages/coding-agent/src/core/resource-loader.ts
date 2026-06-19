@@ -239,7 +239,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.systemPromptOverride = options.systemPromptOverride;
 		this.appendSystemPromptOverride = options.appendSystemPromptOverride;
 
-		this.extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
+		this.extensionsResult = { extensions: [], errors: [], warnings: [], runtime: createExtensionRuntime() };
 		this.skills = [];
 		this.skillDiagnostics = [];
 		this.prompts = [];
@@ -495,8 +495,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
-		extensionsResult.extensions.push(...inlineExtensions.extensions);
+		// Builtins first, then user extensions - builtins take precedence
+		extensionsResult.extensions = [...inlineExtensions.extensions, ...extensionsResult.extensions];
 		extensionsResult.errors.push(...inlineExtensions.errors);
+		this.addExtensionConflictDiagnostics(extensionsResult);
 		return extensionsResult;
 	}
 
@@ -511,7 +513,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (!preTrustExtensions) {
 			const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
 			const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
-			extensionsResult.extensions.push(...inlineExtensions.extensions);
+			// Builtins first, then user extensions - builtins take precedence
+			extensionsResult.extensions = [...inlineExtensions.extensions, ...extensionsResult.extensions];
 			extensionsResult.errors.push(...inlineExtensions.errors);
 			this.addExtensionConflictDiagnostics(extensionsResult);
 			return extensionsResult;
@@ -543,14 +546,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const inlineExtensions = preTrustExtensions.extensions.filter((extension) =>
 			extension.path.startsWith("<inline:"),
 		);
-		const orderedExtensions = extensionPaths
+		const userExtensions = extensionPaths
 			.map((path) => loadedByPath.get(this.resolveExtensionLoadPath(path)))
 			.filter((extension): extension is Extension => extension !== undefined);
-		orderedExtensions.push(...inlineExtensions);
+		// Builtins first, then user extensions - builtins take precedence
+		const orderedExtensions = [...inlineExtensions, ...userExtensions];
 
 		const extensionsResult: LoadExtensionsResult = {
 			extensions: orderedExtensions,
 			errors: [...preTrustExtensions.errors, ...remainingExtensions.errors],
+			warnings: [...preTrustExtensions.warnings, ...remainingExtensions.warnings],
 			runtime: preTrustExtensions.runtime,
 		};
 		this.addExtensionConflictDiagnostics(extensionsResult);
@@ -559,10 +564,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private addExtensionConflictDiagnostics(extensionsResult: LoadExtensionsResult): void {
 		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
-		// Keep all extensions loaded. Conflicts are reported as diagnostics, and precedence is handled by load order.
-		const conflicts = this.detectExtensionConflicts(extensionsResult.extensions);
-		for (const conflict of conflicts) {
-			extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
+		// Keep all extensions loaded. Precedence is handled by load order (first wins).
+		// Conflicts with builtins are warnings (expected), other conflicts are errors.
+		const { warnings, errors } = this.detectExtensionConflicts(extensionsResult.extensions);
+		for (const warning of warnings) {
+			extensionsResult.warnings.push(warning);
+		}
+		for (const error of errors) {
+			extensionsResult.errors.push({ path: error.path, error: error.message });
 		}
 	}
 
@@ -987,22 +996,36 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return target.startsWith(prefix);
 	}
 
-	private detectExtensionConflicts(extensions: Extension[]): Array<{ path: string; message: string }> {
-		const conflicts: Array<{ path: string; message: string }> = [];
+	private detectExtensionConflicts(extensions: Extension[]): {
+		warnings: Array<{ path: string; message: string }>;
+		errors: Array<{ path: string; message: string }>;
+	} {
+		const warnings: Array<{ path: string; message: string }> = [];
+		const errors: Array<{ path: string; message: string }> = [];
 
 		// Track which extension registered each tool and flag
 		const toolOwners = new Map<string, string>();
 		const flagOwners = new Map<string, string>();
+
+		const isBuiltin = (path: string) => path.startsWith("<inline:");
 
 		for (const ext of extensions) {
 			// Check tools
 			for (const toolName of ext.tools.keys()) {
 				const existingOwner = toolOwners.get(toolName);
 				if (existingOwner && existingOwner !== ext.path) {
-					conflicts.push({
+					const conflict = {
 						path: ext.path,
-						message: `Tool "${toolName}" conflicts with ${existingOwner}`,
-					});
+						message: isBuiltin(existingOwner)
+							? `Builtin tool "${toolName}" takes precedence over ${ext.path}`
+							: `Tool "${toolName}" conflicts with ${existingOwner}`,
+					};
+					// Builtin conflicts are warnings (expected), others are errors
+					if (isBuiltin(existingOwner)) {
+						warnings.push(conflict);
+					} else {
+						errors.push(conflict);
+					}
 				} else {
 					toolOwners.set(toolName, ext.path);
 				}
@@ -1012,16 +1035,23 @@ export class DefaultResourceLoader implements ResourceLoader {
 			for (const flagName of ext.flags.keys()) {
 				const existingOwner = flagOwners.get(flagName);
 				if (existingOwner && existingOwner !== ext.path) {
-					conflicts.push({
+					const conflict = {
 						path: ext.path,
-						message: `Flag "--${flagName}" conflicts with ${existingOwner}`,
-					});
+						message: isBuiltin(existingOwner)
+							? `Builtin flag "--${flagName}" takes precedence over ${ext.path}`
+							: `Flag "--${flagName}" conflicts with ${existingOwner}`,
+					};
+					if (isBuiltin(existingOwner)) {
+						warnings.push(conflict);
+					} else {
+						errors.push(conflict);
+					}
 				} else {
 					flagOwners.set(flagName, ext.path);
 				}
 			}
 		}
 
-		return conflicts;
+		return { warnings, errors };
 	}
 }

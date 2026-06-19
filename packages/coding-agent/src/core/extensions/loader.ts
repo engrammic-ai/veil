@@ -438,6 +438,7 @@ export async function loadExtensions(
 	return {
 		extensions,
 		errors,
+		warnings: [],
 		runtime: resolvedRuntime,
 	};
 }

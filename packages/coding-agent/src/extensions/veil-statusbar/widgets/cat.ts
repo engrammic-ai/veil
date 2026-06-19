@@ -40,12 +40,13 @@ export class CatWidget implements StatusBarWidget {
 	render(_width: number): string[] {
 		const frame = CAT_FRAMES[this.state];
 		const label = STATE_LABELS[this.state];
-		const detail = this.detail ? `"${this.truncate(this.detail, 18)}"` : "";
+		const detail = this.detail ? `"${this.truncate(this.detail, 32)}"` : "";
 		const theme = this.ctx?.theme;
 
 		const catWidth = 7;
-		const textWidth = Math.max(label.length, detail.length);
-		const innerWidth = catWidth + 1 + textWidth;
+		const minTextWidth = 20;
+		const textWidth = Math.max(minTextWidth, label.length, detail.length);
+		const innerWidth = catWidth + 4 + textWidth;
 
 		const colorFn = theme ? (s: string) => theme.fg(frame.color, s) : (s: string) => s;
 		const mutedFn = theme ? (s: string) => theme.fg("muted", s) : (s: string) => s;
@@ -62,8 +63,8 @@ export class CatWidget implements StatusBarWidget {
 			if (i === 1 && detail) textLine = detail;
 
 			const textPadded = textLine.padEnd(textWidth);
-			const content = `${catLine} ${mutedFn(textPadded)}`;
-			lines.push(`${vbar} ${content} ${vbar}`);
+			const content = `${catLine}  ${mutedFn(textPadded)}`;
+			lines.push(`${vbar} ${content}  ${vbar}`);
 		}
 		lines.push(bot);
 

@@ -172,7 +172,7 @@ function buildPrompt(turn: number): string {
 
 function createMinimalResourceLoader(systemPrompt: string): ResourceLoader {
 	return {
-		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getExtensions: () => ({ extensions: [], errors: [], warnings: [], runtime: createExtensionRuntime() }),
 		getSkills: () => ({ skills: [], diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),

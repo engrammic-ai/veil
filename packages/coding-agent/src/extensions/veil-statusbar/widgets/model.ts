@@ -16,13 +16,21 @@ export class ModelWidget implements StatusBarWidget {
 	}
 
 	render(_width: number): string[] {
-		const _theme = this.ctx?.theme;
+		const theme = this.ctx?.theme;
 
-		let line = this.modelName || "unknown";
+		const name = this.modelName || "unknown";
+		if (theme) {
+			let line = theme.fg("accent", name);
+			if (this.effort) {
+				line += theme.fg("muted", " • ") + theme.fg("dim", `${this.effort} effort`);
+			}
+			return [line];
+		}
+
+		let line = name;
 		if (this.effort) {
 			line += ` • ${this.effort} effort`;
 		}
-
 		return [line];
 	}
 

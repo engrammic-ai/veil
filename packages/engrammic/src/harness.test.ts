@@ -1289,7 +1289,7 @@ describe("VeilHarness.search", () => {
 			coldStore: new MemoryColdStore(),
 		});
 
-		const longContent = "A".repeat(100) + " target " + "B".repeat(100);
+		const longContent = `${"A".repeat(100)} target ${"B".repeat(100)}`;
 		harness.remember(longContent, "fact", ["target"]);
 
 		const results = harness.search("target");

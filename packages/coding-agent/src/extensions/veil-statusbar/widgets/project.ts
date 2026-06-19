@@ -19,9 +19,10 @@ export class ProjectWidget implements StatusBarWidget {
 		const theme = this.ctx?.theme;
 		const cwd = this.formatCwd();
 
-		let line = cwd;
+		let line = theme ? theme.fg("muted", cwd) : cwd;
 		if (this.branch) {
-			line += ` (${this.branch})`;
+			const branchStr = theme ? theme.fg("accent", this.branch) : this.branch;
+			line += ` ${theme ? theme.fg("dim", "(") : "("}${branchStr}${theme ? theme.fg("dim", ")") : ")"}`;
 		}
 		if (this.diff) {
 			const added = theme ? theme.fg("success", `+${this.diff.added}`) : `+${this.diff.added}`;

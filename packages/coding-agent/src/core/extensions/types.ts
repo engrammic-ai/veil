@@ -1593,6 +1593,8 @@ export interface Extension {
 export interface LoadExtensionsResult {
 	extensions: Extension[];
 	errors: Array<{ path: string; error: string }>;
+	/** Warnings about conflicts where builtins took precedence */
+	warnings: Array<{ path: string; message: string }>;
 	/** Shared runtime - actions are throwing stubs until runner.initialize() */
 	runtime: ExtensionRuntime;
 }

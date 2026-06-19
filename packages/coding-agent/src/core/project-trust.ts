@@ -19,6 +19,7 @@ export interface ResolveProjectTrustedOptions {
 	extensionsResult?: LoadExtensionsResult;
 	projectTrustContext: ProjectTrustContext;
 	onExtensionError?: (message: string) => void;
+	onExtensionWarning?: (message: string) => void;
 }
 
 function formatProjectTrustPrompt(cwd: string): string {
@@ -59,6 +60,9 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 		);
 		for (const error of errors) {
 			options.onExtensionError?.(`Extension "${error.extensionPath}" project_trust error: ${error.error}`);
+		}
+		for (const warning of options.extensionsResult.warnings) {
+			options.onExtensionWarning?.(warning.message);
 		}
 		if (result) {
 			const trusted = result.trusted === "yes";

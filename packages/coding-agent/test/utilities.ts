@@ -199,6 +199,7 @@ export async function createTestExtensionsResult(
 	return {
 		extensions,
 		errors: [],
+		warnings: [],
 		runtime,
 	};
 }
@@ -211,6 +212,7 @@ export function createTestResourceLoader(options: CreateTestResourceLoaderOption
 	const extensionsResult = options.extensionsResult ?? {
 		extensions: [],
 		errors: [],
+		warnings: [],
 		runtime: createExtensionRuntime(),
 	};
 

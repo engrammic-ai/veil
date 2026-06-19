@@ -30,12 +30,26 @@ export class TokensWidget implements StatusBarWidget {
 			}
 		}
 
-		const cachedStr = this.formatTokens(totalCacheRead);
 		const inputStr = this.formatTokens(totalInput);
 		const outputStr = this.formatTokens(totalOutput);
 
-		const line = `R${cachedStr}  ↑${inputStr}  ↓${outputStr}`;
-		return [theme ? theme.fg("muted", line) : line];
+		if (theme) {
+			const parts: string[] = [];
+			if (totalCacheRead > 0) {
+				parts.push(theme.fg("success", `Cached: ${this.formatTokens(totalCacheRead)}`));
+			}
+			parts.push(theme.fg("accent", `In: ${inputStr}`));
+			parts.push(theme.fg("warning", `Out: ${outputStr}`));
+			return [parts.join("  ")];
+		}
+
+		const parts: string[] = [];
+		if (totalCacheRead > 0) {
+			parts.push(`Cached: ${this.formatTokens(totalCacheRead)}`);
+		}
+		parts.push(`In: ${inputStr}`);
+		parts.push(`Out: ${outputStr}`);
+		return [parts.join("  ")];
 	}
 
 	update(_event: WidgetEvent): void {
