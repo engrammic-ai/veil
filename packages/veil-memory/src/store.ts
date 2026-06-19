@@ -347,24 +347,32 @@ export class MemoryStore {
 		if (eventIds.length > 0) {
 			const placeholders = eventIds.map(() => "?").join(",");
 			sql = `
-        SELECT * FROM current_beliefs
-        WHERE namespace = ? AND retrievability >= ? AND event_id IN (${placeholders})
+        SELECT cb.*, me.tags FROM current_beliefs cb
+        JOIN memory_events me ON cb.event_id = me.event_id
+        WHERE cb.namespace = ? AND cb.retrievability >= ? AND cb.event_id IN (${placeholders})
       `;
 			params = [ns, minR, ...eventIds];
 		} else {
 			sql = `
-        SELECT * FROM current_beliefs
-        WHERE namespace = ? AND retrievability >= ?
+        SELECT cb.*, me.tags FROM current_beliefs cb
+        JOIN memory_events me ON cb.event_id = me.event_id
+        WHERE cb.namespace = ? AND cb.retrievability >= ?
       `;
 			params = [ns, minR];
 		}
 
 		if (options.types && options.types.length > 0) {
-			sql += ` AND memory_type IN (${options.types.map(() => "?").join(",")})`;
+			sql += ` AND cb.memory_type IN (${options.types.map(() => "?").join(",")})`;
 			params.push(...options.types);
 		}
 
-		sql += " ORDER BY retrievability DESC LIMIT ?";
+		if (options.tags && options.tags.length > 0) {
+			const tagConditions = options.tags.map(() => "me.tags LIKE ?").join(" OR ");
+			sql += ` AND (${tagConditions})`;
+			params.push(...options.tags.map((t) => `%"${t}"%`));
+		}
+
+		sql += " ORDER BY cb.retrievability DESC LIMIT ?";
 		params.push(limit);
 
 		const beliefs = this.db.prepare(sql).all(...params) as Array<{
@@ -384,6 +392,7 @@ export class MemoryStore {
 			recall_count: number;
 			has_conflicts: number;
 			conflict_event_ids: string | null;
+			tags: string;
 		}>;
 
 		const coldThreshold = this.fsrs.config.tierWarm;
@@ -419,6 +428,7 @@ export class MemoryStore {
 				recallCount: b.recall_count,
 				hasConflicts: b.has_conflicts === 1,
 				conflictEventIds: b.conflict_event_ids ? JSON.parse(b.conflict_event_ids) : undefined,
+				tags: JSON.parse(b.tags),
 			} as CurrentBelief;
 		});
 	}

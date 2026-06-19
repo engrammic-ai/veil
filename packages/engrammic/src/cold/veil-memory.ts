@@ -148,12 +148,12 @@ export class VeilMemoryColdStore implements ColdStore {
 		return stats.total;
 	}
 
-	async query(text: string, _tags: string[], limit: number): Promise<ContextItem[]> {
+	async query(text: string, tags: string[], limit: number): Promise<ContextItem[]> {
 		const results = await this.store.recall(text, {
 			namespace: this.namespace,
 			limit,
 			includeCold: true,
-			// TODO: filter by tags when veil-memory supports it
+			tags: tags.length > 0 ? tags : undefined,
 		});
 
 		return results
@@ -247,7 +247,7 @@ export class VeilMemoryColdStore implements ColdStore {
 			stability: belief.stability,
 			difficulty: belief.difficulty,
 			type: this.reverseMapType(belief.memoryType),
-			tags: [], // TODO: retrieve from event
+			tags: belief.tags,
 			pinned: false,
 			kgPointer: pointer,
 			validFrom: belief.validFrom,

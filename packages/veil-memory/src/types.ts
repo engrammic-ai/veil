@@ -47,6 +47,7 @@ export interface CurrentBelief {
 	recallCount: number;
 	hasConflicts: boolean;
 	conflictEventIds?: string[];
+	tags: string[];
 }
 
 export interface MemoryStub {
@@ -82,6 +83,7 @@ export interface ConflictResolutionConfig {
 export interface RecallOptions {
 	namespace?: string;
 	types?: MemoryType[];
+	tags?: string[];
 	limit?: number;
 	minRetrievability?: number;
 	includeCold?: boolean;
