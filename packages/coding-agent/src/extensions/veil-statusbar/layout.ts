@@ -17,7 +17,7 @@ export class StatusBarLayout {
 
 	render(width: number): string[] {
 		const STATUSBAR_PADDING = 2;
-		const effectiveWidth = width - STATUSBAR_PADDING;
+		const effectiveWidth = width - STATUSBAR_PADDING * 2;
 		const rightWidth = this.calculateRightWidth();
 		const leftWidth = Math.max(0, effectiveWidth - rightWidth - 2);
 
