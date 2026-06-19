@@ -22,17 +22,25 @@ export class ModeWidget implements StatusBarWidget {
 				// Hide mode name, just show hint
 				return [theme ? theme.fg("dim", "(shift+tab to cycle)") : "(shift+tab to cycle)"];
 
-			case "auto-accept-edits":
-				// Accent color with play symbols
-				return [theme ? theme.fg("accent", ">> accept edits on") : ">> accept edits on"];
+			case "acceptEdits":
+				// Accent for auto-approve edits
+				return [theme ? theme.fg("accent", ">> accept edits") : ">> accept edits"];
 
 			case "auto":
-				// Error/red warning color
+				// Warning - most permissive
 				return [theme ? theme.fg("error", "auto") : "auto"];
 
 			case "plan":
-				// Warning color for read-only planning
+				// Muted for read-only
 				return [theme ? theme.fg("warning", "plan (read-only)") : "plan (read-only)"];
+
+			case "dontAsk":
+				// For CI - auto-deny
+				return [theme ? theme.fg("muted", "dontAsk (CI)") : "dontAsk (CI)"];
+
+			case "bypassPermissions":
+				// Dangerous red
+				return [theme ? theme.fg("error", "!! BYPASS !!") : "!! BYPASS !!"];
 
 			default:
 				return [this.mode];
