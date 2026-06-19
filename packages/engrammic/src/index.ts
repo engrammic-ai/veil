@@ -72,6 +72,7 @@ export {
 } from "./convergence.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { createVeilExtension } from "./extension.ts";
+export { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
 export { DEFAULT_FSRS_CONFIG, defaultFSRS, type FSRSConfig, FSRSEngine } from "./fsrs.ts";
 export {
 	advanceGoalState,
@@ -123,16 +124,31 @@ export {
 } from "./injection.ts";
 // Core
 export { ContextManager } from "./manager.ts";
-export { type ExportOptions, type ExportResult, exportBundle } from "./okf-bundle.ts";
+export {
+	type ExportOptions,
+	type ExportResult,
+	exportBundle,
+	type ImportOptions,
+	type ImportResult,
+	importBundle,
+	parseMemoryFile,
+} from "./okf-bundle.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export {
 	computeRelevanceScore,
 	formatSelectedContext,
 	type SelectionResult,
 	selectForTurn,
+	selectForTurnWithStaleness,
 	type TurnContext,
 } from "./retrieval.ts";
 export type { ScorerWeights } from "./scorer.ts";
+export {
+	checkStaleness,
+	getResourceMetadata,
+	markStaleItems,
+	type StalenessCheck,
+} from "./staleness.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export { executeVeilTool, TOOL_SCHEMAS, type ToolContext, type ToolDefinition, type ToolResult } from "./tools.ts";
 export {
@@ -159,7 +175,6 @@ export {
 	type TaskContext,
 	type Trigger,
 } from "./types.ts";
-export { type ExportOptions, type ExportResult, exportBundle } from "./okf-bundle.ts";
 export { estimateTokens, formatRelativeTime, formatTokens, smartTruncate } from "./utils.ts";
 export {
 	formatBox,

@@ -12,6 +12,10 @@ export interface ContextItem {
 	lastAccess: number;
 	accessCount: number;
 
+	// Feedback tracking
+	usedCount: number; // times agent referenced after injection
+	ignoredCount: number; // times injected but not referenced
+
 	// Scoring
 	decayScore: number;
 	cognitiveWeight: number; // -1 to +1, success/failure attribution
@@ -36,6 +40,11 @@ export interface ContextItem {
 	// Source tracking
 	source: "auto" | "explicit"; // auto-captured vs explicitly remembered
 	sourceToolCallId?: string; // links to Pi tool call for faded history
+
+	// Staleness tracking
+	resourceMtime?: number; // mtime (ms) of referenced file when captured
+	resourceHash?: string; // sha256 prefix of file content when captured
+	isStale?: boolean; // set on recall if the referenced resource changed
 }
 
 // Type alias extracted from ContextItem for reuse

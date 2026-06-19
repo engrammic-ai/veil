@@ -12,6 +12,7 @@
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
+import { applyTaskSuccessSignal, FeedbackTracker, type FeedbackResult } from "./feedback.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
@@ -168,6 +169,9 @@ export class VeilHarness {
 	private attemptStore: AttemptStore;
 	private convergenceMonitor: ConvergenceMonitor;
 	private goalState: GoalInferenceState;
+
+	// Feedback loop
+	private feedbackTracker: FeedbackTracker = new FeedbackTracker();
 
 	private pendingCaptures: Map<
 		string,
@@ -1072,6 +1076,36 @@ export class VeilHarness {
 	 */
 	wasInManifest(id: string): boolean {
 		return this.currentManifest?.itemIds.has(id) ?? false;
+	}
+
+	/**
+	 * Record which item IDs were injected into context this turn.
+	 */
+	recordInjection(itemIds: string[]): void {
+		this.feedbackTracker.recordInjection(itemIds);
+	}
+
+	/**
+	 * Record that the agent referenced a specific memory item.
+	 */
+	recordReference(itemId: string): void {
+		this.feedbackTracker.recordReference(itemId);
+	}
+
+	/**
+	 * End-of-turn feedback: update used/ignored counts and return result.
+	 */
+	endTurnFeedback(): FeedbackResult {
+		return this.feedbackTracker.endTurn(this.manager.getCache());
+	}
+
+	/**
+	 * Signal task success: boost used memories' cognitiveWeight, penalize unused.
+	 */
+	signalTaskSuccess(): void {
+		const result = this.feedbackTracker.endTurn(this.manager.getCache());
+		const allInjected = [...result.used, ...result.ignored];
+		applyTaskSuccessSignal(this.manager.getCache(), result.used, allInjected);
 	}
 
 	/**

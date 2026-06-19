@@ -69,6 +69,11 @@ export class ContextCache {
 	private stmtClearEvictionForHash: BetterSqlite3.Statement;
 	private stmtPruneEvictionLog: BetterSqlite3.Statement;
 
+	// Feedback tracking statements
+	private stmtIncrementUsedCount: BetterSqlite3.Statement;
+	private stmtIncrementIgnoredCount: BetterSqlite3.Statement;
+	private stmtGetArchiveCandidates: BetterSqlite3.Statement;
+
 	// Co-access tracker
 	readonly coAccess: CoAccessTracker;
 
@@ -86,13 +91,15 @@ export class ContextCache {
 				type, tags, pinned,
 				kg_pointer, depends_on,
 				valid_from, valid_until,
-				source, source_tool_call_id
+				source, source_tool_call_id,
+				resource_mtime, resource_hash
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
 				?, ?,
 				?, ?,
 				?, ?, ?,
+				?, ?,
 				?, ?,
 				?, ?,
 				?, ?
@@ -226,6 +233,16 @@ export class ContextCache {
 
 		this.stmtPruneEvictionLog = this.db.prepare("DELETE FROM eviction_log WHERE evicted_at < ?");
 
+		this.stmtIncrementUsedCount = this.db.prepare("UPDATE items SET used_count = used_count + 1 WHERE id = ?");
+
+		this.stmtIncrementIgnoredCount = this.db.prepare(
+			"UPDATE items SET ignored_count = ignored_count + 1 WHERE id = ?",
+		);
+
+		this.stmtGetArchiveCandidates = this.db.prepare(
+			"SELECT * FROM items WHERE ignored_count > used_count * 3 AND ignored_count > 0",
+		);
+
 		this.coAccess = new CoAccessTracker(this.db);
 	}
 
@@ -289,6 +306,18 @@ export class ContextCache {
 		}
 		try {
 			this.db.exec("ALTER TABLE items ADD COLUMN difficulty REAL DEFAULT 0.5");
+		} catch {
+			// Column already exists
+		}
+
+		// Migration: add feedback tracking columns
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN used_count INTEGER DEFAULT 0");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN ignored_count INTEGER DEFAULT 0");
 		} catch {
 			// Column already exists
 		}
@@ -467,6 +496,18 @@ export class ContextCache {
 			CREATE INDEX IF NOT EXISTS idx_attempts_outcome ON attempts(outcome);
 			CREATE INDEX IF NOT EXISTS idx_attempts_open ON attempts(goal_open);
 		`);
+
+		// Migration: add staleness tracking columns
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN resource_mtime REAL");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN resource_hash TEXT");
+		} catch {
+			// Column already exists
+		}
 	}
 
 	put(item: ContextItem): void {
@@ -490,6 +531,8 @@ export class ContextCache {
 			item.validUntil ?? null,
 			item.source,
 			item.sourceToolCallId ?? null,
+			item.resourceMtime ?? null,
+			item.resourceHash ?? null,
 		);
 	}
 
@@ -797,6 +840,19 @@ export class ContextCache {
 		}));
 	}
 
+	incrementUsedCount(id: string): void {
+		this.stmtIncrementUsedCount.run(id);
+	}
+
+	incrementIgnoredCount(id: string): void {
+		this.stmtIncrementIgnoredCount.run(id);
+	}
+
+	getArchiveCandidates(): ContextItem[] {
+		const rows = this.stmtGetArchiveCandidates.all() as any[];
+		return rows.map((row) => this.rowToItem(row));
+	}
+
 	close(): void {
 		this.db.close();
 	}
@@ -809,6 +865,8 @@ export class ContextCache {
 			createdAt: row.created_at,
 			lastAccess: row.last_access,
 			accessCount: row.access_count,
+			usedCount: row.used_count ?? 0,
+			ignoredCount: row.ignored_count ?? 0,
 			decayScore: row.decay_score,
 			cognitiveWeight: row.cognitive_weight,
 			stability: row.stability ?? 0.5,
@@ -822,6 +880,8 @@ export class ContextCache {
 			validUntil: row.valid_until ?? undefined,
 			source: row.source ?? "auto",
 			sourceToolCallId: row.source_tool_call_id ?? undefined,
+			resourceMtime: row.resource_mtime ?? undefined,
+			resourceHash: row.resource_hash ?? undefined,
 		};
 	}
 }
@@ -846,6 +906,8 @@ export function createItem(
 		createdAt: now,
 		lastAccess: now,
 		accessCount: 1,
+		usedCount: 0,
+		ignoredCount: 0,
 		decayScore: 0,
 		cognitiveWeight: 0,
 		stability: defaultFSRS.getInitialStability(type),
