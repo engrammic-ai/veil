@@ -21,7 +21,7 @@ import {
 	type ServerStatus,
 } from "./types.ts";
 
-const CONFIG_DIR = join(homedir(), ".config", "veil");
+const CONFIG_DIR = join(homedir(), ".veil");
 const CONFIG_FILE = join(CONFIG_DIR, "embedder.json");
 const PID_FILE = join(CONFIG_DIR, "embedder.pid");
 const LOG_DIR = join(homedir(), ".local", "share", "veil");
@@ -223,7 +223,9 @@ async function main() {
 	console.log(`Starting Veil Embedder Server...`);
 	console.log(`  Model: ${spec.name} (${spec.size}, ${spec.ram} RAM)`);
 	console.log(`  Port: ${config.port}`);
-	console.log(`  Idle timeout: ${config.idleTimeoutMs / 1000 / 60} minutes`);
+	const idleMinutes = config.idleTimeoutMs / 1000 / 60;
+	const idleStr = idleMinutes >= 60 ? `${idleMinutes / 60} hours` : `${idleMinutes} minutes`;
+	console.log(`  Idle timeout: ${idleStr}`);
 
 	let embedder: Embedder | null = null;
 	let requestCount = 0;

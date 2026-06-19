@@ -37,8 +37,8 @@ describe("DEFAULT_CONFIG", () => {
 		expect(DEFAULT_CONFIG.tier).toBe("balanced");
 	});
 
-	it("has 30 minute idle timeout", () => {
-		expect(DEFAULT_CONFIG.idleTimeoutMs).toBe(30 * 60 * 1000);
+	it("has 3 hour idle timeout", () => {
+		expect(DEFAULT_CONFIG.idleTimeoutMs).toBe(3 * 60 * 60 * 1000);
 	});
 
 	it("uses port 19532", () => {
