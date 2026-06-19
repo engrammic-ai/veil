@@ -172,7 +172,7 @@ async function executeRecall(params: { tags: string[]; limit?: number }, ctx: To
 	ctx.onRecall?.(items.map((i) => i.id));
 
 	const formatted = wrapToolResult("recall", result.length, result.map((r) => r.stub).join("\n"));
-	return { success: true, data: formatted };
+	return { success: true, data: { formatted, items: result } };
 }
 
 async function executePromote(params: { id: string }, ctx: ToolContext): Promise<ToolResult> {
@@ -266,13 +266,13 @@ async function executeVeilHistory(params: { query: string; days?: number }, ctx:
 
 	if (results.length === 0) {
 		const formatted = wrapToolResult("history", 0, "No related context found in recent sessions.");
-		return { success: true, data: formatted };
+		return { success: true, data: { formatted } };
 	}
 
 	const itemList = results.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`).join("\n");
 	const formatted = wrapToolResult("history", results.length, itemList);
 
-	return { success: true, data: formatted };
+	return { success: true, data: { formatted, items: results } };
 }
 
 // Wrap tool results in explicit tags for better model interpretation

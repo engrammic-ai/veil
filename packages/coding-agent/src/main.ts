@@ -745,12 +745,10 @@ export async function main(args: string[], options?: MainOptions) {
 							...tool,
 							execute: async (_toolCallId: string, params: Record<string, unknown>) => {
 								const result = await veilHarness!.executeTool(tool.name, params);
-								const content = result.success
-									? typeof result.data === "string"
-										? result.data
-										: JSON.stringify(result.data)
-									: (result.error ?? "Unknown error");
-								return { content, isError: !result.success };
+								return {
+									content: result.success ? JSON.stringify(result.data) : (result.error ?? "Unknown error"),
+									isError: !result.success,
+								};
 							},
 						}) as any,
 				) ?? []),

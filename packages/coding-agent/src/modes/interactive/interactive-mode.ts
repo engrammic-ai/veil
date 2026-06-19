@@ -45,7 +45,6 @@ import {
 	TUI,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { renderContextCommand, renderContextSearch } from "@engrammic/veil-context";
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
 import {
@@ -87,6 +86,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getSessionStats as getMcpSessionStats } from "../../extensions/veil-statusbar/index.ts";
+import { renderContextCommand, renderContextSearch } from "@engrammic/veil-context";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -5709,11 +5709,7 @@ export class InteractiveMode {
 		}
 
 		// Parse subcommand: /context search <query> or /ctx search <query>
-		const stripped = text.startsWith("/ctx ")
-			? text.slice(5).trim()
-			: text.startsWith("/context ")
-				? text.slice(9).trim()
-				: "";
+		const stripped = text.startsWith("/ctx ") ? text.slice(5).trim() : text.startsWith("/context ") ? text.slice(9).trim() : "";
 
 		let output: { lines: string[] };
 		if (stripped.startsWith("search ")) {
