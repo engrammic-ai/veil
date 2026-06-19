@@ -22,6 +22,8 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		// last access is old so recency is low.
 		lastAccess: now - 2 * 60 * 60 * 1000, // 2 hours ago
 		accessCount: 1,
+		usedCount: 0,
+		ignoredCount: 0,
 		decayScore: 0,
 		cognitiveWeight: 0,
 		stability: 0.5,

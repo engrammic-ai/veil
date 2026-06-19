@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ContextCache, createItem } from "./cache.ts";
-import { exportBundle } from "./okf-bundle.ts";
+import { ContextManager } from "./manager.ts";
+import { exportBundle, importBundle, parseMemoryFile } from "./okf-bundle.ts";
 
 let outputDir: string;
 let dbDir: string;
@@ -185,5 +186,224 @@ describe("exportBundle — empty cache", () => {
 
 		const index = await readFile(join(outputDir, "index.md"), "utf8");
 		expect(index).toContain("Total: 0 memories");
+	});
+});
+
+// ─── parseMemoryFile tests ────────────────────────────────────────────────────
+
+describe("parseMemoryFile", () => {
+	it("parses valid markdown with flow-style tags", () => {
+		const content = `---
+type: fact
+title: "A test fact"
+timestamp: "2024-01-01T00:00:00.000Z"
+tags: [lang:ts, memory]
+stability: 0.8000
+difficulty: 0.5000
+---
+
+This is the body text.`;
+		const parsed = parseMemoryFile(content);
+		expect(parsed).not.toBeNull();
+		expect(parsed!.frontmatter.type).toBe("fact");
+		expect(parsed!.frontmatter.title).toBe("A test fact");
+		expect(parsed!.frontmatter.tags).toEqual(["lang:ts", "memory"]);
+		expect(parsed!.body).toBe("This is the body text.");
+	});
+
+	it("parses links block", () => {
+		const content = `---
+type: edit
+title: "Edit memory"
+timestamp: "2024-01-01T00:00:00.000Z"
+tags: []
+links:
+  - rel: file
+    target: src/foo.ts
+    label: "source file"
+---
+
+Body here.`;
+		const parsed = parseMemoryFile(content);
+		expect(parsed).not.toBeNull();
+		expect(parsed!.frontmatter.links).toHaveLength(1);
+		expect(parsed!.frontmatter.links![0]).toMatchObject({ rel: "file", target: "src/foo.ts", label: "source file" });
+	});
+
+	it("returns null for content without frontmatter", () => {
+		expect(parseMemoryFile("just plain text")).toBeNull();
+	});
+
+	it("returns null for incomplete frontmatter (missing type)", () => {
+		const content = `---
+title: "Missing type"
+timestamp: "2024-01-01T00:00:00.000Z"
+tags: []
+---
+
+Body.`;
+		expect(parseMemoryFile(content)).toBeNull();
+	});
+
+	it("returns null for unclosed frontmatter", () => {
+		const content = `---
+type: fact
+title: "No closing marker"
+timestamp: "2024-01-01T00:00:00.000Z"
+tags: []`;
+		expect(parseMemoryFile(content)).toBeNull();
+	});
+});
+
+// ─── importBundle tests ───────────────────────────────────────────────────────
+
+describe("importBundle", () => {
+	let importDir: string;
+	let importCache: ContextCache;
+	let manager: ContextManager;
+	let importDbDir: string;
+
+	function makeMemoryFile(
+		overrides: Partial<{
+			type: string;
+			title: string;
+			timestamp: string;
+			tags: string;
+			body: string;
+			extraFrontmatter: string;
+		}> = {},
+	): string {
+		const {
+			type = "fact",
+			title = "Test Memory",
+			timestamp = "2024-01-01T00:00:00.000Z",
+			tags = "[]",
+			body = "Memory body content.",
+			extraFrontmatter = "",
+		} = overrides;
+		return `---\ntype: ${type}\ntitle: "${title}"\ntimestamp: "${timestamp}"\ntags: ${tags}\n${extraFrontmatter}---\n\n${body}`;
+	}
+
+	beforeEach(async () => {
+		importDir = await mkdtemp(join(tmpdir(), "okf-import-"));
+		importDbDir = await mkdtemp(join(tmpdir(), "okf-import-db-"));
+		await mkdir(join(importDir, "memories"), { recursive: true });
+		importCache = new ContextCache(join(importDbDir, "cache.db"));
+		manager = new ContextManager({ dbPath: join(importDbDir, "ctx.db") });
+	});
+
+	afterEach(async () => {
+		importCache.close();
+		await manager.close();
+		await rm(importDir, { recursive: true, force: true });
+		await rm(importDbDir, { recursive: true, force: true });
+	});
+
+	it("imports valid markdown files and creates items", async () => {
+		await writeFile(
+			join(importDir, "memories", "mem1.md"),
+			makeMemoryFile({ body: "Unique fact about TypeScript generics.", tags: "[lang:ts]" }),
+		);
+
+		const result = await importBundle(importCache, manager, { inputDir: importDir });
+
+		expect(result.imported).toBe(1);
+		expect(result.skipped).toBe(0);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	it("maps OKF types to ContextItemType correctly", async () => {
+		await writeFile(join(importDir, "memories", "fact.md"), makeMemoryFile({ type: "fact", body: "A fact body." }));
+		await writeFile(
+			join(importDir, "memories", "proc.md"),
+			makeMemoryFile({ type: "procedure", body: "A procedure body." }),
+		);
+		await writeFile(
+			join(importDir, "memories", "bash.md"),
+			makeMemoryFile({ type: "bash", body: "A bash body here." }),
+		);
+		await writeFile(
+			join(importDir, "memories", "decision.md"),
+			makeMemoryFile({ type: "decision", body: "A decision body text." }),
+		);
+
+		const result = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(result.imported).toBe(4);
+		expect(result.errors).toHaveLength(0);
+
+		const managerCache = manager.getCache();
+		const all = managerCache.getAll();
+		const types = all.map((i) => i.type).sort();
+		expect(types).toContain("fact");
+		expect(types).toContain("procedural");
+		expect(types.filter((t) => t === "episodic")).toHaveLength(2);
+	});
+
+	it("skips duplicate content when merge=false (default)", async () => {
+		const content = makeMemoryFile({ body: "Duplicate content here." });
+		await writeFile(join(importDir, "memories", "dup.md"), content);
+
+		const r1 = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(r1.imported).toBe(1);
+
+		const r2 = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(r2.imported).toBe(0);
+		expect(r2.skipped).toBe(1);
+	});
+
+	it("re-imports duplicate content when merge=true", async () => {
+		const content = makeMemoryFile({ body: "Content to merge and reimport." });
+		await writeFile(join(importDir, "memories", "merge.md"), content);
+
+		const r1 = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(r1.imported).toBe(1);
+
+		const r2 = await importBundle(importCache, manager, { inputDir: importDir, merge: true });
+		expect(r2.imported).toBe(1);
+		expect(r2.skipped).toBe(0);
+	});
+
+	it("imports links from frontmatter", async () => {
+		const content = makeMemoryFile({
+			body: "Memory with links to a file.",
+			extraFrontmatter: "links:\n  - rel: file\n    target: src/index.ts\n",
+		});
+		await writeFile(join(importDir, "memories", "linked.md"), content);
+
+		const result = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(result.imported).toBe(1);
+
+		const managerCache = manager.getCache();
+		const all = managerCache.getAll();
+		expect(all).toHaveLength(1);
+		const links = managerCache.getLinks(all[0].id);
+		expect(links).toHaveLength(1);
+		expect(links[0]).toMatchObject({ rel: "file", target: "src/index.ts" });
+	});
+
+	it("records errors for invalid files and continues processing", async () => {
+		await writeFile(join(importDir, "memories", "bad.md"), "no frontmatter here at all");
+		await writeFile(join(importDir, "memories", "good.md"), makeMemoryFile({ body: "Valid file content." }));
+
+		const result = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(result.imported).toBe(1);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]).toContain("Invalid format");
+	});
+
+	it("returns error when memories directory does not exist", async () => {
+		const result = await importBundle(importCache, manager, { inputDir: "/nonexistent/path/xyz" });
+		expect(result.imported).toBe(0);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]).toContain("Cannot read memories directory");
+	});
+
+	it("skips non-.md files", async () => {
+		await writeFile(join(importDir, "memories", "readme.txt"), "not a memory");
+		await writeFile(join(importDir, "memories", "notes.json"), "{}");
+
+		const result = await importBundle(importCache, manager, { inputDir: importDir });
+		expect(result.imported).toBe(0);
+		expect(result.errors).toHaveLength(0);
 	});
 });

@@ -161,6 +161,8 @@ export class SqliteColdStore implements ColdStore {
 			createdAt: row.created_at,
 			lastAccess: row.last_access,
 			accessCount: row.access_count,
+			usedCount: 0,
+			ignoredCount: 0,
 			decayScore: row.decay_score,
 			cognitiveWeight: row.cognitive_weight,
 			stability: row.stability ?? 0.5,

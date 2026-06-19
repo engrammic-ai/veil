@@ -216,7 +216,7 @@ export function parseMemoryFile(content: string): ParsedMemory | null {
 	const fm = parseYaml(yamlBlock);
 	if (!fm.type || !fm.title || !fm.timestamp) return null;
 	if (!Array.isArray(fm.tags)) fm.tags = [];
-	return { frontmatter: fm as ParsedFrontmatter, body };
+	return { frontmatter: fm as unknown as ParsedFrontmatter, body };
 }
 
 function parseScalar(s: string): string | number | boolean {
@@ -320,12 +320,13 @@ function toCaptureLinkRel(rel: string): CaptureLink["rel"] {
 }
 
 export async function importBundle(
-	cache: ContextCache,
+	_cache: ContextCache,
 	manager: ContextManager,
 	options: ImportOptions,
 ): Promise<ImportResult> {
 	const result: ImportResult = { imported: 0, skipped: 0, errors: [] };
 	const memoriesDir = join(options.inputDir, "memories");
+	const cache = manager.getCache();
 
 	let files: string[];
 	try {

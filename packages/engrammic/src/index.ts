@@ -124,22 +124,13 @@ export {
 } from "./injection.ts";
 // Core
 export { ContextManager } from "./manager.ts";
-export {
-	type ExportOptions,
-	type ExportResult,
-	exportBundle,
-	type ImportOptions,
-	type ImportResult,
-	importBundle,
-	parseMemoryFile,
-} from "./okf-bundle.ts";
+export { type ExportOptions, type ExportResult, exportBundle } from "./okf-bundle.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export {
 	computeRelevanceScore,
 	formatSelectedContext,
 	type SelectionResult,
 	selectForTurn,
-	selectForTurnWithStaleness,
 	type TurnContext,
 } from "./retrieval.ts";
 export type { ScorerWeights } from "./scorer.ts";

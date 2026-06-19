@@ -110,6 +110,8 @@ export class VeilMemoryColdStore implements ColdStore {
 				createdAt: Date.now(),
 				lastAccess: Date.now(),
 				accessCount: 1,
+				usedCount: 0,
+				ignoredCount: 0,
 				decayScore: stub.retrievability,
 				cognitiveWeight: 0,
 				stability: 0.5,
@@ -238,6 +240,8 @@ export class VeilMemoryColdStore implements ColdStore {
 			createdAt: belief.recordedAt,
 			lastAccess: belief.lastRecall ?? belief.recordedAt,
 			accessCount: belief.recallCount,
+			usedCount: 0,
+			ignoredCount: 0,
 			decayScore: belief.retrievability,
 			cognitiveWeight: belief.confidence * 2 - 1, // 0-1 → -1 to +1
 			stability: belief.stability,
