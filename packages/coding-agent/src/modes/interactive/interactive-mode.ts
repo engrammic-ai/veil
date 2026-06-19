@@ -3103,7 +3103,9 @@ export class InteractiveMode {
 		const textBlocks =
 			typeof message.content === "string"
 				? [{ type: "text", text: message.content }]
-				: message.content.filter((c: { type: string }) => c.type === "text");
+				: Array.isArray(message.content)
+					? message.content.filter((c: { type: string }) => c.type === "text")
+					: [];
 		return textBlocks.map((c) => (c as { text: string }).text).join("");
 	}
 
