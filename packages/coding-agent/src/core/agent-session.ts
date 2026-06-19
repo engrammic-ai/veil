@@ -263,7 +263,7 @@ export class AgentSession {
 	readonly settingsManager: SettingsManager;
 
 	private _veilHarness: VeilHarness | undefined;
-	private _permissionManager = new PermissionManager();
+	private _permissionManager: PermissionManager;
 	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
@@ -337,6 +337,7 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
+		this._permissionManager = new PermissionManager(config.cwd);
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
@@ -419,8 +420,20 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
-			// Permission check first
-			if (this._permissionManager.shouldPrompt(toolCall.name)) {
+			const toolContext = {
+				toolName: toolCall.name,
+				args: args as Record<string, unknown>,
+				workingDir: this._cwd,
+			};
+
+			// Check if tool should be blocked entirely (e.g., plan mode)
+			const blockResult = this._permissionManager.shouldBlock(toolContext);
+			if (blockResult.block) {
+				return { block: true, reason: blockResult.reason };
+			}
+
+			// Permission check
+			if (this._permissionManager.shouldPrompt(toolContext)) {
 				const argsPreview = JSON.stringify(args).slice(0, 100);
 				const approved = await this._extensionUIContext?.confirm(
 					"Tool Approval",

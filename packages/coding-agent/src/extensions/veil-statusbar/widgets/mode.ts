@@ -16,9 +16,27 @@ export class ModeWidget implements StatusBarWidget {
 
 	render(_width: number): string[] {
 		const theme = this.ctx?.theme;
-		const modeColored = theme ? theme.fg("accent", this.mode) : this.mode;
-		const line = `mode: ${modeColored}`;
-		return [line];
+
+		switch (this.mode) {
+			case "default":
+				// Hide mode name, just show hint
+				return [theme ? theme.fg("dim", "(shift+tab to cycle)") : "(shift+tab to cycle)"];
+
+			case "auto-accept-edits":
+				// Accent color with play symbols
+				return [theme ? theme.fg("accent", ">> accept edits on") : ">> accept edits on"];
+
+			case "auto":
+				// Error/red warning color
+				return [theme ? theme.fg("error", "auto") : "auto"];
+
+			case "plan":
+				// Warning color for read-only planning
+				return [theme ? theme.fg("warning", "plan (read-only)") : "plan (read-only)"];
+
+			default:
+				return [this.mode];
+		}
 	}
 
 	update(event: WidgetEvent): void {
