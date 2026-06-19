@@ -123,6 +123,7 @@ export {
 } from "./injection.ts";
 // Core
 export { ContextManager } from "./manager.ts";
+export { type ExportOptions, type ExportResult, exportBundle } from "./okf-bundle.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export {
 	computeRelevanceScore,
@@ -158,6 +159,7 @@ export {
 	type TaskContext,
 	type Trigger,
 } from "./types.ts";
+export { type ExportOptions, type ExportResult, exportBundle } from "./okf-bundle.ts";
 export { estimateTokens, formatRelativeTime, formatTokens, smartTruncate } from "./utils.ts";
 export {
 	formatBox,
