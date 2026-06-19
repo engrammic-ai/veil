@@ -468,7 +468,8 @@ export class Editor implements Component, Focusable {
 	render(width: number): string[] {
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const contentWidth = Math.max(1, width - paddingX * 2);
+		const prefixWidth = visibleWidth(this.promptPrefix);
+		const contentWidth = Math.max(1, width - paddingX * 2 - prefixWidth);
 
 		// Layout width: with padding the cursor can overflow into it,
 		// without padding we reserve 1 column for the cursor.
@@ -505,7 +506,6 @@ export class Editor implements Component, Focusable {
 		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 
 		const result: string[] = [];
-		const prefixWidth = visibleWidth(this.promptPrefix);
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
 		let promptUsed = false;
