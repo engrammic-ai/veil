@@ -110,6 +110,8 @@ export class FooterDataProvider {
 	private reftableTablesListWatcher: FSWatcher | null = null;
 	private reftableTablesListPath: string | null = null;
 	private branchChangeCallbacks = new Set<() => void>();
+	private permissionMode = "default";
+	private permissionModeCallbacks = new Set<(mode: string) => void>();
 	private availableProviderCount = 0;
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	private gitWatcherRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,6 +142,23 @@ export class FooterDataProvider {
 	onBranchChange(callback: () => void): () => void {
 		this.branchChangeCallbacks.add(callback);
 		return () => this.branchChangeCallbacks.delete(callback);
+	}
+
+	/** Current permission mode */
+	getPermissionMode(): string {
+		return this.permissionMode;
+	}
+
+	/** Internal: set permission mode and notify listeners */
+	setPermissionMode(mode: string): void {
+		this.permissionMode = mode;
+		for (const cb of this.permissionModeCallbacks) cb(mode);
+	}
+
+	/** Subscribe to permission mode changes. Returns unsubscribe function. */
+	onPermissionModeChange(callback: (mode: string) => void): () => void {
+		this.permissionModeCallbacks.add(callback);
+		return () => this.permissionModeCallbacks.delete(callback);
 	}
 
 	/** Internal: set extension status */
@@ -192,6 +211,7 @@ export class FooterDataProvider {
 		}
 		this.clearGitWatchers();
 		this.branchChangeCallbacks.clear();
+		this.permissionModeCallbacks.clear();
 	}
 
 	private notifyBranchChange(): void {
@@ -384,5 +404,10 @@ export class FooterDataProvider {
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
+	| "getGitBranch"
+	| "getExtensionStatuses"
+	| "getAvailableProviderCount"
+	| "onBranchChange"
+	| "getPermissionMode"
+	| "onPermissionModeChange"
 >;

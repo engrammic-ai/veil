@@ -32,6 +32,7 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 				footerData,
 				theme,
 				modelName: ctx.model?.name,
+				permissionMode: footerData.getPermissionMode(),
 			};
 
 			for (const id of config.left) {
@@ -52,10 +53,18 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 				}
 			}
 
+			// Subscribe to permission mode changes and forward as WidgetEvents
+			const unsubscribeMode = footerData.onPermissionModeChange((mode) => {
+				layout.emit({ type: "mode", mode });
+			});
+
 			return {
 				render: (width: number) => layout.render(width),
 				invalidate: () => layout.invalidate(),
-				dispose: () => layout.dispose(),
+				dispose: () => {
+					unsubscribeMode();
+					layout.dispose();
+				},
 			};
 		});
 	});

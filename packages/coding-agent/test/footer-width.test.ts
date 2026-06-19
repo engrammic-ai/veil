@@ -69,6 +69,11 @@ function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
 			void callback;
 			return () => {};
 		},
+		getPermissionMode: () => "default",
+		onPermissionModeChange: (callback: (mode: string) => void) => {
+			void callback;
+			return () => {};
+		},
 	};
 
 	return provider;

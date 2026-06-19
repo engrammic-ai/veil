@@ -1650,6 +1650,7 @@ export class InteractiveMode {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
+		this.footerDataProvider.setPermissionMode(this.session.permissionManager.getMode());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -3621,6 +3622,7 @@ export class InteractiveMode {
 
 	private cyclePermissionMode(): void {
 		const newMode = this.session.permissionManager.cycleMode();
+		this.footerDataProvider.setPermissionMode(newMode);
 		this.footer.invalidate();
 		this.showStatus(`Permission mode: ${newMode}`);
 	}
