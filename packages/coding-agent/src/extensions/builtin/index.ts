@@ -6,10 +6,11 @@
  */
 
 import type { ExtensionFactory } from "../../core/extensions/types.ts";
+import veilStatusbar from "../veil-statusbar/index.ts";
 import planModeExtension from "./plan-mode.ts";
 
 /** All builtin extension factories */
-export const builtinExtensions: ExtensionFactory[] = [planModeExtension];
+export const builtinExtensions: ExtensionFactory[] = [planModeExtension, veilStatusbar];
 
 /** Get builtin extension factories, optionally filtered by disabled list */
 export function getBuiltinExtensions(disabled?: string[]): ExtensionFactory[] {
