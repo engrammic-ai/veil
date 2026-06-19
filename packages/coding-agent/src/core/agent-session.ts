@@ -1155,15 +1155,15 @@ export class AgentSession {
 			}
 			this._pendingNextTurnMessages = [];
 
-			// Inject veil context block every 5th turn, or checkpoint nudge when budget is tight
+			// Inject veil context block every 9th turn, or checkpoint nudge when budget is tight
 			if (this._veilHarness) {
 				const turnCount = this._veilHarness.getTurnCount();
 				const checkpointNudge = this._veilHarness.getCheckpointNudge();
 
 				// Checkpoint nudge takes priority (budget pressure or low-scoring items)
-				// Otherwise inject context every 5th turn as a gentle reminder
+				// Otherwise inject context every 9th turn as a gentle reminder
 				const contextToInject =
-					checkpointNudge ?? (turnCount % 5 === 0 ? this._veilHarness.getContextSection() : null);
+					checkpointNudge ?? (turnCount % 9 === 0 ? this._veilHarness.getContextSection() : null);
 
 				if (contextToInject) {
 					messages.push({

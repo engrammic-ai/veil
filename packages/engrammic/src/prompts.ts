@@ -38,28 +38,26 @@ export interface CheckpointPromptOptions {
 
 export function buildCheckpointPrompt(options: CheckpointPromptOptions): string {
 	const { turnCount, items, budget } = options;
-	const totalTokens = items.reduce((sum, i) => sum + i.tokens, 0);
 	const budgetFree = budget.maxTokens === 0 ? 0 : Math.round((1 - budget.usedTokens / budget.maxTokens) * 100);
 
 	const lines: string[] = [];
-	lines.push(`<context-checkpoint turn="${turnCount}">`);
-	lines.push(`HOT (${items.length} items, ${formatTokens(totalTokens)}, budget ${budgetFree}% free):`);
+	lines.push(`<veil turn="${turnCount}" free="${budgetFree}%">`);
 
-	for (const item of items) {
-		const pinLabel = item.pinned ? ", pinned" : "";
-		lines.push(`  ${item.stub} — score: ${item.score.toFixed(2)}, ${formatTokens(item.tokens)}${pinLabel}`);
-	}
+	// Compact item list: [id] score pin?
+	const itemLines = items.map((item) => {
+		const id = item.stub.split(":")[1];
+		const pin = item.pinned ? " pin" : "";
+		return `[${id}] ${item.score.toFixed(1)}${pin}`;
+	});
+	lines.push(itemLines.join(" | "));
 
 	const lowScoring = items.filter((i) => i.score < 0.5 && !i.pinned);
 	if (lowScoring.length > 0) {
-		lines.push("");
-		lines.push(`Review: Does each item affect your next action? If not, demote it.`);
-		lines.push(
-			`Low-scoring candidates: ${lowScoring.map((i) => i.stub.split(":")[1].replace(/[[\]]/g, "")).join(", ")}`,
-		);
+		const ids = lowScoring.map((i) => i.stub.split(":")[1]).join(", ");
+		lines.push(`Stale: ${ids} — demote if not needed`);
 	}
 
-	lines.push("</context-checkpoint>");
+	lines.push("</veil>");
 	return lines.join("\n");
 }
 
