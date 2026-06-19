@@ -7,10 +7,10 @@ You have a managed context window. Items appear as stubs: \`[EPISODE:id:summary]
 **The \`<veil-context>\` block** shown each turn is your current working set. Scan it before recalling more; what you need may already be there.
 
 ### Reading tool results
-- \`items: [...]\` = array of memories. Non-empty means you found something.
-- \`message\` = human-readable summary of what happened.
-- \`formatted\` = pre-rendered list for display.
-- Empty array = nothing found for that query; try different tags.
+Tool results are wrapped in \`<veil-{tool} count="N">\` tags:
+- \`count > 0\` = memories found, listed inside the tag
+- \`count = 0\` = nothing found for that query; try different tags
+- Each item shows: \`[TYPE:id:summary]\` — use the id to promote/hydrate
 
 ### Core loop
 

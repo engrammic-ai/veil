@@ -169,8 +169,9 @@ async function executeRecall(params: { tags: string[]; limit?: number }, ctx: To
 	const items = await ctx.manager.recall(params.tags, params.limit ?? 10);
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
 	ctx.onRecall?.(items.map((i) => i.id));
-	const message = result.length > 0 ? `Found ${result.length} matching items.` : "No matching items found.";
-	return { success: true, data: { message, items: result } };
+
+	const formatted = wrapToolResult("recall", result.length, result.map((r) => r.stub).join("\n"));
+	return { success: true, data: { formatted, items: result } };
 }
 
 async function executePromote(params: { id: string }, ctx: ToolContext): Promise<ToolResult> {
@@ -263,11 +264,18 @@ async function executeVeilHistory(params: { query: string; days?: number }, ctx:
 	const results = await ctx.manager.searchHistory(params.query, since);
 
 	if (results.length === 0) {
-		return { success: true, data: { message: "No related context found in recent sessions." } };
+		const formatted = wrapToolResult("history", 0, "No related context found in recent sessions.");
+		return { success: true, data: { formatted } };
 	}
 
-	const formatted = results.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`).join("\n");
-	const message = `Found ${results.length} memories from past sessions.`;
+	const itemList = results.map((r) => `- ${r.id} [${r.type}] "${r.summary}" (${r.sessionDate})`).join("\n");
+	const formatted = wrapToolResult("history", results.length, itemList);
 
-	return { success: true, data: { message, items: results, formatted } };
+	return { success: true, data: { formatted, items: results } };
+}
+
+// Wrap tool results in explicit tags for better model interpretation
+function wrapToolResult(tool: string, count: number, content: string): string {
+	const status = count > 0 ? `Found ${count} item${count === 1 ? "" : "s"}` : "No items found";
+	return `<veil-${tool} count="${count}">\n${status}:\n${content}\n</veil-${tool}>`;
 }
