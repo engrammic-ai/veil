@@ -88,6 +88,23 @@ var checkCmd = &cobra.Command{
 	Run:   runCheck,
 }
 
+var embedderCmd = &cobra.Command{
+	Use:   "embedder",
+	Short: "Manage the Veil embedder server",
+}
+
+var embedderCacheCmd = &cobra.Command{
+	Use:   "cache",
+	Short: "Manage embedder model cache",
+}
+
+var embedderCacheClearCmd = &cobra.Command{
+	Use:   "clear",
+	Short: "Clear cached embedding models",
+	Long:  "Remove all cached embedding models from ~/.cache/veil/models/. Models will be re-downloaded on next use.",
+	Run:   runEmbedderCacheClear,
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVarP(&yes, "yes", "y", false, "Assume yes to all prompts")
@@ -107,7 +124,9 @@ func init() {
 
 	uninstallCmd.Flags().BoolVar(&purge, "purge", false, "Also remove configuration and data files")
 
-	rootCmd.AddCommand(installCmd, updateCmd, uninstallCmd, infoCmd, releasesCmd, checkCmd)
+	embedderCacheCmd.AddCommand(embedderCacheClearCmd)
+	embedderCmd.AddCommand(embedderCacheCmd)
+	rootCmd.AddCommand(installCmd, updateCmd, uninstallCmd, infoCmd, releasesCmd, checkCmd, embedderCmd)
 }
 
 // newDownloadClient creates a download client with proxy/CA-cert config from flags.
@@ -657,4 +676,79 @@ func runCheck(cmd *cobra.Command, args []string) {
 	if !quiet {
 		fmt.Printf("Up to date (%s)\n", current)
 	}
+}
+
+func runEmbedderCacheClear(cmd *cobra.Command, args []string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("resolve home directory: %w", err))
+	}
+
+	cacheDir := filepath.Join(home, ".cache", "veil", "models")
+
+	info, err := os.Stat(cacheDir)
+	if os.IsNotExist(err) {
+		if !quiet {
+			fmt.Println("No cached models found.")
+		}
+		return
+	}
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("stat cache directory: %w", err))
+	}
+	if !info.IsDir() {
+		exitcodes.Exit(exitcodes.ErrGeneral, fmt.Sprintf("%s is not a directory", cacheDir))
+	}
+
+	var totalSize int64
+	var fileCount int
+	filepath.Walk(cacheDir, func(_ string, info os.FileInfo, _ error) error {
+		if info != nil && !info.IsDir() {
+			totalSize += info.Size()
+			fileCount++
+		}
+		return nil
+	})
+
+	if fileCount == 0 {
+		if !quiet {
+			fmt.Println("No cached models found.")
+		}
+		return
+	}
+
+	sizeStr := formatBytes(totalSize)
+	if !yes {
+		fmt.Printf("Clear %d cached model files (%s) from %s? [y/N] ", fileCount, sizeStr, cacheDir)
+		var answer string
+		fmt.Scanln(&answer)
+		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			fmt.Println("Aborted.")
+			exitcodes.Exit(exitcodes.ErrUserCancelled, "")
+		}
+	}
+
+	if err := os.RemoveAll(cacheDir); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			exitcodes.ExitError(exitcodes.ErrPermission, fmt.Errorf("remove cache directory: %w", err))
+		}
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("remove cache directory: %w", err))
+	}
+
+	if !quiet {
+		fmt.Printf("Cleared %d cached model files (%s).\n", fileCount, sizeStr)
+	}
+}
+
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

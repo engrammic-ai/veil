@@ -45,6 +45,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { renderContextCommand, renderContextSearch } from "@engrammic/veil-context";
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
 import {
@@ -86,7 +87,6 @@ import type { SourceInfo } from "../../core/source-info.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getSessionStats as getMcpSessionStats } from "../../extensions/veil-statusbar/index.ts";
-import { renderContextCommand, renderContextSearch } from "@engrammic/veil-context";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -1897,6 +1897,7 @@ export class InteractiveMode {
 		this.clearExtensionWidgets();
 		this.footerDataProvider.clearExtensionStatuses();
 		this.footer.invalidate();
+		this.ui.requestRender();
 		this.autocompleteProviderWrappers = [];
 		this.setCustomEditorComponent(undefined);
 		this.setupAutocompleteProvider();
@@ -2654,15 +2655,17 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/new") {
+			if (text === "/new" || text === "/clear") {
 				this.editor.setText("");
 				await this.handleClearCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+				const args = text.startsWith("/compact ") ? text.slice(9).trim() : "";
+				const isFull = args === "full" || args.startsWith("full ");
+				const customInstructions = isFull ? args.slice(4).trim() || undefined : args || undefined;
 				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
+				await this.handleCompactCommand(customInstructions, isFull);
 				return;
 			}
 			if (text === "/reload") {
@@ -2772,6 +2775,7 @@ export class InteractiveMode {
 		}
 
 		this.footer.invalidate();
+		this.ui.requestRender();
 
 		switch (event.type) {
 			case "agent_start":
@@ -2814,6 +2818,7 @@ export class InteractiveMode {
 
 			case "thinking_level_changed":
 				this.footer.invalidate();
+				this.ui.requestRender();
 				this.updateEditorBorderColor();
 				break;
 
@@ -3035,6 +3040,7 @@ export class InteractiveMode {
 						),
 					);
 					this.footer.invalidate();
+					this.ui.requestRender();
 				} else if (event.errorMessage) {
 					if (event.reason === "manual") {
 						this.showError(event.errorMessage);
@@ -3252,6 +3258,7 @@ export class InteractiveMode {
 
 		if (options.updateFooter) {
 			this.footer.invalidate();
+			this.ui.requestRender();
 			this.updateEditorBorderColor();
 		}
 
@@ -3641,6 +3648,7 @@ export class InteractiveMode {
 		const newMode = this.session.permissionManager.cycleMode();
 		this.footerDataProvider.setPermissionMode(newMode);
 		this.footer.invalidate();
+		this.ui.requestRender();
 		this.showStatus(`Permission mode: ${newMode}`);
 	}
 
@@ -3650,6 +3658,7 @@ export class InteractiveMode {
 			this.showStatus("Current model does not support thinking");
 		} else {
 			this.footer.invalidate();
+			this.ui.requestRender();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
 		}
@@ -3663,6 +3672,7 @@ export class InteractiveMode {
 				this.showStatus(msg);
 			} else {
 				this.footer.invalidate();
+				this.ui.requestRender();
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
@@ -4123,6 +4133,7 @@ export class InteractiveMode {
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
 						this.footer.invalidate();
+						this.ui.requestRender();
 						this.updateEditorBorderColor();
 					},
 					onThemeChange: (themeName) => {
@@ -4218,6 +4229,7 @@ export class InteractiveMode {
 			try {
 				await this.session.setModel(model);
 				this.footer.invalidate();
+				this.ui.requestRender();
 				this.updateEditorBorderColor();
 				this.showStatus(`Model: ${model.id}`);
 				void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
@@ -4351,6 +4363,7 @@ export class InteractiveMode {
 					try {
 						await this.session.setModel(model);
 						this.footer.invalidate();
+						this.ui.requestRender();
 						this.updateEditorBorderColor();
 						done();
 						this.showStatus(`Model: ${model.id}`);
@@ -4914,6 +4927,7 @@ export class InteractiveMode {
 
 		await this.updateAvailableProviderCount();
 		this.footer.invalidate();
+		this.ui.requestRender();
 		this.updateEditorBorderColor();
 		if (selectedModel) {
 			this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
@@ -5709,7 +5723,11 @@ export class InteractiveMode {
 		}
 
 		// Parse subcommand: /context search <query> or /ctx search <query>
-		const stripped = text.startsWith("/ctx ") ? text.slice(5).trim() : text.startsWith("/context ") ? text.slice(9).trim() : "";
+		const stripped = text.startsWith("/ctx ")
+			? text.slice(5).trim()
+			: text.startsWith("/context ")
+				? text.slice(9).trim()
+				: "";
 
 		let output: { lines: string[] };
 		if (stripped.startsWith("search ")) {
@@ -5838,7 +5856,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+	private async handleCompactCommand(customInstructions?: string, isFull = false): Promise<void> {
 		const entries = this.sessionManager.getEntries();
 		const messageCount = entries.filter((e) => e.type === "message").length;
 
@@ -5853,10 +5871,32 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 
-		try {
-			await this.session.compact(customInstructions);
-		} catch {
-			// Ignore, will be emitted as an event
+		// Run Veil eviction sweep first (fast, heuristic-based)
+		if (this.session.veilHarness) {
+			try {
+				const evicted = await this.session.veilHarness.forceEviction();
+				if (evicted.length > 0) {
+					this.showStatus(`Evicted ${evicted.length} item${evicted.length === 1 ? "" : "s"} to cold storage`);
+				}
+			} catch {
+				// Veil eviction failed, continue with Pi compaction if requested
+			}
+		}
+
+		// Only run Pi's LLM-based compaction if explicitly requested
+		if (isFull) {
+			try {
+				await this.session.compact(customInstructions);
+			} catch {
+				// Ignore, will be emitted as an event
+			}
+		} else if (!this.session.veilHarness) {
+			// No Veil harness, fall back to Pi compaction
+			try {
+				await this.session.compact(customInstructions);
+			} catch {
+				// Ignore, will be emitted as an event
+			}
 		}
 	}
 

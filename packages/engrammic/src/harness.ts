@@ -988,6 +988,17 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Force eviction sweep. Demotes low-score items to cold storage.
+	 * Called by /compact command for manual context reduction.
+	 */
+	async forceEviction(): Promise<EvictionCandidate[]> {
+		const taskCtx: TaskContext = {
+			tags: [],
+		};
+		return this.manager.checkEviction(taskCtx);
+	}
+
+	/**
 	 * Get tool definitions for agent registration.
 	 */
 	getTools(): ToolDefinition[] {
