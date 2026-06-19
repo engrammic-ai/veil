@@ -19,7 +19,7 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 	{
 		name: "veil_recall",
 		description:
-			"Search your memory for relevant past context. Returns matching items as stubs you can hydrate or promote.",
+			"Search your memory for relevant past context. Returns items wrapped in <veil-recall count=N> tags. If count > 0, you have memories - read them. Use the IDs to promote or hydrate items.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -115,7 +115,8 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 	},
 	{
 		name: "veil_history",
-		description: "Search past sessions for related context",
+		description:
+			"Search past sessions for related context. Returns items wrapped in <veil-history count=N> tags. If count > 0, you found memories from past sessions - read them and report what you found.",
 		parameters: {
 			type: "object",
 			properties: {
