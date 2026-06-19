@@ -178,6 +178,7 @@ export class VeilHarness {
 			toolCallId?: string;
 		}
 	> = new Map();
+	private autoCapturedIds: Set<string> = new Set();
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -257,9 +258,12 @@ export class VeilHarness {
 				if (candidate.item.sourceToolCallId) {
 					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
 				}
-				// Decrement token budget to reflect freed capacity
-				const freed = this.estimateTokens(candidate.item.content);
-				this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
+				// Decrement token budget only for items auto-captured by this harness
+				if (this.autoCapturedIds.has(candidate.item.id)) {
+					const freed = this.estimateTokens(candidate.item.content);
+					this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
+					this.autoCapturedIds.delete(candidate.item.id);
+				}
 				if (this.tokenBudget.softWarningEmitted) {
 					const softLimit = Math.floor(
 						this.captureConfig.maxTokenBudget * this.captureConfig.softThresholdPercent,
@@ -399,9 +403,11 @@ export class VeilHarness {
 
 		if (rule.debounceWindowMs) {
 			const argObj = args as Record<string, unknown> | undefined;
-			const filePath = argObj?.file_path ?? "";
+			const filePath = argObj?.file_path;
 			// Always include file path so edits to different files get separate debounce slots
-			const dedupeKey = rule.dedupeKey ? `${rule.dedupeKey}:${filePath}` : `${toolName}:${filePath}`;
+			const dedupeKey = rule.dedupeKey
+				? `${rule.dedupeKey}:${filePath ?? toolCallId ?? Date.now()}`
+				: `${toolName}:${filePath ?? toolCallId ?? Date.now()}`;
 			const pending = this.pendingCaptures.get(dedupeKey);
 			if (pending) {
 				clearTimeout(pending.timer);
@@ -512,7 +518,8 @@ export class VeilHarness {
 
 		// Store in warm cache with tool call ID for faded history
 		this.emitMemoryEvent("remembering", toolName);
-		this.manager.remember(toStore, rule.type, tags, toolCallId, resolvedDedupeKey);
+		const item = this.manager.remember(toStore, rule.type, tags, toolCallId, resolvedDedupeKey);
+		this.autoCapturedIds.add(item.id);
 		this.emitMemoryEvent("learned", `captured ${toolName}`);
 		this.tokenBudget.used += incomingTokens;
 		this.capturesThisTurn++;
@@ -523,10 +530,17 @@ export class VeilHarness {
 	 * Flush all pending debounced captures immediately (e.g., on session end).
 	 */
 	flushPendingCaptures(): void {
-		for (const [key, entry] of this.pendingCaptures) {
+		const entries = [...this.pendingCaptures.values()];
+		for (const entry of entries) {
 			clearTimeout(entry.timer);
-			this.pendingCaptures.delete(key);
-			this.commitCapture(entry.toolName, entry.args, entry.rule, entry.latestExtracted, entry.toolCallId);
+		}
+		this.pendingCaptures.clear();
+		for (const entry of entries) {
+			try {
+				this.commitCapture(entry.toolName, entry.args, entry.rule, entry.latestExtracted, entry.toolCallId);
+			} catch (e) {
+				console.error("[veil] flush capture failed:", e);
+			}
 		}
 	}
 
