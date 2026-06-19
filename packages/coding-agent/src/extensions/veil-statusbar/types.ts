@@ -1,21 +1,14 @@
+import type { Usage } from "@earendil-works/pi-ai";
 import type { VeilHarness } from "@engrammic/veil-context";
 import type { AgentSession } from "../../core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 
-export interface TokenUsage {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	total: number;
-}
-
 export type CatState = "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict";
 
 export type WidgetEvent =
 	| { type: "memory"; state: CatState; detail?: string }
-	| { type: "session"; usage: TokenUsage }
+	| { type: "session"; usage: Usage }
 	| { type: "git"; branch: string; diff?: { added: number; removed: number } }
 	| { type: "resize"; width: number; height: number }
 	| { type: "mode"; mode: string };
