@@ -142,6 +142,8 @@ export interface CaptureConfig {
 	maxItemsPerSession: number;
 	minChars: number;
 	maxChars: number;
+	maxTokenBudget: number; // Hard cap in tokens (default: 8000)
+	softThresholdPercent: number; // Fraction at which warning emits (default: 0.75)
 }
 
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
@@ -149,6 +151,8 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
 	maxItemsPerSession: 500,
 	minChars: 50,
 	maxChars: 8000,
+	maxTokenBudget: 8000,
+	softThresholdPercent: 0.75,
 };
 
 export const DEFAULT_CONFIG: ContextManagerConfig = {

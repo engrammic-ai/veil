@@ -103,9 +103,19 @@ export class ContextManager {
 	/**
 	 * Store a new context item.
 	 */
-	remember(content: string, type: ContextItem["type"], tags: string[] = [], toolCallId?: string): ContextItem {
+	remember(
+		content: string,
+		type: ContextItem["type"],
+		tags: string[] = [],
+		toolCallId?: string,
+		dedupeKey?: string,
+	): ContextItem {
 		const item = createItem(content, type, tags, toolCallId);
 		this.cache.put(item);
+
+		if (dedupeKey) {
+			this.cache.registerDedupeKey(dedupeKey, item.id);
+		}
 
 		// Re-request miss: this content was recently evicted and is being re-captured.
 		const prior = this.cache.findRecentEviction(item.contentHash, this.config.reRequestWindowMs);

@@ -20,6 +20,7 @@ export interface HydrationEvent {
 
 export class ContextCache {
 	private db: BetterSqlite3.Database;
+	private dedupeIndex: Map<string, string> = new Map(); // dedupeKey -> itemId
 
 	// Prepared statements (initialised once in constructor, reused on every call)
 	private stmtPut: BetterSqlite3.Statement;
@@ -486,6 +487,19 @@ export class ContextCache {
 		const row = this.stmtGetByHash.get(hash) as any;
 		if (!row) return null;
 		return this.rowToItem(row);
+	}
+
+	getByDedupeKey(key: string): ContextItem | undefined {
+		const id = this.dedupeIndex.get(key);
+		return id ? (this.get(id) ?? undefined) : undefined;
+	}
+
+	registerDedupeKey(key: string, itemId: string): void {
+		this.dedupeIndex.set(key, itemId);
+	}
+
+	removeDedupeKey(key: string): void {
+		this.dedupeIndex.delete(key);
 	}
 
 	delete(id: string): void {

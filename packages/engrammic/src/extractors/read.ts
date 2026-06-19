@@ -7,7 +7,10 @@ import { extractExtension, isCodeExtension, truncate } from "./utils.ts";
 
 /**
  * Fast regex-based structure extraction for code files.
- * NOTE: This is a fallback. For accurate extraction, wire in TreeSitterParser from worldview/.
+ * NOTE: TreeSitterParser (worldview/parser.ts) cannot be used here — both
+ * Parser.init() and Parser.parse() are async (WASM), but the Extractor type
+ * is synchronous. To use tree-sitter, the Extractor type must be changed to
+ * return Promise<ExtractorResult> and all call sites updated accordingly.
  */
 function extractStructureFast(content: string, ext: string): string {
 	const exports: string[] = [];

@@ -346,6 +346,93 @@ describe("autoCapture integration", () => {
 		await harness.close();
 	});
 
+	test("debounces rapid edits to same file into single capture", async () => {
+		vi.useFakeTimers();
+
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const { mockAgentHarness, emit } = makeMockAgentHarness();
+		harness.subscribeToEvents(mockAgentHarness);
+
+		const editContent = (n: number) =>
+			`function foo() { return ${n}; } // edit number ${n} with enough content to pass minChars check`;
+
+		// Emit 3 rapid edits to the same file
+		for (let i = 1; i <= 3; i++) {
+			emit({
+				toolName: "Edit",
+				input: { file_path: "/tmp/foo.ts" },
+				content: [{ type: "text", text: editContent(i) }],
+				isError: false,
+			});
+		}
+
+		// Nothing committed yet — window still open
+		expect(harness.getManager().getCache().getAll().length).toBe(0);
+
+		// Advance past 30s debounce window
+		vi.advanceTimersByTime(31000);
+
+		// Only 1 capture should exist (the last edit merged)
+		const allItems = harness.getManager().getCache().getAll();
+		expect(allItems.length).toBe(1);
+
+		vi.useRealTimers();
+		await harness.close();
+	});
+
+	test("deduplicates edits to same file by dedupeKey even when content differs", async () => {
+		vi.useFakeTimers();
+
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const { mockAgentHarness, emit } = makeMockAgentHarness();
+		harness.subscribeToEvents(mockAgentHarness);
+
+		const filePath = "/tmp/dedupe-target.ts";
+
+		// First edit — committed after debounce window
+		emit({
+			toolName: "Edit",
+			input: { file_path: filePath },
+			content: [
+				{ type: "text", text: `function foo() { return 1; } // version 1 with enough chars for minChars check` },
+			],
+			isError: false,
+		});
+		vi.advanceTimersByTime(31000);
+
+		// Only 1 item captured so far
+		expect(harness.getManager().getCache().getAll().length).toBe(1);
+
+		// Second edit to the same file with different content
+		emit({
+			toolName: "Edit",
+			input: { file_path: filePath },
+			content: [
+				{
+					type: "text",
+					text: `function foo() { return 42; } // version 2 with different content, still same file`,
+				},
+			],
+			isError: false,
+		});
+		vi.advanceTimersByTime(31000);
+
+		// Should still be 1 item (semantic dedup by edit:<file_path> key)
+		const allItems = harness.getManager().getCache().getAll();
+		expect(allItems.length).toBe(1);
+
+		vi.useRealTimers();
+		await harness.close();
+	});
+
 	test("does not capture error results", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
@@ -925,6 +1012,172 @@ describe("getConvergenceState", () => {
 		const state = harness.getConvergenceState("test");
 		expect(state).not.toBeNull();
 		expect(state?.consecutiveFailures).toBe(2);
+
+		await harness.close();
+	});
+});
+
+describe("token budget tracking", () => {
+	let tmpDir: string;
+
+	function makeMockAgentHarness() {
+		const handlers: Array<(event: any) => void> = [];
+		const mockAgentHarness = {
+			on: (_type: "tool_result", handler: (event: any) => void) => {
+				handlers.push(handler);
+				return () => {
+					const idx = handlers.indexOf(handler);
+					if (idx !== -1) handlers.splice(idx, 1);
+				};
+			},
+		};
+		const emit = (event: any) => {
+			for (const h of handlers) h(event);
+		};
+		return { mockAgentHarness, emit };
+	}
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("getCaptureBudget returns initial zero state", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			captureConfig: { maxTokenBudget: 8000, softThresholdPercent: 0.75 },
+		});
+
+		const budget = harness.getCaptureBudget();
+		expect(budget.used).toBe(0);
+		expect(budget.max).toBe(8000);
+		expect(budget.softThreshold).toBe(6000);
+		expect(budget.softWarningEmitted).toBe(false);
+
+		await harness.close();
+	});
+
+	test("emits budget_warning when soft threshold crossed", async () => {
+		// 200-token budget, soft at 50%. Items are ~20 chars → ~5 tokens each.
+		// After enough items to cross 100 tokens, warning fires.
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			captureConfig: {
+				maxTokenBudget: 200,
+				softThresholdPercent: 0.5,
+				maxItemsPerTurn: 100,
+				maxItemsPerSession: 1000,
+				minChars: 10,
+				maxChars: 99999,
+			},
+		});
+
+		const events: Array<{ type: string; detail?: string }> = [];
+		harness.onMemoryEvent((e) => events.push(e));
+
+		const { mockAgentHarness, emit } = makeMockAgentHarness();
+		harness.subscribeToEvents(mockAgentHarness);
+
+		// Each item ~80 chars → ~20 tokens. After 5 items (100 tokens) we cross the 100-token threshold.
+		for (let i = 0; i < 8; i++) {
+			emit({
+				toolName: "Read",
+				input: { file_path: `/tmp/file${i}.ts` },
+				content: [
+					{ type: "text", text: `export function fn${i}() { return ${i}; } // unique content item ${i} padding` },
+				],
+				isError: false,
+			});
+		}
+
+		const warningEvents = events.filter((e) => e.type === "budget_warning");
+		expect(warningEvents.length).toBe(1);
+		expect(harness.getCaptureBudget().softWarningEmitted).toBe(true);
+
+		await harness.close();
+	});
+
+	test("emits budget_exceeded and skips capture when hard cap reached", async () => {
+		// Very small budget: 50 tokens. Items ~80 chars → ~20 tokens each. Only 2-3 fit.
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			captureConfig: {
+				maxTokenBudget: 50,
+				softThresholdPercent: 0.75,
+				maxItemsPerTurn: 100,
+				maxItemsPerSession: 1000,
+				minChars: 10,
+				maxChars: 99999,
+			},
+		});
+
+		const events: Array<{ type: string; detail?: string }> = [];
+		harness.onMemoryEvent((e) => events.push(e));
+
+		const { mockAgentHarness, emit } = makeMockAgentHarness();
+		harness.subscribeToEvents(mockAgentHarness);
+
+		for (let i = 0; i < 8; i++) {
+			emit({
+				toolName: "Read",
+				input: { file_path: `/tmp/cap${i}.ts` },
+				content: [
+					{ type: "text", text: `export function cap${i}() { return ${i}; } // unique item for budget test ${i}` },
+				],
+				isError: false,
+			});
+		}
+
+		const exceededEvents = events.filter((e) => e.type === "budget_exceeded");
+		expect(exceededEvents.length).toBeGreaterThan(0);
+		expect(exceededEvents[0].detail).toContain("budget full");
+
+		// Cache should have fewer items than emitted
+		const allItems = harness.getManager().getCache().getAll();
+		expect(allItems.length).toBeLessThan(8);
+
+		await harness.close();
+	});
+
+	test("budget_warning emitted only once even when exceeded further", async () => {
+		const harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			coldStore: new MemoryColdStore(),
+			captureConfig: {
+				maxTokenBudget: 200,
+				softThresholdPercent: 0.5,
+				maxItemsPerTurn: 100,
+				maxItemsPerSession: 1000,
+				minChars: 10,
+				maxChars: 99999,
+			},
+		});
+
+		const events: Array<{ type: string }> = [];
+		harness.onMemoryEvent((e) => events.push(e));
+
+		const { mockAgentHarness, emit } = makeMockAgentHarness();
+		harness.subscribeToEvents(mockAgentHarness);
+
+		for (let i = 0; i < 12; i++) {
+			emit({
+				toolName: "Read",
+				input: { file_path: `/tmp/warn${i}.ts` },
+				content: [
+					{ type: "text", text: `export function warn${i}() { return ${i}; } // content padding item ${i}` },
+				],
+				isError: false,
+			});
+		}
+
+		const warningEvents = events.filter((e) => e.type === "budget_warning");
+		expect(warningEvents.length).toBe(1);
 
 		await harness.close();
 	});
