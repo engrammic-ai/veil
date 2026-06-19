@@ -42,6 +42,11 @@ export function getTextOutput(
 ): string {
 	if (!result) return "";
 
+	// Guard against non-array content (some MCP tools return strings)
+	if (!Array.isArray(result.content)) {
+		return typeof result.content === "string" ? result.content : JSON.stringify(result.content);
+	}
+
 	const textBlocks = result.content.filter((c) => c.type === "text");
 	const imageBlocks = result.content.filter((c) => c.type === "image");
 
