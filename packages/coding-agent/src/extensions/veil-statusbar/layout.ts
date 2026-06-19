@@ -44,6 +44,7 @@ export class StatusBarLayout {
 		return [...this.leftWidgets, ...this.rightWidgets].find((w) => w.id === id);
 	}
 
+	// no-op intentionally: layout has no internal state that needs invalidation
 	invalidate(): void {}
 
 	dispose(): void {
@@ -55,10 +56,12 @@ export class StatusBarLayout {
 	}
 
 	private calculateRightWidth(): number {
+		// TODO: widgets should expose a preferredWidth(); 30 is a placeholder until that API exists
 		return this.rightWidgets.length > 0 ? 30 : 0;
 	}
 
 	private renderSide(widgets: StatusBarWidget[], width: number): string[] {
+		// widgets may return multiple lines; left/right counts may differ and are padded in render()
 		const lines: string[] = [];
 		for (const widget of widgets) {
 			lines.push(...widget.render(width));
