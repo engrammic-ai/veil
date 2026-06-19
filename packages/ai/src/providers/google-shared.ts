@@ -175,10 +175,11 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 			});
 		} else if (msg.role === "toolResult") {
 			// Extract text and image content
-			const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
+			const contentArray = Array.isArray(msg.content) ? msg.content : [];
+			const textContent = contentArray.filter((c): c is TextContent => c.type === "text");
 			const textResult = textContent.map((c) => c.text).join("\n");
 			const imageContent = model.input.includes("image")
-				? msg.content.filter((c): c is ImageContent => c.type === "image")
+				? contentArray.filter((c): c is ImageContent => c.type === "image")
 				: [];
 
 			const hasText = textResult.length > 0;

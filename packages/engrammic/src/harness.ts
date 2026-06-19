@@ -35,10 +35,10 @@ import {
 	inferGoalId,
 } from "./goal-inference.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
-import { buildContextSection, buildFailureSection } from "./injection.ts";
-import { CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
+import { buildContextSection, buildFailureSection, formatStub } from "./injection.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
+import { buildCheckpointPrompt, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 import { type SelectionResult, selectForTurn, type TurnContext } from "./retrieval.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
@@ -996,6 +996,35 @@ export class VeilHarness {
 	 */
 	getSystemPromptSection(): string {
 		return CONTEXT_MANAGEMENT_PROMPT;
+	}
+
+	/**
+	 * Get a checkpoint nudge if budget is tight or items need review.
+	 * Returns null if no nudge is warranted.
+	 */
+	getCheckpointNudge(): string | null {
+		const window = this.manager.getWindow();
+		const budget = window.budget;
+		const budgetUsedPercent = budget.maxTokens > 0 ? (budget.usedTokens / budget.maxTokens) * 100 : 0;
+
+		const rankedItems = rankItems(window.items, this.currentTaskContext, this.manager.getConfig());
+		const lowScoring = rankedItems.filter((r) => r.score < 0.5 && !r.item.pinned);
+
+		// Nudge if budget > 60% used OR more than 3 low-scoring items
+		if (budgetUsedPercent < 60 && lowScoring.length < 3) {
+			return null;
+		}
+
+		return buildCheckpointPrompt({
+			turnCount: this.manager.getTurnCount(),
+			items: rankedItems.map(({ item, score }) => ({
+				stub: formatStub(item),
+				score,
+				tokens: estimateTokens(item.content),
+				pinned: item.pinned ?? false,
+			})),
+			budget,
+		});
 	}
 
 	/**

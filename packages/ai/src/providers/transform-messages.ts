@@ -194,7 +194,8 @@ export function transformMessages<TApi extends Api>(
 			}
 
 			// Track tool calls from this assistant message
-			const toolCalls = assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[];
+			const contentArray = Array.isArray(assistantMsg.content) ? assistantMsg.content : [];
+			const toolCalls = contentArray.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
 				pendingToolCalls = toolCalls;
 				existingToolResultIds = new Set();

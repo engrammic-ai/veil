@@ -1034,7 +1034,7 @@ function convertMessages(
 						content: sanitizeSurrogates(msg.content),
 					});
 				}
-			} else {
+			} else if (Array.isArray(msg.content)) {
 				const blocks: ContentBlockParam[] = msg.content.map((item) => {
 					if (item.type === "text") {
 						return {
