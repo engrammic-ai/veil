@@ -390,6 +390,14 @@ export class VeilHarness {
 		const text = extractContent(content);
 		if (text.length < this.captureConfig.minChars) return;
 
+		// Compute dedupeKey early so it can be passed into the extractor for upgrades
+		const argObj = args as Record<string, unknown> | undefined;
+		const resolvedDedupeKeyForExtractor = rule.dedupeKey
+			? argObj?.file_path
+				? `${rule.dedupeKey}:${argObj.file_path}`
+				: rule.dedupeKey
+			: undefined;
+
 		// Run extractor to filter/transform content
 		const extractor = getExtractor(rule.extractor ?? "passthrough");
 		const extracted = extractor({
@@ -398,6 +406,8 @@ export class VeilHarness {
 			content: text,
 			isError,
 			exitCode,
+			cache: this.manager.getCache(),
+			dedupeKey: resolvedDedupeKeyForExtractor,
 		});
 		if (extracted.skipCapture) return;
 

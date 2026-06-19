@@ -3,12 +3,16 @@
  * Extractors transform raw tool output into compact, high-value captures.
  */
 
+import type { ContextCache } from "../cache.ts";
+
 export interface ExtractorContext {
 	toolName: string;
 	args: Record<string, unknown>;
 	content: string; // raw text from tool result
 	isError: boolean;
 	exitCode?: number; // Bash-specific
+	cache?: ContextCache; // warm cache reference for fire-and-forget upgrades
+	dedupeKey?: string; // resolved dedupeKey for the item about to be stored
 }
 
 export interface ExtractorResult {

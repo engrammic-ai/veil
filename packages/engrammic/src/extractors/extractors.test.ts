@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ContextCache } from "../cache.ts";
 import { bashExtractor } from "./bash.ts";
 import { depsExtractor } from "./deps.ts";
 import { editExtractor } from "./edit.ts";
@@ -237,6 +238,45 @@ describe("readExtractor", () => {
 		expect(result.text).toContain("host");
 		expect(result.text).toContain("port");
 		expect(result.extraTags).toContain("ext:ini");
+	});
+
+	it("returns regex result synchronously (no await)", () => {
+		const tsContent = `export function hello() {}\nexport const world = 1;`;
+		const result = readExtractor(ctx({ args: { file_path: "src/test.ts" }, content: tsContent }));
+		// Result must be available synchronously
+		expect(result).toBeDefined();
+		expect(result.text).toContain("[Read] src/test.ts");
+		expect(result.text).toContain("export function hello");
+	});
+
+	it("fires tree-sitter upgrade when cache and dedupeKey are provided", () => {
+		const mockCache = { updateByDedupeKey: vi.fn().mockReturnValue(true) } as unknown as ContextCache;
+		const tsContent = `export function greet() {}\nexport class Greeter {}`;
+		const result = readExtractor(
+			ctx({
+				args: { file_path: "src/greet.ts" },
+				content: tsContent,
+				cache: mockCache,
+				dedupeKey: "read:src/greet.ts",
+			}),
+		);
+		// Sync result is returned immediately
+		expect(result.text).toContain("[Read] src/greet.ts");
+		// The upgrade is fire-and-forget — cache.updateByDedupeKey may be called asynchronously
+	});
+
+	it("does not fire tree-sitter upgrade for non-code files", () => {
+		const mockCache = { updateByDedupeKey: vi.fn() } as unknown as ContextCache;
+		const result = readExtractor(
+			ctx({
+				args: { file_path: "README.md" },
+				content: "# Title\n## Section",
+				cache: mockCache,
+				dedupeKey: "read:README.md",
+			}),
+		);
+		expect(result.text).toContain("Title");
+		expect(mockCache.updateByDedupeKey).not.toHaveBeenCalled();
 	});
 });
 
@@ -481,5 +521,45 @@ describe("depsExtractor", () => {
 		const result = depsExtractor(ctx({ args: { command: "npm install --save-dev typescript" } }));
 		expect(result.text).toContain("typescript");
 		expect(result.text).not.toContain("--save-dev");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ContextCache.updateByDedupeKey
+// ---------------------------------------------------------------------------
+describe("ContextCache.updateByDedupeKey", () => {
+	it("returns false when dedupeKey not registered", () => {
+		const cache = new ContextCache(":memory:");
+		expect(cache.updateByDedupeKey("read:missing.ts", "new content")).toBe(false);
+		cache.close();
+	});
+
+	it("updates content and hash when dedupeKey is registered", () => {
+		const cache = new ContextCache(":memory:");
+		const item = {
+			id: "test-item-1",
+			content: "original content",
+			contentHash: "abc123",
+			createdAt: Date.now(),
+			lastAccess: Date.now(),
+			accessCount: 1,
+			decayScore: 0,
+			cognitiveWeight: 0,
+			stability: 0.5,
+			difficulty: 0.5,
+			type: "episodic" as const,
+			tags: [],
+			pinned: false,
+			source: "auto" as const,
+		};
+		cache.put(item);
+		cache.registerDedupeKey("read:test.ts", item.id);
+
+		const updated = cache.updateByDedupeKey("read:test.ts", "upgraded content");
+		expect(updated).toBe(true);
+
+		const stored = cache.get(item.id);
+		expect(stored?.content).toBe("upgraded content");
+		cache.close();
 	});
 });

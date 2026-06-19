@@ -525,6 +525,14 @@ export class ContextCache {
 		this.dedupeIndex.delete(key);
 	}
 
+	updateByDedupeKey(dedupeKey: string, newContent: string): boolean {
+		const id = this.dedupeIndex.get(dedupeKey);
+		if (!id) return false;
+		const hash = createHash("sha256").update(newContent).digest("hex");
+		this.db.prepare("UPDATE items SET content = ?, content_hash = ? WHERE id = ?").run(newContent, hash, id);
+		return true;
+	}
+
 	delete(id: string): void {
 		this.stmtDelete.run(id);
 	}

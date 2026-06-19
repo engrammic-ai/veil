@@ -2,8 +2,61 @@
  * Read tool extractor - captures file structure, not full content.
  */
 
+import type { ContextCache } from "../cache.ts";
+import { TreeSitterParser } from "../worldview/parser.ts";
+import { extractFromTree } from "../worldview/symbols.ts";
 import type { Extractor, ExtractorContext, ExtractorResult } from "./types.ts";
 import { extractExtension, isCodeExtension, truncate } from "./utils.ts";
+
+// Module-level singleton — kicks off WASM loading at import time
+let parserReady: Promise<TreeSitterParser> | null = null;
+
+function getParserInstance(): Promise<TreeSitterParser> {
+	if (!parserReady) {
+		const p = new TreeSitterParser();
+		parserReady = p.init().then(() => p);
+		parserReady.catch(() => {
+			parserReady = null;
+		});
+	}
+	return parserReady;
+}
+// Eagerly start loading WASM at module import
+getParserInstance().catch(() => {});
+
+async function upgradeWithTreeSitter(
+	filePath: string,
+	content: string,
+	dedupeKey: string,
+	cache: ContextCache,
+): Promise<void> {
+	const deadline = Date.now() + 50;
+	try {
+		const parser = await Promise.race([
+			getParserInstance(),
+			new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 50)),
+		]);
+		if (Date.now() > deadline) return;
+
+		const tree = await parser.parse(filePath, content);
+		if (!tree || Date.now() > deadline) return;
+
+		const symbols = extractFromTree(tree, tree.language.name);
+		const defs = symbols.filter((s) => s.kind === "def");
+		if (defs.length === 0) return;
+
+		const lines = content.split("\n").length;
+		const structure = defs
+			.slice(0, 20)
+			.map((d) => d.symbol)
+			.join("\n");
+		const upgraded = `[Read] ${filePath}\n${structure}\n(${lines} lines)`;
+
+		cache.updateByDedupeKey(dedupeKey, upgraded);
+	} catch {
+		// Silently fail — regex result stands
+	}
+}
 
 /**
  * Fast regex-based structure extraction for code files.
@@ -166,8 +219,15 @@ export const readExtractor: Extractor = (ctx: ExtractorContext): ExtractorResult
 		structure = `${truncate(preview, 150)}\n(${lines.length} lines)`;
 	}
 
-	return {
+	const result: ExtractorResult = {
 		text: `[Read] ${file_path}\n${structure}`,
 		extraTags: ext ? [`ext:${ext}`] : [],
 	};
+
+	// Fire-and-forget TreeSitter upgrade for code files when cache context is available
+	if (isCodeExtension(ext) && ctx.cache && ctx.dedupeKey) {
+		upgradeWithTreeSitter(file_path, ctx.content, ctx.dedupeKey, ctx.cache).catch(() => {});
+	}
+
+	return result;
 };
