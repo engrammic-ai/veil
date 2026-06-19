@@ -247,10 +247,11 @@ describe("autoCapture integration", () => {
 			isError: false,
 		});
 
-		// Content should be stored in warm cache
+		// Content should be stored in warm cache (extracted format, not raw)
 		const recalled = harness.recall(["file", "read"], 10);
 		expect(recalled.length).toBe(1);
-		expect(recalled[0].content).toBe(fileContent);
+		expect(recalled[0].content).toContain("[Read] /tmp/test.ts");
+		expect(recalled[0].content).toContain("export function greet");
 
 		await harness.close();
 	});
@@ -264,11 +265,11 @@ describe("autoCapture integration", () => {
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
 		harness.subscribeToEvents(mockAgentHarness);
 
-		// Edit is not in the capture rules — should be ignored
+		// Unknown tool (not in capture rules) — should be ignored
 		emit({
-			toolName: "Edit",
-			input: { file_path: "/tmp/test.ts", old_string: "foo", new_string: "bar" },
-			content: [{ type: "text", text: "The file has been edited successfully with the new changes applied." }],
+			toolName: "UnknownTool",
+			input: { some_arg: "value" },
+			content: [{ type: "text", text: "Some result from an unknown tool that should not be captured." }],
 			isError: false,
 		});
 
@@ -338,7 +339,9 @@ describe("autoCapture integration", () => {
 		const cache = harness.getManager().getCache();
 		const allItems = cache.getAll();
 		expect(allItems.length).toBe(1);
-		expect(allItems[0].content).toBe(identicalContent);
+		// Content is now in extracted format, not raw
+		expect(allItems[0].content).toContain("[Read] /tmp/version.ts");
+		expect(allItems[0].content).toContain("export const VERSION");
 
 		await harness.close();
 	});

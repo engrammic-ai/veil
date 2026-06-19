@@ -3,10 +3,15 @@
  */
 
 import { bashExtractor } from "./bash.ts";
+import { depsExtractor } from "./deps.ts";
 import { editExtractor } from "./edit.ts";
+import { mcpExtractor } from "./mcp.ts";
 import { readExtractor } from "./read.ts";
+import { skillExtractor } from "./skill.ts";
+import { subagentExtractor } from "./subagent.ts";
 import type { Extractor, ExtractorContext, ExtractorResult } from "./types.ts";
 import { truncate } from "./utils.ts";
+import { writeExtractor } from "./write.ts";
 
 /**
  * Passthrough extractor for unknown tools - just truncates content.
@@ -27,8 +32,13 @@ const passthroughExtractor: Extractor = (ctx: ExtractorContext): ExtractorResult
  */
 const EXTRACTORS: Record<string, Extractor> = {
 	edit: editExtractor,
+	write: writeExtractor,
 	bash: bashExtractor,
 	read: readExtractor,
+	agent: subagentExtractor,
+	skill: skillExtractor,
+	mcp: mcpExtractor,
+	deps: depsExtractor,
 };
 
 /**

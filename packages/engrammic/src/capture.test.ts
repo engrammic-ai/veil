@@ -48,14 +48,18 @@ describe("getCaptureRule", () => {
 		expect(rule!.tags).toEqual(["git", "history"]);
 	});
 
-	test("Bash with npm install → null", () => {
+	test("Bash with npm install → episodic with deps/bash tags", () => {
 		const rule = getCaptureRule("Bash", { command: "npm install" });
-		expect(rule).toBeNull();
+		expect(rule).toBeTruthy();
+		expect(rule!.type).toBe("episodic");
+		expect(rule!.tags).toContain("deps");
 	});
 
-	test("Edit → null", () => {
+	test("Edit → episodic with file/edit tags", () => {
 		const rule = getCaptureRule("Edit", { file_path: "/some/file.ts" });
-		expect(rule).toBeNull();
+		expect(rule).toBeTruthy();
+		expect(rule!.type).toBe("episodic");
+		expect(rule!.tags).toEqual(["file", "edit"]);
 	});
 
 	test("Unknown tool → null", () => {

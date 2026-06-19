@@ -2,30 +2,94 @@
  * Capture logic for auto-storing tool results into episodic/fact memory.
  */
 
-import type { CaptureRule } from "./types.ts";
+import type { EnhancedCaptureRule } from "./extractors/types.ts";
 
 /**
- * Returns a CaptureRule (type + tags) if the given tool call should be captured,
+ * Returns an EnhancedCaptureRule if the given tool call should be captured,
  * or null if it should be skipped.
  */
-export function getCaptureRule(toolName: string, args: unknown): CaptureRule | null {
+export function getCaptureRule(toolName: string, args: unknown): EnhancedCaptureRule | null {
 	// Normalize tool name to handle case variations
 	const normalized = toolName.toLowerCase();
 
+	if (normalized.startsWith("mcp__")) {
+		return {
+			type: "fact",
+			tags: ["mcp", normalized],
+			extractor: "mcp",
+			maxTokens: 200,
+			priority: "normal",
+		};
+	}
+
 	switch (normalized) {
 		case "read":
-			return { type: "episodic", tags: ["file", "read"] };
+			return {
+				type: "episodic",
+				tags: ["file", "read"],
+				extractor: "read",
+				maxTokens: 300,
+				priority: "normal",
+			};
+
+		case "edit":
+			return {
+				type: "episodic",
+				tags: ["file", "edit"],
+				extractor: "edit",
+				maxTokens: 200,
+				priority: "high",
+			};
+
+		case "write":
+			return {
+				type: "episodic",
+				tags: ["file", "write"],
+				extractor: "write",
+				maxTokens: 200,
+				priority: "normal",
+			};
 
 		case "websearch":
-			return { type: "fact", tags: ["web", "search"] };
+			return {
+				type: "fact",
+				tags: ["web", "search"],
+				extractor: "passthrough",
+				maxTokens: 300,
+				priority: "normal",
+			};
 
 		case "webfetch":
-			return { type: "fact", tags: ["web", "fetch"] };
+			return {
+				type: "fact",
+				tags: ["web", "fetch"],
+				extractor: "passthrough",
+				maxTokens: 300,
+				priority: "normal",
+			};
 
 		case "bash": {
 			const command = (args as Record<string, unknown> | undefined)?.command ?? "";
 			return classifyBashCommand(String(command));
 		}
+
+		case "agent":
+			return {
+				type: "episodic",
+				tags: ["agent"],
+				extractor: "agent",
+				maxTokens: 200,
+				priority: "normal",
+			};
+
+		case "skill":
+			return {
+				type: "episodic",
+				tags: ["skill"],
+				extractor: "skill",
+				maxTokens: 100,
+				priority: "normal",
+			};
 
 		default:
 			return null;
@@ -33,12 +97,12 @@ export function getCaptureRule(toolName: string, args: unknown): CaptureRule | n
 }
 
 /**
- * Classify a bash command string and return the appropriate CaptureRule, or null
- * if the command is not in the capture list.
+ * Classify a bash command string and return the appropriate EnhancedCaptureRule,
+ * or null if the command is not in the capture list.
  *
  * Handles pipes by checking each segment independently.
  */
-function classifyBashCommand(command: string): CaptureRule | null {
+function classifyBashCommand(command: string): EnhancedCaptureRule | null {
 	// Strip common prefixes (sudo, time, env VAR=val) before pattern matching
 	// Use a while loop to handle stacked prefixes like `sudo time grep foo`
 	const prefixPattern = /^(sudo|time|env\s+\S+=\S+)\s+/;
@@ -50,12 +114,20 @@ function classifyBashCommand(command: string): CaptureRule | null {
 		return result;
 	};
 
-	const checkSegment = (segment: string): CaptureRule | null => {
+	const checkSegment = (segment: string): EnhancedCaptureRule | null => {
 		const c = clean(segment);
-		if (/^(grep|rg|ag|ack)\b/.test(c)) return { type: "episodic", tags: ["search", "grep"] };
-		if (/^find\b/.test(c)) return { type: "episodic", tags: ["search", "find"] };
-		if (/^git\s+diff\b/.test(c)) return { type: "episodic", tags: ["git", "diff"] };
-		if (/^git\s+(log|show)\b/.test(c)) return { type: "episodic", tags: ["git", "history"] };
+		if (/^(grep|rg|ag|ack)\b/.test(c))
+			return { type: "episodic", tags: ["search", "grep"], extractor: "bash", maxTokens: 500, priority: "high" };
+		if (/^find\b/.test(c))
+			return { type: "episodic", tags: ["search", "find"], extractor: "bash", maxTokens: 500, priority: "high" };
+		if (/^git\s+diff\b/.test(c))
+			return { type: "episodic", tags: ["git", "diff"], extractor: "bash", maxTokens: 500, priority: "high" };
+		if (/^git\s+(log|show)\b/.test(c))
+			return { type: "episodic", tags: ["git", "history"], extractor: "bash", maxTokens: 500, priority: "high" };
+		if (/^(npm\s+test|npx\s+vitest|npx\s+jest|vitest|jest|pytest)\b/.test(c))
+			return { type: "episodic", tags: ["test", "bash"], extractor: "bash", maxTokens: 500, priority: "high" };
+		if (/^(npm\s+(install|add)|yarn\s+add|pip\s+install)\b/.test(c))
+			return { type: "episodic", tags: ["deps", "bash"], extractor: "deps", maxTokens: 500, priority: "normal" };
 		return null;
 	};
 

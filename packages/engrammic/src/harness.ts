@@ -23,6 +23,7 @@ import {
 	type ConvergenceThresholds,
 	type EscalationResult,
 } from "./convergence.ts";
+import { getExtractor } from "./extractors/index.ts";
 import {
 	advanceGoalState,
 	createGoalInferenceState,
@@ -324,7 +325,7 @@ export class VeilHarness {
 
 		// Continue with auto-capture for non-errors
 		if (!event.isError) {
-			this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
+			this.autoCapture(event.toolName, event.input, event.content, event.toolCallId, false, undefined);
 		}
 	}
 
@@ -336,6 +337,8 @@ export class VeilHarness {
 		args: unknown,
 		content: Array<{ type: string; text?: string }>,
 		toolCallId?: string,
+		isError: boolean = false,
+		exitCode?: number,
 	): void {
 		// Check rate limits
 		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
@@ -349,6 +352,17 @@ export class VeilHarness {
 		const text = extractContent(content);
 		if (text.length < this.captureConfig.minChars) return;
 
+		// Run extractor to filter/transform content
+		const extractor = getExtractor(rule.extractor ?? "passthrough");
+		const extracted = extractor({
+			toolName,
+			args: (args as Record<string, unknown>) ?? {},
+			content: text,
+			isError,
+			exitCode,
+		});
+		if (extracted.skipCapture) return;
+
 		// Build metadata for content-type detection
 		const argObj = args as Record<string, unknown> | undefined;
 		const metadata: ContentMetadata = {
@@ -358,10 +372,10 @@ export class VeilHarness {
 		};
 
 		// Compress by content type (sync path: config, conversation; code needs async parser)
-		const { compressed, ratio } = compressSync(text, { metadata });
+		const { compressed, ratio } = compressSync(extracted.text, { metadata });
 
 		// Use compressed if it saved space, otherwise truncate original
-		const toStore = ratio < 1 ? compressed : smartTruncate(text, this.captureConfig.maxChars);
+		const toStore = ratio < 1 ? compressed : smartTruncate(extracted.text, this.captureConfig.maxChars);
 
 		// Check for duplicates — use the same hash function as createItem (cache.ts)
 		const hash = hashContent(toStore);
@@ -371,8 +385,8 @@ export class VeilHarness {
 			return;
 		}
 
-		// Generate tags
-		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
+		// Generate tags, merging extractor-discovered tags
+		const tags = [...rule.tags, ...generateInternalTags(toolName, args), ...(extracted.extraTags ?? [])];
 
 		// Store in warm cache with tool call ID for faded history
 		this.emitMemoryEvent("remembering", toolName);
