@@ -16,6 +16,12 @@ export {
 } from "./attempts.ts";
 export { ContextCache, createItem, hashContent } from "./cache.ts";
 export { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+export {
+	type CaptureDocument,
+	type CaptureLink,
+	type CaptureType,
+	normalizeCapture,
+} from "./capture-document.ts";
 export { type CatConfig, type CatState, CatWidget, DEFAULT_CAT_CONFIG, type SessionStats } from "./cat.ts";
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
 // Cold storage adapters
@@ -66,6 +72,7 @@ export {
 } from "./convergence.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { createVeilExtension } from "./extension.ts";
+export { DEFAULT_FSRS_CONFIG, defaultFSRS, type FSRSConfig, FSRSEngine } from "./fsrs.ts";
 export {
 	advanceGoalState,
 	createGoalInferenceState,

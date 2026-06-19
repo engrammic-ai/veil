@@ -2,6 +2,18 @@
 
 All notable changes to Veil will be documented in this file.
 
+## [0.1.10] - 2026-06-19
+
+### Fixed
+
+- Fixed memory capture not working - tool names are now case-insensitive (Pi sends "read", we checked "Read")
+- Cat now shows "watching" during tool execution instead of staying asleep
+- Default cat state is "watching" on startup (context ready)
+
+### Added
+
+- Added `scripts/db-stats.sh` for quick database inspection
+
 ## [0.1.9] - 2026-06-19
 
 ### Fixed

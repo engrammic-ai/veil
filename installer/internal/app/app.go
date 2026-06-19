@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,9 +39,12 @@ func writeEmbedderConfig(configDir, tier string) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
+	home, _ := os.UserHomeDir()
+	cacheDir := filepath.Join(home, ".cache", "veil", "models")
+
 	cfg := embedderConfig{
 		Tier:          tier,
-		CachePath:     filepath.Join(configDir, "models"),
+		CachePath:     cacheDir,
 		IdleTimeoutMs: 30 * 60 * 1000, // 30 minutes
 		Port:          19532,
 	}
@@ -99,8 +103,9 @@ type Model struct {
 	state         State
 	platform      platform.Platform
 	version       string       // selected or flagged version
-	embedderTier  EmbedderTier // selected embedder model tier
-	embedderIndex int          // current selection in embedder menu (0-5)
+	embedderTier    EmbedderTier // selected embedder model tier
+	embedderIndex   int          // current selection in embedder menu (0-5)
+	startEmbedder   bool         // whether to start embedder server after install
 	spinner       spinner.Model
 	progress      progress.Model
 	miniCat       *ui.MiniCat
@@ -229,6 +234,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle start embedder prompt
+		if m.state == StateStartEmbedder {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				m.startEmbedder = true
+				return m, m.startEmbedderServer()
+			case "n", "N":
+				m.startEmbedder = false
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+			}
+		}
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -352,6 +369,8 @@ func (m *Model) View() string {
 		body = m.miniCat.View() + "\n\n" + m.renderEmbedderMenu()
 	case StateConfigureEmbedder:
 		body = m.miniCat.ViewWithStatus("Configuring semantic memory...", m.spinner.View())
+	case StateStartEmbedder:
+		body = m.miniCat.View() + "\n\nStart embedding server now? [Y/n]"
 	case StateSuccess:
 		version := "unknown"
 		if m.release != nil {
@@ -606,6 +625,19 @@ func (m *Model) runStep(s State) tea.Cmd {
 
 	case StateConfigureEmbedder:
 		return m.configureEmbedder()
+
+	case StateStartEmbedder:
+		// Skip for "none" or "ollama" tiers
+		if m.embedderTier == EmbedderNone || m.embedderTier == EmbedderOllama {
+			return func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+		}
+		// Auto-skip in non-interactive mode
+		if m.flagYes {
+			m.startEmbedder = true
+			return m.startEmbedderServer()
+		}
+		// Interactive: wait for user input (handled in Update)
+		return nil
 	}
 
 	return nil
@@ -622,6 +654,43 @@ func (m *Model) configureEmbedder() tea.Cmd {
 			return stepDoneMsg{result: ResultError, err: err}
 		}
 
+		return stepDoneMsg{result: ResultOK}
+	}
+}
+
+func (m *Model) startEmbedderServer() tea.Cmd {
+	return func() tea.Msg {
+		if !m.startEmbedder {
+			return stepDoneMsg{result: ResultSkip}
+		}
+
+		veilBin := m.installPath
+		if _, err := os.Stat(veilBin); os.IsNotExist(err) {
+			m.addDebug("veil binary not found, skipping embedder start")
+			return stepDoneMsg{result: ResultOK}
+		}
+
+		m.addDebug("starting embedder server")
+
+		cmd := exec.Command(veilBin, "embedder", "start")
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		cmd.Stdin = nil
+
+		if err := cmd.Start(); err != nil {
+			m.addDebug(fmt.Sprintf("failed to start embedder: %v", err))
+			return stepDoneMsg{result: ResultOK}
+		}
+
+		// Detach the process
+		if cmd.Process != nil {
+			_ = cmd.Process.Release()
+		}
+
+		// Brief wait to verify it started
+		time.Sleep(500 * time.Millisecond)
+
+		m.addDebug("embedder server started")
 		return stepDoneMsg{result: ResultOK}
 	}
 }

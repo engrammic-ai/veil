@@ -13,6 +13,7 @@ import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
@@ -23,6 +24,8 @@ import {
 	type ConvergenceThresholds,
 	type EscalationResult,
 } from "./convergence.ts";
+import { getExtractor } from "./extractors/index.ts";
+import type { EnhancedCaptureRule, ExtractorResult } from "./extractors/types.ts";
 import {
 	advanceGoalState,
 	createGoalInferenceState,
@@ -54,7 +57,15 @@ export interface LearningConfig {
 	minHydrations: number;
 }
 
-export type MemoryEventType = "watching" | "remembering" | "learned" | "recalled" | "conflict" | "sleeping";
+export type MemoryEventType =
+	| "watching"
+	| "remembering"
+	| "learned"
+	| "recalled"
+	| "conflict"
+	| "sleeping"
+	| "budget_exceeded"
+	| "budget_warning";
 
 export interface MemoryEvent {
 	type: MemoryEventType;
@@ -137,6 +148,7 @@ export class VeilHarness {
 	};
 	private lastLearnTime: number = 0;
 	private memoryEventListeners: Array<(event: MemoryEvent) => void> = [];
+	private tokenBudget = { used: 0, softWarningEmitted: false };
 
 	// Cat widget
 	private catWidget: CatWidget;
@@ -154,6 +166,20 @@ export class VeilHarness {
 	private attemptStore: AttemptStore;
 	private convergenceMonitor: ConvergenceMonitor;
 	private goalState: GoalInferenceState;
+
+	private pendingCaptures: Map<
+		string,
+		{
+			timer: NodeJS.Timeout;
+			rule: EnhancedCaptureRule;
+			latestExtracted: ExtractorResult;
+			count: number;
+			toolName: string;
+			args: unknown;
+			toolCallId?: string;
+		}
+	> = new Map();
+	private autoCapturedIds: Set<string> = new Set();
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -218,6 +244,9 @@ export class VeilHarness {
 		context: BeforeToolCallContext,
 		_signal?: AbortSignal,
 	): Promise<BeforeToolCallResult | undefined> {
+		// Emit watching event when tool starts
+		this.emitMemoryEvent("watching", context.toolCall.name);
+
 		// Update task context based on tool being called
 		this.updateTaskContext(context.toolCall.name, context.args);
 
@@ -229,6 +258,20 @@ export class VeilHarness {
 			for (const candidate of evicted) {
 				if (candidate.item.sourceToolCallId) {
 					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
+				}
+				// Decrement token budget only for items auto-captured by this harness
+				if (this.autoCapturedIds.has(candidate.item.id)) {
+					const freed = this.estimateTokens(candidate.item.content);
+					this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
+					this.autoCapturedIds.delete(candidate.item.id);
+				}
+				if (this.tokenBudget.softWarningEmitted) {
+					const softLimit = Math.floor(
+						this.captureConfig.maxTokenBudget * this.captureConfig.softThresholdPercent,
+					);
+					if (this.tokenBudget.used <= softLimit) {
+						this.tokenBudget.softWarningEmitted = false;
+					}
 				}
 				this.sessionStats.evicted++;
 			}
@@ -321,7 +364,7 @@ export class VeilHarness {
 
 		// Continue with auto-capture for non-errors
 		if (!event.isError) {
-			this.autoCapture(event.toolName, event.input, event.content, event.toolCallId);
+			this.autoCapture(event.toolName, event.input, event.content, event.toolCallId, false, undefined);
 		}
 	}
 
@@ -333,6 +376,8 @@ export class VeilHarness {
 		args: unknown,
 		content: Array<{ type: string; text?: string }>,
 		toolCallId?: string,
+		isError: boolean = false,
+		exitCode?: number,
 	): void {
 		// Check rate limits
 		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
@@ -346,19 +391,133 @@ export class VeilHarness {
 		const text = extractContent(content);
 		if (text.length < this.captureConfig.minChars) return;
 
+		// Compute dedupeKey early so it can be passed into the extractor for upgrades
+		const argObj = args as Record<string, unknown> | undefined;
+		const resolvedDedupeKeyForExtractor = rule.dedupeKey
+			? argObj?.file_path
+				? `${rule.dedupeKey}:${argObj.file_path}`
+				: rule.dedupeKey
+			: undefined;
+
+		// Run extractor to filter/transform content
+		const extractor = getExtractor(rule.extractor ?? "passthrough");
+		const extracted = extractor({
+			toolName,
+			args: (args as Record<string, unknown>) ?? {},
+			content: text,
+			isError,
+			exitCode,
+			cache: this.manager.getCache(),
+			dedupeKey: resolvedDedupeKeyForExtractor,
+		});
+		if (extracted.skipCapture) return;
+
+		if (rule.debounceWindowMs) {
+			const argObj = args as Record<string, unknown> | undefined;
+			const filePath = argObj?.file_path;
+			// Always include file path so edits to different files get separate debounce slots
+			const dedupeKey = rule.dedupeKey
+				? `${rule.dedupeKey}:${filePath ?? toolCallId ?? Date.now()}`
+				: `${toolName}:${filePath ?? toolCallId ?? Date.now()}`;
+			const pending = this.pendingCaptures.get(dedupeKey);
+			if (pending) {
+				clearTimeout(pending.timer);
+				pending.latestExtracted = extracted;
+				pending.count++;
+			}
+			const entry = pending ?? {
+				rule,
+				latestExtracted: extracted,
+				count: 1,
+				toolName,
+				args,
+				toolCallId,
+				timer: undefined as unknown as NodeJS.Timeout,
+			};
+			entry.timer = setTimeout(() => {
+				this.pendingCaptures.delete(dedupeKey);
+				this.commitCapture(entry.toolName, entry.args, entry.rule, entry.latestExtracted, entry.toolCallId);
+			}, rule.debounceWindowMs);
+			this.pendingCaptures.set(dedupeKey, entry);
+			return;
+		}
+
+		this.commitCapture(toolName, args, rule, extracted, toolCallId);
+	}
+
+	/**
+	 * Simple token estimator: ~4 chars per token.
+	 */
+	private estimateTokens(text: string): number {
+		return Math.ceil(text.length / 4);
+	}
+
+	/**
+	 * Commit an extracted capture to the warm cache.
+	 */
+	private commitCapture(
+		toolName: string,
+		args: unknown,
+		rule: EnhancedCaptureRule,
+		extracted: ExtractorResult,
+		toolCallId?: string,
+	): void {
+		// Check rate limits at commit time
+		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
+		if (this.totalCaptures >= this.captureConfig.maxItemsPerSession) return;
+
+		// Normalize to OKF-style CaptureDocument
+		const doc = normalizeCapture(toolName, args, extracted, rule);
+
 		// Build metadata for content-type detection
 		const argObj = args as Record<string, unknown> | undefined;
 		const metadata: ContentMetadata = {
 			filePath: argObj?.file_path as string | undefined,
 			toolName,
-			tags: rule.tags,
+			tags: doc.tags,
 		};
 
 		// Compress by content type (sync path: config, conversation; code needs async parser)
-		const { compressed, ratio } = compressSync(text, { metadata });
+		const { compressed, ratio } = compressSync(doc.body, { metadata });
 
 		// Use compressed if it saved space, otherwise truncate original
-		const toStore = ratio < 1 ? compressed : smartTruncate(text, this.captureConfig.maxChars);
+		const toStore = ratio < 1 ? compressed : smartTruncate(doc.body, this.captureConfig.maxChars);
+
+		// Token budget check
+		const incomingTokens = this.estimateTokens(toStore);
+		const softLimit = Math.floor(this.captureConfig.maxTokenBudget * this.captureConfig.softThresholdPercent);
+
+		if (this.tokenBudget.used + incomingTokens > this.captureConfig.maxTokenBudget) {
+			this.emitMemoryEvent(
+				"budget_exceeded",
+				`skipping ${toolName}: budget full (${this.tokenBudget.used}/${this.captureConfig.maxTokenBudget} tokens)`,
+			);
+			return;
+		}
+
+		if (!this.tokenBudget.softWarningEmitted && this.tokenBudget.used + incomingTokens > softLimit) {
+			this.tokenBudget.softWarningEmitted = true;
+			this.emitMemoryEvent(
+				"budget_warning",
+				`capture budget at ${Math.round(((this.tokenBudget.used + incomingTokens) / this.captureConfig.maxTokenBudget) * 100)}%`,
+			);
+		}
+
+		// Build semantic dedup key from rule prefix + file_path (if rule defines one)
+		const resolvedDedupeKey = rule.dedupeKey
+			? argObj?.file_path
+				? `${rule.dedupeKey}:${argObj.file_path}`
+				: rule.dedupeKey
+			: undefined;
+
+		// Check semantic dedup key first (same file, different content)
+		if (resolvedDedupeKey) {
+			const existingByKey = this.manager.getCache().getByDedupeKey(resolvedDedupeKey);
+			if (existingByKey) {
+				this.manager.getCache().touch(existingByKey.id);
+				return;
+			}
+		}
 
 		// Check for duplicates — use the same hash function as createItem (cache.ts)
 		const hash = hashContent(toStore);
@@ -368,15 +527,41 @@ export class VeilHarness {
 			return;
 		}
 
-		// Generate tags
-		const tags = [...rule.tags, ...generateInternalTags(toolName, args)];
+		// Generate tags: CaptureDocument tags + internal structural tags
+		const tags = [...doc.tags, ...generateInternalTags(toolName, args)];
 
 		// Store in warm cache with tool call ID for faded history
 		this.emitMemoryEvent("remembering", toolName);
-		this.manager.remember(toStore, rule.type, tags, toolCallId);
+		const item = this.manager.remember(toStore, rule.type, tags, toolCallId, resolvedDedupeKey);
+
+		// Persist CaptureDocument links for graph traversal
+		if (doc.links.length > 0) {
+			this.manager.getCache().addLinks(item.id, doc.links);
+		}
+
+		this.autoCapturedIds.add(item.id);
 		this.emitMemoryEvent("learned", `captured ${toolName}`);
+		this.tokenBudget.used += incomingTokens;
 		this.capturesThisTurn++;
 		this.totalCaptures++;
+	}
+
+	/**
+	 * Flush all pending debounced captures immediately (e.g., on session end).
+	 */
+	flushPendingCaptures(): void {
+		const entries = [...this.pendingCaptures.values()];
+		for (const entry of entries) {
+			clearTimeout(entry.timer);
+		}
+		this.pendingCaptures.clear();
+		for (const entry of entries) {
+			try {
+				this.commitCapture(entry.toolName, entry.args, entry.rule, entry.latestExtracted, entry.toolCallId);
+			} catch (e) {
+				console.error("[veil] flush capture failed:", e);
+			}
+		}
 	}
 
 	/**
@@ -494,6 +679,18 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Get capture token budget state.
+	 */
+	getCaptureBudget(): { used: number; max: number; softThreshold: number; softWarningEmitted: boolean } {
+		return {
+			used: this.tokenBudget.used,
+			max: this.captureConfig.maxTokenBudget,
+			softThreshold: Math.floor(this.captureConfig.maxTokenBudget * this.captureConfig.softThresholdPercent),
+			softWarningEmitted: this.tokenBudget.softWarningEmitted,
+		};
+	}
+
+	/**
 	 * Get usage statistics for status bar display.
 	 */
 	getUsage(): UsageStats {
@@ -530,8 +727,14 @@ export class VeilHarness {
 	private emitMemoryEvent(type: MemoryEventType, detail?: string): void {
 		const event = { type, detail };
 
-		// Update cat widget state
-		this.catWidget.setState({ state: type, detail });
+		// Update cat widget state (only forward states the widget understands)
+		const CAT_STATES = new Set(["sleeping", "watching", "remembering", "learned", "recalled", "conflict"]);
+		if (CAT_STATES.has(type)) {
+			this.catWidget.setState({
+				state: type as "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict",
+				detail,
+			});
+		}
 
 		// Track session stats
 		if (type === "remembering") {
@@ -848,6 +1051,7 @@ export class VeilHarness {
 	 * Close all connections and clean up event subscriptions.
 	 */
 	async close() {
+		this.flushPendingCaptures();
 		this.unsubscribe?.();
 		return this.manager.close();
 	}

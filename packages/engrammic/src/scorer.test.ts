@@ -14,6 +14,8 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		accessCount: 1,
 		decayScore: 0,
 		cognitiveWeight: 0,
+		stability: 0.5,
+		difficulty: 0.5,
 		type: "episodic",
 		tags: ["test"],
 		pinned: false,
@@ -39,19 +41,19 @@ describe("scorer source modifier", () => {
 	});
 });
 
-describe("scorer per-item half-life", () => {
-	test("explicit items decay slower than auto items", () => {
+describe("scorer FSRS stability", () => {
+	test("items with higher stability decay slower", () => {
 		const taskCtx: TaskContext = { tags: ["test"] };
 		const config = DEFAULT_CONFIG;
 
 		const pastTime = Date.now() - 60 * 60 * 1000; // 60 minutes ago
 
-		const autoItem = makeItem({ source: "auto", lastAccess: pastTime });
-		const explicitItem = makeItem({ source: "explicit", lastAccess: pastTime });
+		const lowStabilityItem = makeItem({ stability: 0.02, lastAccess: pastTime }); // ~30 min
+		const highStabilityItem = makeItem({ stability: 0.25, lastAccess: pastTime }); // ~6 hours
 
-		const autoScore = computeRelevance(autoItem, taskCtx, config);
-		const explicitScore = computeRelevance(explicitItem, taskCtx, config);
+		const lowScore = computeRelevance(lowStabilityItem, taskCtx, config);
+		const highScore = computeRelevance(highStabilityItem, taskCtx, config);
 
-		expect(explicitScore).toBeGreaterThan(autoScore * 1.5);
+		expect(highScore).toBeGreaterThan(lowScore);
 	});
 });

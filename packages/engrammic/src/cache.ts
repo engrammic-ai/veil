@@ -5,6 +5,8 @@
 
 import { createHash } from "node:crypto";
 import type BetterSqlite3 from "better-sqlite3";
+import type { CaptureLink } from "./capture-document.ts";
+import { defaultFSRS } from "./fsrs.ts";
 import Database from "./sqlite.ts";
 import type { ContextItem, Trigger } from "./types.ts";
 import { CoAccessTracker } from "./worldview/co-access.ts";
@@ -20,12 +22,14 @@ export interface HydrationEvent {
 
 export class ContextCache {
 	private db: BetterSqlite3.Database;
+	private dedupeIndex: Map<string, string> = new Map(); // dedupeKey -> itemId
 
 	// Prepared statements (initialised once in constructor, reused on every call)
 	private stmtPut: BetterSqlite3.Statement;
 	private stmtGet: BetterSqlite3.Statement;
 	private stmtGetByHash: BetterSqlite3.Statement;
 	private stmtTouch: BetterSqlite3.Statement;
+	private stmtTouchWithFSRS: BetterSqlite3.Statement;
 	private stmtUpdateCognitiveWeight: BetterSqlite3.Statement;
 	private stmtDelete: BetterSqlite3.Statement;
 	private stmtGetAll: BetterSqlite3.Statement;
@@ -54,6 +58,11 @@ export class ContextCache {
 	private stmtLinkEpisodes: BetterSqlite3.Statement;
 	private stmtGetRelatedEpisodes: BetterSqlite3.Statement;
 
+	// Memory link statements
+	private stmtAddLinks: BetterSqlite3.Statement;
+	private stmtGetLinks: BetterSqlite3.Statement;
+	private stmtGetBacklinks: BetterSqlite3.Statement;
+
 	// Eviction ledger statements
 	private stmtLogEviction: BetterSqlite3.Statement;
 	private stmtFindRecentEviction: BetterSqlite3.Statement;
@@ -73,6 +82,7 @@ export class ContextCache {
 				id, content, content_hash,
 				created_at, last_access, access_count,
 				decay_score, cognitive_weight,
+				stability, difficulty,
 				type, tags, pinned,
 				kg_pointer, depends_on,
 				valid_from, valid_until,
@@ -80,6 +90,7 @@ export class ContextCache {
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
+				?, ?,
 				?, ?,
 				?, ?, ?,
 				?, ?,
@@ -94,6 +105,10 @@ export class ContextCache {
 
 		this.stmtTouch = this.db.prepare(
 			"UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?",
+		);
+
+		this.stmtTouchWithFSRS = this.db.prepare(
+			"UPDATE items SET last_access = ?, access_count = access_count + 1, stability = ? WHERE id = ?",
 		);
 
 		this.stmtUpdateCognitiveWeight = this.db.prepare(`
@@ -184,6 +199,19 @@ export class ContextCache {
 			SELECT source_id AS linked_id, relation FROM episode_links WHERE target_id = ?
 		`);
 
+		this.stmtAddLinks = this.db.prepare(`
+			INSERT OR IGNORE INTO memory_links (source_id, target, rel, label)
+			VALUES (?, ?, ?, ?)
+		`);
+
+		this.stmtGetLinks = this.db.prepare(`
+			SELECT target, rel, label FROM memory_links WHERE source_id = ?
+		`);
+
+		this.stmtGetBacklinks = this.db.prepare(`
+			SELECT source_id, rel, label FROM memory_links WHERE target = ?
+		`);
+
 		this.stmtLogEviction = this.db.prepare(
 			"INSERT INTO eviction_log (item_id, content_hash, evicted_at, evicted_turn) VALUES (?, ?, ?, ?)",
 		);
@@ -253,8 +281,21 @@ export class ContextCache {
 			// Column already exists
 		}
 
+		// Migration: add FSRS columns
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN stability REAL DEFAULT 0.5");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN difficulty REAL DEFAULT 0.5");
+		} catch {
+			// Column already exists
+		}
+
 		// Index must be created after migration adds the column
 		this.db.exec("CREATE INDEX IF NOT EXISTS idx_source_tool_call_id ON items(source_tool_call_id)");
+		this.db.exec("CREATE INDEX IF NOT EXISTS idx_stability ON items(stability)");
 
 		// Hydration events table for Phase 6 learning
 		this.db.exec(`
@@ -384,6 +425,20 @@ export class ContextCache {
 			);
 		`);
 
+		// Memory links for graph traversal (CaptureDocument links)
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS memory_links (
+				source_id TEXT NOT NULL,
+				target TEXT NOT NULL,
+				rel TEXT NOT NULL,
+				label TEXT,
+				PRIMARY KEY (source_id, target, rel),
+				FOREIGN KEY (source_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
+			CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target);
+		`);
+
 		// Phase D: Attempts table for failure-memory
 		this.db.exec(`
 			CREATE TABLE IF NOT EXISTS attempts (
@@ -424,6 +479,8 @@ export class ContextCache {
 			item.accessCount,
 			item.decayScore,
 			item.cognitiveWeight,
+			item.stability,
+			item.difficulty,
 			item.type,
 			JSON.stringify(item.tags),
 			item.pinned ? 1 : 0,
@@ -488,6 +545,27 @@ export class ContextCache {
 		return this.rowToItem(row);
 	}
 
+	getByDedupeKey(key: string): ContextItem | undefined {
+		const id = this.dedupeIndex.get(key);
+		return id ? (this.get(id) ?? undefined) : undefined;
+	}
+
+	registerDedupeKey(key: string, itemId: string): void {
+		this.dedupeIndex.set(key, itemId);
+	}
+
+	removeDedupeKey(key: string): void {
+		this.dedupeIndex.delete(key);
+	}
+
+	updateByDedupeKey(dedupeKey: string, newContent: string): boolean {
+		const id = this.dedupeIndex.get(dedupeKey);
+		if (!id) return false;
+		const hash = createHash("sha256").update(newContent).digest("hex");
+		this.db.prepare("UPDATE items SET content = ?, content_hash = ? WHERE id = ?").run(newContent, hash, id);
+		return true;
+	}
+
 	delete(id: string): void {
 		this.stmtDelete.run(id);
 	}
@@ -495,6 +573,18 @@ export class ContextCache {
 	touch(id: string): void {
 		const now = Date.now();
 		this.stmtTouch.run(now, id);
+	}
+
+	/**
+	 * Touch with FSRS stability update.
+	 * Computes new stability based on how long since last access and current retrievability.
+	 */
+	touchWithFSRS(item: ContextItem): void {
+		const now = Date.now();
+		const daysSinceAccess = defaultFSRS.daysSince(item.lastAccess, now);
+		const retrievability = defaultFSRS.computeRetrievability(item.stability, daysSinceAccess);
+		const newStability = defaultFSRS.updateStability(item.stability, item.difficulty, retrievability, item.type);
+		this.stmtTouchWithFSRS.run(now, newStability, item.id);
 	}
 
 	updateCognitiveWeight(id: string, delta: number): void {
@@ -676,6 +766,37 @@ export class ContextCache {
 			.filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
 	}
 
+	addLinks(itemId: string, links: CaptureLink[]): void {
+		const insert = this.db.transaction(() => {
+			for (const link of links) {
+				this.stmtAddLinks.run(itemId, link.target, link.rel, link.label ?? null);
+			}
+		});
+		insert();
+	}
+
+	getLinks(itemId: string): CaptureLink[] {
+		const rows = this.stmtGetLinks.all(itemId) as Array<{ target: string; rel: string; label: string | null }>;
+		return rows.map((r) => ({
+			rel: r.rel as CaptureLink["rel"],
+			target: r.target,
+			...(r.label !== null ? { label: r.label } : {}),
+		}));
+	}
+
+	getBacklinks(target: string): Array<{ sourceId: string; rel: string; label?: string }> {
+		const rows = this.stmtGetBacklinks.all(target) as Array<{
+			source_id: string;
+			rel: string;
+			label: string | null;
+		}>;
+		return rows.map((r) => ({
+			sourceId: r.source_id,
+			rel: r.rel,
+			...(r.label !== null ? { label: r.label } : {}),
+		}));
+	}
+
 	close(): void {
 		this.db.close();
 	}
@@ -690,6 +811,8 @@ export class ContextCache {
 			accessCount: row.access_count,
 			decayScore: row.decay_score,
 			cognitiveWeight: row.cognitive_weight,
+			stability: row.stability ?? 0.5,
+			difficulty: row.difficulty ?? 0.5,
 			type: row.type,
 			tags: JSON.parse(row.tags),
 			pinned: row.pinned === 1,
@@ -725,6 +848,8 @@ export function createItem(
 		accessCount: 1,
 		decayScore: 0,
 		cognitiveWeight: 0,
+		stability: defaultFSRS.getInitialStability(type),
+		difficulty: 0.5,
 		type,
 		tags,
 		pinned: false,

@@ -492,3 +492,83 @@ describe("ContextCache eviction ledger", () => {
 		expect(cache.findRecentEviction("hashA", 60_000)).toBeNull();
 	});
 });
+
+describe("ContextCache memory_links", () => {
+	let testDir: string;
+	let cache: ContextCache;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-cache-links-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		cache = new ContextCache(join(testDir, "test.db"));
+	});
+
+	afterEach(() => {
+		cache.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("addLinks + getLinks round-trip", () => {
+		const item = createItem("test content", "episodic", ["tag"]);
+		cache.put(item);
+
+		cache.addLinks(item.id, [
+			{ rel: "file", target: "/src/foo.ts" },
+			{ rel: "caused_by", target: "item_abc", label: "triggered by" },
+		]);
+
+		const links = cache.getLinks(item.id);
+		expect(links).toHaveLength(2);
+		expect(links).toEqual(
+			expect.arrayContaining([
+				{ rel: "file", target: "/src/foo.ts" },
+				{ rel: "caused_by", target: "item_abc", label: "triggered by" },
+			]),
+		);
+	});
+
+	test("getLinks returns empty array for unknown item", () => {
+		expect(cache.getLinks("nonexistent")).toHaveLength(0);
+	});
+
+	test("getBacklinks returns items linking to a target", () => {
+		const item1 = createItem("item one", "episodic", []);
+		const item2 = createItem("item two", "episodic", []);
+		cache.put(item1);
+		cache.put(item2);
+
+		cache.addLinks(item1.id, [{ rel: "file", target: "/shared/file.ts" }]);
+		cache.addLinks(item2.id, [{ rel: "related", target: "/shared/file.ts", label: "also touches" }]);
+
+		const backlinks = cache.getBacklinks("/shared/file.ts");
+		expect(backlinks).toHaveLength(2);
+		expect(backlinks.map((b) => b.sourceId)).toEqual(expect.arrayContaining([item1.id, item2.id]));
+	});
+
+	test("getBacklinks returns empty array when nothing links to target", () => {
+		expect(cache.getBacklinks("/no/such/file.ts")).toHaveLength(0);
+	});
+
+	test("links are removed when the source item is deleted (CASCADE)", () => {
+		const item = createItem("cascade test", "episodic", []);
+		cache.put(item);
+		cache.addLinks(item.id, [{ rel: "file", target: "/src/cascade.ts" }]);
+
+		// Enable foreign key enforcement for this connection
+		cache.getDb().pragma("foreign_keys = ON");
+		cache.delete(item.id);
+
+		expect(cache.getLinks(item.id)).toHaveLength(0);
+		expect(cache.getBacklinks("/src/cascade.ts")).toHaveLength(0);
+	});
+
+	test("duplicate links are silently ignored", () => {
+		const item = createItem("dedup test", "episodic", []);
+		cache.put(item);
+
+		cache.addLinks(item.id, [{ rel: "file", target: "/src/x.ts" }]);
+		cache.addLinks(item.id, [{ rel: "file", target: "/src/x.ts" }]);
+
+		expect(cache.getLinks(item.id)).toHaveLength(1);
+	});
+});

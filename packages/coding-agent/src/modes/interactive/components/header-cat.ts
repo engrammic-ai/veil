@@ -36,7 +36,7 @@ export const CAT_EMOTICONS: Record<CatState, string> = {
 };
 
 export class HeaderCat implements Component {
-	private state: CatState = "sleeping";
+	private state: CatState = "watching";
 	private detail: string = "";
 	private enabled: boolean = true;
 

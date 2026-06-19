@@ -427,8 +427,8 @@ export class InteractiveMode {
 
 		// Subscribe to VeilHarness memory events for cat widget status
 		if (this.session.veilHarness) {
-			// Set initial sleeping state
-			this.footerDataProvider.setExtensionStatus("memory", CAT_EMOTICONS.sleeping);
+			// Set initial watching state (context is ready)
+			this.footerDataProvider.setExtensionStatus("memory", CAT_EMOTICONS.watching);
 
 			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
 				// Update header cat
@@ -3103,7 +3103,9 @@ export class InteractiveMode {
 		const textBlocks =
 			typeof message.content === "string"
 				? [{ type: "text", text: message.content }]
-				: message.content.filter((c: { type: string }) => c.type === "text");
+				: Array.isArray(message.content)
+					? message.content.filter((c: { type: string }) => c.type === "text")
+					: [];
 		return textBlocks.map((c) => (c as { text: string }).text).join("");
 	}
 

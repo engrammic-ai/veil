@@ -12,6 +12,7 @@ import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
 import { VeilHarness } from "@engrammic/veil-context";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
+import { handleEmbedderCommand } from "./cli/embedder.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -493,6 +494,10 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (await handleEmbedderCommand(args)) {
+		process.exit(process.exitCode ?? 0);
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
@@ -786,11 +791,17 @@ export async function main(args: string[], options?: MainOptions) {
 						} else if (event.type === "tool_execution_end") {
 							const input = pendingArgs.get(event.toolCallId) ?? {};
 							pendingArgs.delete(event.toolCallId);
-							const result = event.result as { content?: Array<{ type: string; text?: string }> };
+							const result = event.result as { content?: Array<{ type: string; text?: string }> | string };
+							// Normalize content to array (MCP tools may return string)
+							const content = Array.isArray(result.content)
+								? result.content
+								: typeof result.content === "string"
+									? [{ type: "text", text: result.content }]
+									: [];
 							handler({
 								toolName: event.toolName,
 								input,
-								content: result.content ?? [],
+								content,
 								isError: event.isError,
 							});
 						}

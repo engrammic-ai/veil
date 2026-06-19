@@ -13,6 +13,8 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		accessCount: 1,
 		decayScore: 1.0,
 		cognitiveWeight: 0,
+		stability: 0.5,
+		difficulty: 0.5,
 		type: "fact",
 		tags: ["test"],
 		pinned: false,

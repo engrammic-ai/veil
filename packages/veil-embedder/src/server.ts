@@ -6,11 +6,11 @@
  * over HTTP. Auto-scales down after idle timeout.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
-import { createEmbedder, type Embedder } from "./embedder.ts";
+import { configureCacheDir, createEmbedder, type Embedder } from "./embedder.ts";
 import {
 	DEFAULT_CONFIG,
 	type EmbedderConfig,
@@ -24,6 +24,32 @@ import {
 const CONFIG_DIR = join(homedir(), ".config", "veil");
 const CONFIG_FILE = join(CONFIG_DIR, "embedder.json");
 const PID_FILE = join(CONFIG_DIR, "embedder.pid");
+const LOG_DIR = join(homedir(), ".local", "share", "veil");
+const LOG_FILE = join(LOG_DIR, "embedder.log");
+
+function setupFileLogging(): void {
+	if (!existsSync(LOG_DIR)) {
+		mkdirSync(LOG_DIR, { recursive: true });
+	}
+	const write = (level: string, args: unknown[]) => {
+		const line = args
+			.map((a) => (typeof a === "string" ? a : a instanceof Error ? (a.stack ?? a.message) : JSON.stringify(a)))
+			.join(" ");
+		try {
+			appendFileSync(LOG_FILE, `${new Date().toISOString()} [${level}] ${line}\n`);
+		} catch {}
+	};
+	const originalLog = console.log.bind(console);
+	const originalError = console.error.bind(console);
+	console.log = (...args: unknown[]) => {
+		write("info", args);
+		originalLog(...args);
+	};
+	console.error = (...args: unknown[]) => {
+		write("error", args);
+		originalError(...args);
+	};
+}
 
 function loadConfig(): EmbedderConfig {
 	if (!existsSync(CONFIG_DIR)) {
@@ -49,8 +75,22 @@ function saveConfig(config: EmbedderConfig): void {
 	writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
+function resolveCachePath(cachePath: string): string {
+	const raw = cachePath.trim() || join(homedir(), ".cache", "veil", "models");
+	if (raw === "~") return homedir();
+	if (raw.startsWith("~/")) return join(homedir(), raw.slice(2));
+	return raw;
+}
+
 async function main() {
+	setupFileLogging();
 	const config = loadConfig();
+
+	const cacheDir = resolveCachePath(config.cachePath);
+	configureCacheDir(cacheDir);
+	if (!existsSync(cacheDir)) {
+		mkdirSync(cacheDir, { recursive: true });
+	}
 
 	if (config.tier === "none") {
 		console.log("Embedder disabled (tier=none). Exiting.");

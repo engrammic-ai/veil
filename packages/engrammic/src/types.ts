@@ -16,6 +16,10 @@ export interface ContextItem {
 	decayScore: number;
 	cognitiveWeight: number; // -1 to +1, success/failure attribution
 
+	// FSRS parameters
+	stability: number; // days until R drops to 0.9
+	difficulty: number; // 0.1-0.9, how hard to remember
+
 	// Classification
 	type: ContextItemType;
 	tags: string[];
@@ -35,7 +39,7 @@ export interface ContextItem {
 }
 
 // Type alias extracted from ContextItem for reuse
-export type ContextItemType = "episodic" | "procedural" | "fact";
+export type ContextItemType = "episodic" | "procedural" | "fact" | "decision";
 
 // Trigger for pattern matching user messages (anticipatory loading)
 export interface Trigger {
@@ -142,6 +146,8 @@ export interface CaptureConfig {
 	maxItemsPerSession: number;
 	minChars: number;
 	maxChars: number;
+	maxTokenBudget: number; // Hard cap in tokens (default: 8000)
+	softThresholdPercent: number; // Fraction at which warning emits (default: 0.75)
 }
 
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
@@ -149,6 +155,8 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
 	maxItemsPerSession: 500,
 	minChars: 50,
 	maxChars: 8000,
+	maxTokenBudget: 8000,
+	softThresholdPercent: 0.75,
 };
 
 export const DEFAULT_CONFIG: ContextManagerConfig = {

@@ -19,6 +19,12 @@ const allowedInstallScriptPackages = new Map([
 	["protobufjs@6.11.6", "sub-dependency postinstall to warn about mismatches"],
 	["protobufjs@7.6.4", "postinstall only warns about protobufjs version scheme mismatches"],
 	["sharp@0.32.6", "installs prebuilt libvips binary"],
+	["tree-sitter-go@0.25.0", "postinstall generates tree-sitter-go.wasm for web-tree-sitter"],
+	["tree-sitter-javascript@0.25.0", "postinstall generates tree-sitter-javascript.wasm for web-tree-sitter"],
+	["tree-sitter-javascript@0.23.1", "postinstall generates tree-sitter-javascript.wasm (dep of tree-sitter-typescript)"],
+	["tree-sitter-python@0.25.0", "postinstall generates tree-sitter-python.wasm for web-tree-sitter"],
+	["tree-sitter-rust@0.24.0", "postinstall generates tree-sitter-rust.wasm for web-tree-sitter"],
+	["tree-sitter-typescript@0.23.2", "postinstall generates tree-sitter-typescript.wasm for web-tree-sitter"],
 ]);
 
 const args = new Set(process.argv.slice(2));

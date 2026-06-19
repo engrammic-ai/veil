@@ -2964,7 +2964,9 @@ export class AgentSession {
 		for (const message of state.messages) {
 			if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
-				toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+				toolCalls += Array.isArray(assistantMsg.content)
+					? assistantMsg.content.filter((c) => c.type === "toolCall").length
+					: 0;
 				totalInput += assistantMsg.usage.input;
 				totalOutput += assistantMsg.usage.output;
 				totalCacheRead += assistantMsg.usage.cacheRead;

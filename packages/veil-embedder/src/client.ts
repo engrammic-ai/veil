@@ -4,14 +4,36 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EmbedResponse, ServerStatus } from "./types.ts";
+import { DEFAULT_CONFIG, type EmbedderConfig } from "./types.ts";
 
-const CONFIG_DIR = join(homedir(), ".config", "veil");
-const PID_FILE = join(CONFIG_DIR, "embedder.pid");
+export const CONFIG_DIR = join(homedir(), ".config", "veil");
+export const CONFIG_FILE = join(CONFIG_DIR, "embedder.json");
+export const PID_FILE = join(CONFIG_DIR, "embedder.pid");
+export const LOG_DIR = join(homedir(), ".local", "share", "veil");
+export const LOG_FILE = join(LOG_DIR, "embedder.log");
 const DEFAULT_PORT = 19532;
+
+export function loadConfig(): EmbedderConfig {
+	if (existsSync(CONFIG_FILE)) {
+		try {
+			return { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(CONFIG_FILE, "utf-8")) };
+		} catch {
+			return { ...DEFAULT_CONFIG };
+		}
+	}
+	return { ...DEFAULT_CONFIG };
+}
+
+export function saveConfig(config: EmbedderConfig): void {
+	if (!existsSync(CONFIG_DIR)) {
+		mkdirSync(CONFIG_DIR, { recursive: true });
+	}
+	writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
 
 export interface EmbedderClientConfig {
 	port?: number;
