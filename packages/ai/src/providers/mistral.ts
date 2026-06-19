@@ -488,8 +488,9 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 				result.push({ role: "user", content: sanitizeSurrogates(msg.content) });
 				continue;
 			}
-			const hadImages = msg.content.some((item) => item.type === "image");
-			const content: ContentChunk[] = msg.content
+			const userContent = Array.isArray(msg.content) ? msg.content : [];
+			const hadImages = userContent.some((item) => item.type === "image");
+			const content: ContentChunk[] = userContent
 				.filter((item) => item.type === "text" || supportsImages)
 				.map((item) => {
 					if (item.type === "text") return { type: "text", text: sanitizeSurrogates(item.text) };
@@ -509,7 +510,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 			const contentParts: ContentChunk[] = [];
 			const toolCalls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
 
-			for (const block of msg.content) {
+			for (const block of Array.isArray(msg.content) ? msg.content : []) {
 				if (block.type === "text") {
 					if (block.text.trim().length > 0) {
 						contentParts.push({ type: "text", text: sanitizeSurrogates(block.text) });
@@ -540,14 +541,15 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 		}
 
 		const toolContent: ContentChunk[] = [];
-		const textResult = msg.content
+		const toolResultContent = Array.isArray(msg.content) ? msg.content : [];
+		const textResult = toolResultContent
 			.filter((part) => part.type === "text")
 			.map((part) => (part.type === "text" ? sanitizeSurrogates(part.text) : ""))
 			.join("\n");
-		const hasImages = msg.content.some((part) => part.type === "image");
+		const hasImages = toolResultContent.some((part) => part.type === "image");
 		const toolText = buildToolResultText(textResult, hasImages, supportsImages, msg.isError);
 		toolContent.push({ type: "text", text: toolText });
-		for (const part of msg.content) {
+		for (const part of toolResultContent) {
 			if (!supportsImages) continue;
 			if (part.type !== "image") continue;
 			toolContent.push({

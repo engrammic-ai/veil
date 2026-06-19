@@ -128,7 +128,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 			// Check if message is from same provider and model - only then keep thinking blocks
 			const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
 
-			for (const block of msg.content) {
+			for (const block of Array.isArray(msg.content) ? msg.content : []) {
 				if (block.type === "text") {
 					// Skip empty text blocks
 					if (!block.text || block.text.trim() === "") continue;

@@ -1170,7 +1170,7 @@ export class AgentSession {
 						role: "custom",
 						customType: "system-reminder",
 						content: [{ type: "text", text: contextToInject }],
-						display: "collapsed",
+						display: false,
 						timestamp: Date.now(),
 					});
 				}

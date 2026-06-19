@@ -169,7 +169,7 @@ export function convertResponsesMessages<TApi extends Api>(
 				assistantMsg.api === model.api;
 			let textBlockIndex = 0;
 
-			for (const block of msg.content) {
+			for (const block of Array.isArray(msg.content) ? msg.content : []) {
 				if (block.type === "thinking") {
 					if (block.thinkingSignature) {
 						const reasoningItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
@@ -220,11 +220,12 @@ export function convertResponsesMessages<TApi extends Api>(
 			if (output.length === 0) continue;
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
-			const textResult = msg.content
+			const toolResultContent = Array.isArray(msg.content) ? msg.content : [];
+			const textResult = toolResultContent
 				.filter((c): c is TextContent => c.type === "text")
 				.map((c) => c.text)
 				.join("\n");
-			const hasImages = msg.content.some((c): c is ImageContent => c.type === "image");
+			const hasImages = toolResultContent.some((c): c is ImageContent => c.type === "image");
 			const hasText = textResult.length > 0;
 			const [callId] = msg.toolCallId.split("|");
 
@@ -239,7 +240,7 @@ export function convertResponsesMessages<TApi extends Api>(
 					});
 				}
 
-				for (const block of msg.content) {
+				for (const block of toolResultContent) {
 					if (block.type === "image") {
 						contentParts.push({
 							type: "input_image",

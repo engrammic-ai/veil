@@ -162,7 +162,8 @@ function assistantContentToText(content: Array<TextContent | ThinkingContent | T
 }
 
 function toolResultToText(message: ToolResultMessage): string {
-	return [message.toolName, ...message.content.map((block) => contentToText([block]))].join("\n");
+	const content = Array.isArray(message.content) ? message.content : [];
+	return [message.toolName, ...content.map((block) => contentToText([block]))].join("\n");
 }
 
 function messageToText(message: Message): string {
@@ -311,7 +312,8 @@ async function streamWithDeltas(
 
 	stream.push({ type: "start", partial: { ...partial } });
 
-	for (let index = 0; index < message.content.length; index++) {
+	const messageContent = Array.isArray(message.content) ? message.content : [];
+	for (let index = 0; index < messageContent.length; index++) {
 		if (signal?.aborted) {
 			const aborted = createAbortedMessage(partial);
 			stream.push({ type: "error", reason: "aborted", error: aborted });
@@ -319,7 +321,7 @@ async function streamWithDeltas(
 			return;
 		}
 
-		const block = message.content[index];
+		const block = messageContent[index];
 
 		if (block.type === "thinking") {
 			partial.content = [...partial.content, { type: "thinking", thinking: "" }];

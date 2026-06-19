@@ -52,7 +52,8 @@ function hasToolHistory(messages: Message[]): boolean {
 			return true;
 		}
 		if (msg.role === "assistant") {
-			if (msg.content.some((block) => block.type === "toolCall")) {
+			const contentArray = Array.isArray(msg.content) ? msg.content : [];
+			if (contentArray.some((block) => block.type === "toolCall")) {
 				return true;
 			}
 		}
@@ -839,7 +840,8 @@ export function convertMessages(
 				content: compat.requiresAssistantAfterToolResult ? "" : null,
 			};
 
-			const assistantTextParts = msg.content
+			const assistantContentArray = Array.isArray(msg.content) ? msg.content : [];
+			const assistantTextParts = assistantContentArray
 				.filter(isTextContentBlock)
 				.filter((block) => block.text.trim().length > 0)
 				.map(
@@ -851,7 +853,7 @@ export function convertMessages(
 				);
 			const assistantText = assistantTextParts.map((part) => part.text).join("");
 
-			const nonEmptyThinkingBlocks = msg.content
+			const nonEmptyThinkingBlocks = assistantContentArray
 				.filter(isThinkingContentBlock)
 				.filter((block) => block.thinking.trim().length > 0);
 			if (nonEmptyThinkingBlocks.length > 0) {
@@ -889,8 +891,7 @@ export function convertMessages(
 				assistantMsg.content = assistantText;
 			}
 
-			const contentArray = Array.isArray(msg.content) ? msg.content : [];
-			const toolCalls = contentArray.filter(isToolCallBlock);
+			const toolCalls = assistantContentArray.filter(isToolCallBlock);
 			if (toolCalls.length > 0) {
 				assistantMsg.tool_calls = toolCalls.map((tc) => ({
 					id: tc.id,

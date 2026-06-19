@@ -61,7 +61,7 @@ export function buildCheckpointPrompt(options: CheckpointPromptOptions): string 
 	return lines.join("\n");
 }
 
-function formatTokens(n: number): string {
+function _formatTokens(n: number): string {
 	if (n >= 1000) {
 		return `${(n / 1000).toFixed(1)}k tokens`;
 	}
