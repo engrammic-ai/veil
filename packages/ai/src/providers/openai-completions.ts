@@ -941,13 +941,14 @@ export function convertMessages(
 
 			for (; j < transformedMessages.length && transformedMessages[j].role === "toolResult"; j++) {
 				const toolMsg = transformedMessages[j] as ToolResultMessage;
+				const contentArray = Array.isArray(toolMsg.content) ? toolMsg.content : [];
 
 				// Extract text and image content
-				const textResult = toolMsg.content
+				const textResult = contentArray
 					.filter(isTextContentBlock)
 					.map((block) => block.text)
 					.join("\n");
-				const hasImages = toolMsg.content.some((c) => c.type === "image");
+				const hasImages = contentArray.some((c) => c.type === "image");
 
 				// Always send tool result with text (or placeholder if only images)
 				const hasText = textResult.length > 0;
@@ -963,7 +964,7 @@ export function convertMessages(
 				params.push(toolResultMsg);
 
 				if (hasImages && model.input.includes("image")) {
-					for (const block of toolMsg.content) {
+					for (const block of contentArray) {
 						if (isImageContentBlock(block)) {
 							imageBlocks.push({
 								type: "image_url",
