@@ -791,11 +791,17 @@ export async function main(args: string[], options?: MainOptions) {
 						} else if (event.type === "tool_execution_end") {
 							const input = pendingArgs.get(event.toolCallId) ?? {};
 							pendingArgs.delete(event.toolCallId);
-							const result = event.result as { content?: Array<{ type: string; text?: string }> };
+							const result = event.result as { content?: Array<{ type: string; text?: string }> | string };
+							// Normalize content to array (MCP tools may return string)
+							const content = Array.isArray(result.content)
+								? result.content
+								: typeof result.content === "string"
+									? [{ type: "text", text: result.content }]
+									: [];
 							handler({
 								toolName: event.toolName,
 								input,
-								content: result.content ?? [],
+								content,
 								isError: event.isError,
 							});
 						}
