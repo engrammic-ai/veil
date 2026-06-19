@@ -15,6 +15,7 @@ export interface AppKeybindings {
 	"app.clear": true;
 	"app.exit": true;
 	"app.suspend": true;
+	"app.mode.cycle": true;
 	"app.thinking.cycle": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
@@ -69,8 +70,12 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
-	"app.thinking.cycle": {
+	"app.mode.cycle": {
 		defaultKeys: "shift+tab",
+		description: "Cycle permission mode",
+	},
+	"app.thinking.cycle": {
+		defaultKeys: "ctrl+t",
 		description: "Cycle thinking level",
 	},
 	"app.model.cycleForward": {
@@ -84,7 +89,7 @@ export const KEYBINDINGS = {
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
 	"app.thinking.toggle": {
-		defaultKeys: "ctrl+t",
+		defaultKeys: "shift+ctrl+t",
 		description: "Toggle thinking blocks",
 	},
 	"app.session.toggleNamedFilter": {
