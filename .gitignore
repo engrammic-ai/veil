@@ -48,3 +48,8 @@ installer/veil-installer
 
 # Installer binaries
 installer/dist/
+
+# Bundled extensions build output
+packages/coding-agent/bundled-extensions/*.js
+packages/coding-agent/bundled-extensions/*.d.ts
+packages/coding-agent/bundled-extensions/*.map

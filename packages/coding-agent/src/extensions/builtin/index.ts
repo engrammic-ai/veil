@@ -5,12 +5,34 @@
  * They can be disabled via configuration if needed.
  */
 
+// Bundled extensions (previously installed via `pi install`)
+import confirmDestructive from "../../../bundled-extensions/confirm-destructive.ts";
+import gitCheckpoint from "../../../bundled-extensions/git-checkpoint.ts";
+import handoff from "../../../bundled-extensions/handoff.ts";
+import notify from "../../../bundled-extensions/notify.ts";
+import preset from "../../../bundled-extensions/preset.ts";
+import titlebarSpinner from "../../../bundled-extensions/titlebar-spinner.ts";
+import todo from "../../../bundled-extensions/todo.ts";
+import tools from "../../../bundled-extensions/tools.ts";
 import type { ExtensionFactory } from "../../core/extensions/types.ts";
 import veilStatusbar from "../veil-statusbar/index.ts";
 import planModeExtension from "./plan-mode.ts";
 
 /** All builtin extension factories */
-export const builtinExtensions: ExtensionFactory[] = [planModeExtension, veilStatusbar];
+export const builtinExtensions: ExtensionFactory[] = [
+	// Core Veil extensions
+	planModeExtension,
+	veilStatusbar,
+	// Bundled extensions
+	confirmDestructive,
+	gitCheckpoint,
+	handoff,
+	notify,
+	preset,
+	titlebarSpinner,
+	todo,
+	tools,
+];
 
 /** Get builtin extension factories, optionally filtered by disabled list */
 export function getBuiltinExtensions(disabled?: string[]): ExtensionFactory[] {

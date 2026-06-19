@@ -7,9 +7,6 @@ export class TokensWidget implements StatusBarWidget {
 	lines = 1;
 
 	private ctx: WidgetContext | null = null;
-	private cached = 0;
-	private input = 0;
-	private output = 0;
 
 	init(_config: Record<string, unknown>, ctx: WidgetContext): void {
 		this.ctx = ctx;
@@ -18,20 +15,31 @@ export class TokensWidget implements StatusBarWidget {
 	render(_width: number): string[] {
 		const theme = this.ctx?.theme;
 
-		const cachedStr = this.formatTokens(this.cached);
-		const inputStr = this.formatTokens(this.input);
-		const outputStr = this.formatTokens(this.output);
+		// Compute cumulative usage from session entries (same as footer)
+		let totalInput = 0;
+		let totalOutput = 0;
+		let totalCacheRead = 0;
 
-		const line = `Cached: ${cachedStr}  ↑${inputStr}  ↓${outputStr}`;
+		if (this.ctx?.sessionManager) {
+			for (const entry of this.ctx.sessionManager.getEntries()) {
+				if (entry.type === "message" && entry.message.role === "assistant") {
+					totalInput += entry.message.usage.input;
+					totalOutput += entry.message.usage.output;
+					totalCacheRead += entry.message.usage.cacheRead;
+				}
+			}
+		}
+
+		const cachedStr = this.formatTokens(totalCacheRead);
+		const inputStr = this.formatTokens(totalInput);
+		const outputStr = this.formatTokens(totalOutput);
+
+		const line = `R${cachedStr}  ↑${inputStr}  ↓${outputStr}`;
 		return [theme ? theme.fg("muted", line) : line];
 	}
 
-	update(event: WidgetEvent): void {
-		if (event.type === "session" && event.usage) {
-			this.cached = event.usage.cacheRead || 0;
-			this.input = event.usage.input || 0;
-			this.output = event.usage.output || 0;
-		}
+	update(_event: WidgetEvent): void {
+		// Stats computed on render from sessionManager
 	}
 
 	dispose(): void {

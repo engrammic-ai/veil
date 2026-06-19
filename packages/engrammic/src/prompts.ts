@@ -12,6 +12,18 @@ Tool results are wrapped in \`<veil-{tool} count="N">\` tags:
 - \`count = 0\` = nothing found for that query; try different tags
 - Each item shows: \`[TYPE:id:summary]\` — use the id to promote/hydrate
 
+### Tool quick reference
+
+| Tool | When to use | Example |
+|------|-------------|---------|
+| \`recall(tags)\` | Find related context before starting work | \`recall(["auth", "user-prefs"])\` |
+| \`promote(id)\` | Bring a recalled item into active context | After recall returns relevant items |
+| \`demote(id)\` | Free up budget after you're done with something | After completing a subtask |
+| \`hydrate(stub)\` | Need full content, not just summary | Complex code, detailed specs |
+| \`remember(content, type)\` | Store insights, decisions, non-obvious conclusions | NOT raw outputs (auto-captured) |
+| \`pin(id)\` | Lock critical constraints that must survive eviction | User hard requirements only |
+| \`history(query)\` | Resume past work or reference prior sessions | "What did we decide about X?" |
+
 ### Core loop
 
 1. **Before diving in:** Glance at \`<veil-context>\`. If gaps exist, \`recall()\` with 1-3 semantic tags (what it's *about*: "user-constraints", "auth-flow", "error-handling").
@@ -19,6 +31,12 @@ Tool results are wrapped in \`<veil-{tool} count="N">\` tags:
 2. **While working:** Reference stubs by ID when citing. \`hydrate()\` only when you need to reason over full content, not just acknowledge something exists.
 
 3. **After completing a step:** \`demote()\` items you won't reference in the next few turns. Keep 5-7 items max unless actively synthesizing.
+
+### What NOT to do
+- Don't \`recall()\` the same tags repeatedly in one turn — results are cached
+- Don't \`remember()\` file contents or command outputs — they're auto-captured
+- Don't \`pin()\` everything important — pin is for survival under pressure, not organization
+- Don't ignore low-scoring items in checkpoint prompts — demote or re-engage them
 
 ### What to pin
 Pin sparingly — only user preferences, hard constraints, or decisions that would cause harm if forgotten. If unsure, don't pin.
