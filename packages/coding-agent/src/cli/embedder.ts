@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import {
@@ -38,7 +38,16 @@ function usage(): string {
 }
 
 function resolveServerPath(): string | undefined {
-	// server.js sits next to the package entry (dist/server.js).
+	// Check installed location first (~/.local/share/veil/embedder/server.js)
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	if (home) {
+		const installedPath = `${home}/.local/share/veil/embedder/server.js`;
+		if (existsSync(installedPath)) {
+			return installedPath;
+		}
+	}
+
+	// Fall back to package location (for development)
 	const require = createRequire(import.meta.url);
 	try {
 		const entry = require.resolve("@veil/embedder");
@@ -81,11 +90,12 @@ async function cmdStart(client: EmbedderClient): Promise<number> {
 	if (!existsSync(LOG_DIR)) {
 		mkdirSync(LOG_DIR, { recursive: true });
 	}
-	const logFd = openSync(LOG_FILE, "a");
 
+	// The server tees its own console output to LOG_FILE, so discard the pipe
+	// to avoid duplicate log lines.
 	const child = spawn("node", [serverPath], {
 		detached: true,
-		stdio: ["ignore", logFd, logFd],
+		stdio: "ignore",
 	});
 	child.unref();
 

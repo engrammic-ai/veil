@@ -55,6 +55,11 @@ for platform in $PLATFORMS; do
   cp -r ../../node_modules/@mariozechner/$clipboard binaries/$platform/node_modules/@mariozechner/
 done
 
+echo "==> Bundling embedder server"
+cd ../..
+./scripts/bundle-embedder.sh
+cd packages/coding-agent
+
 echo "==> Bundling native helpers"
 for platform in darwin-arm64 darwin-x64; do
   mkdir -p binaries/$platform/native/darwin/prebuilds/$platform

@@ -127,6 +127,24 @@ func InstallFromArchive(archivePath, destPath string) error {
 		}
 	}
 
+	// Install embedder server to ~/.local/share/veil/embedder/
+	embedderSrc := filepath.Join(srcDir, "embedder")
+	if info, err := os.Stat(embedderSrc); err == nil && info.IsDir() {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("get home dir: %w", err)
+		}
+		embedderDst := filepath.Join(home, ".local", "share", "veil", "embedder")
+		if err := os.MkdirAll(filepath.Dir(embedderDst), 0o755); err != nil {
+			return fmt.Errorf("create embedder parent dir: %w", err)
+		}
+		// Remove old embedder installation if present
+		os.RemoveAll(embedderDst)
+		if err := copyDir(embedderSrc, embedderDst); err != nil {
+			return fmt.Errorf("install embedder: %w", err)
+		}
+	}
+
 	return nil
 }
 
