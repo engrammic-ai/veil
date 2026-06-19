@@ -700,7 +700,7 @@ func (m *Model) getConfigDir() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "veil")
+	return filepath.Join(home, ".veil")
 }
 
 func (m *Model) renderEmbedderMenu() string {
