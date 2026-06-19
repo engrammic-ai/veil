@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { VeilHarness } from "../harness.ts";
+import type { SearchResult, VeilHarness } from "../harness.ts";
 import type { ContextBudget, ContextItem, ContextWindow } from "../types.ts";
-import { renderContextCommand } from "./context.ts";
+import { renderContextCommand, renderContextSearch } from "./context.ts";
 
 function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 	return {
@@ -32,6 +32,7 @@ function makeHarness(opts: {
 	warmStats?: { episodic: number; fact: number; procedural: number };
 	coldPointers?: number;
 	threshold?: number;
+	searchResults?: SearchResult[];
 }): VeilHarness {
 	const budget: ContextBudget = {
 		maxTokens: 8000,
@@ -60,6 +61,7 @@ function makeHarness(opts: {
 				evictionThresholdDefault: opts.threshold ?? 0.7,
 			}),
 		}),
+		search: (_query: string, _limit?: number) => opts.searchResults ?? [],
 	} as unknown as VeilHarness;
 }
 
@@ -132,5 +134,95 @@ describe("renderContextCommand", () => {
 
 		expect(joined).toContain("Threshold:");
 		expect(joined).toContain("75%");
+	});
+});
+
+describe("renderContextSearch", () => {
+	it("renders box with search header", async () => {
+		const harness = makeHarness({ searchResults: [] });
+		const { lines } = await renderContextSearch(harness, "auth");
+
+		expect(lines[0]).toContain("+--");
+		expect(lines[0]).toContain("Context Search");
+		expect(lines[lines.length - 1]).toContain("+--");
+	});
+
+	it("shows query in results header", async () => {
+		const harness = makeHarness({ searchResults: [] });
+		const { lines } = await renderContextSearch(harness, "auth");
+		const joined = lines.join("\n");
+
+		expect(joined).toContain('Results for "auth"');
+	});
+
+	it("shows no results message for empty results", async () => {
+		const harness = makeHarness({ searchResults: [] });
+		const { lines } = await renderContextSearch(harness, "auth");
+		const joined = lines.join("\n");
+
+		expect(joined).toContain("(no results)");
+	});
+
+	it("formats results with tier, id, type and token count", async () => {
+		const results: SearchResult[] = [
+			{
+				id: "abc123def456",
+				tier: "hot",
+				type: "episodic",
+				summary: "src/auth.ts",
+				tokens: 1200,
+				score: 1.0,
+				tags: ["auth"],
+			},
+			{
+				id: "def456abc789",
+				tier: "warm",
+				type: "fact",
+				summary: "API uses OAuth2",
+				tokens: 45,
+				score: 0.8,
+				tags: ["auth", "api"],
+			},
+		];
+		const harness = makeHarness({ searchResults: results });
+		const { lines } = await renderContextSearch(harness, "auth");
+		const joined = lines.join("\n");
+
+		expect(joined).toContain("[hot]");
+		expect(joined).toContain("[warm]");
+		expect(joined).toContain("abc123");
+		expect(joined).toContain("def456");
+		expect(joined).toContain("episodic:");
+		expect(joined).toContain("fact:");
+	});
+
+	it("shows summary line with tier counts", async () => {
+		const results: SearchResult[] = [
+			{
+				id: "aaa111",
+				tier: "hot",
+				type: "fact",
+				summary: "hot fact",
+				tokens: 10,
+				score: 1.0,
+				tags: [],
+			},
+			{
+				id: "bbb222",
+				tier: "warm",
+				type: "episodic",
+				summary: "warm episodic",
+				tokens: 20,
+				score: 0.8,
+				tags: [],
+			},
+		];
+		const harness = makeHarness({ searchResults: results });
+		const { lines } = await renderContextSearch(harness, "test");
+		const joined = lines.join("\n");
+
+		expect(joined).toContain("2 results");
+		expect(joined).toContain("1 hot");
+		expect(joined).toContain("1 warm");
 	});
 });

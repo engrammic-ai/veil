@@ -86,6 +86,7 @@ import type { SourceInfo } from "../../core/source-info.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getSessionStats as getMcpSessionStats } from "../../extensions/veil-statusbar/index.ts";
+import { renderContextCommand, renderContextSearch } from "@engrammic/veil-context";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -2677,6 +2678,11 @@ export class InteractiveMode {
 			if (text === "/cat") {
 				this.handleCatCommand();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/context" || text === "/ctx" || text.startsWith("/context ") || text.startsWith("/ctx ")) {
+				this.editor.setText("");
+				await this.handleContextCommand(text);
 				return;
 			}
 			if (text === "/arminsayshi") {
@@ -5694,6 +5700,31 @@ export class InteractiveMode {
 		} else {
 			this.footerDataProvider.setExtensionStatus("memory", undefined);
 		}
+	}
+
+	private async handleContextCommand(text: string): Promise<void> {
+		if (!this.session.veilHarness) {
+			this.showWarning("Context window not active (veilHarness unavailable)");
+			return;
+		}
+
+		// Parse subcommand: /context search <query> or /ctx search <query>
+		const stripped = text.startsWith("/ctx ") ? text.slice(5).trim() : text.startsWith("/context ") ? text.slice(9).trim() : "";
+
+		let output: { lines: string[] };
+		if (stripped.startsWith("search ")) {
+			const query = stripped.slice(7).trim();
+			output = await renderContextSearch(this.session.veilHarness, query);
+		} else if (stripped !== "") {
+			// Treat bare args as implicit search
+			output = await renderContextSearch(this.session.veilHarness, stripped);
+		} else {
+			output = await renderContextCommand(this.session.veilHarness);
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(output.lines.join("\n"), 1, 1));
+		this.ui.requestRender();
 	}
 
 	private handleArminSaysHi(): void {

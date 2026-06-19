@@ -17,6 +17,8 @@ export interface BuiltinSlashCommand {
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "cat", description: "Toggle memory cat widget on/off" },
+	{ name: "context", description: "Show context window state" },
+	{ name: "ctx", description: "Alias for /context" },
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },

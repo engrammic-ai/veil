@@ -1,7 +1,9 @@
-import type { VeilHarness } from "../harness.ts";
+import type { SearchResult, VeilHarness } from "../harness.ts";
 import type { ContextItem } from "../types.ts";
 import { estimateTokens, formatTokens } from "../utils.ts";
 import { formatBox, formatProgressBar } from "../ux.ts";
+
+export type { SearchResult };
 
 export interface ContextCommandOutput {
 	lines: string[];
@@ -68,5 +70,45 @@ export async function renderContextCommand(harness: VeilHarness): Promise<Contex
 	// Wrap in box
 	const boxed = formatBox(content, "Context Window", BOX_WIDTH);
 
+	return { lines: boxed };
+}
+
+export async function renderContextSearch(harness: VeilHarness, query: string): Promise<ContextCommandOutput> {
+	const results = harness.search(query, 10);
+
+	const content: string[] = [];
+	content.push("");
+	content.push(`Results for "${query}"`);
+	content.push("─".repeat(Math.min(query.length + 14, BOX_WIDTH - 4)));
+
+	if (results.length === 0) {
+		content.push("  (no results)");
+	} else {
+		for (const result of results) {
+			const tierLabel = `[${result.tier}]`.padEnd(6);
+			const idShort = result.id.slice(0, 6);
+			const typeAndSummary = `${result.type}:${result.summary}`.slice(0, 36).padEnd(36);
+			const tokStr = formatTokens(result.tokens);
+			content.push(`  ${tierLabel} ${idShort}  ${typeAndSummary}  ${tokStr} tok`);
+		}
+	}
+
+	content.push("");
+
+	// Summary line
+	if (results.length > 0) {
+		const hotCount = results.filter((r) => r.tier === "hot").length;
+		const warmCount = results.filter((r) => r.tier === "warm").length;
+		const coldCount = results.filter((r) => r.tier === "cold").length;
+		const parts: string[] = [];
+		if (hotCount > 0) parts.push(`${hotCount} hot`);
+		if (warmCount > 0) parts.push(`${warmCount} warm`);
+		if (coldCount > 0) parts.push(`${coldCount} cold`);
+		content.push(`  ${results.length} result${results.length !== 1 ? "s" : ""} (${parts.join(", ")})`);
+	}
+
+	content.push("");
+
+	const boxed = formatBox(content, "Context Search", BOX_WIDTH);
 	return { lines: boxed };
 }

@@ -42,7 +42,7 @@ export {
 	ZepColdStore,
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
-export { type ContextCommandOutput, renderContextCommand } from "./commands/context.ts";
+export { type ContextCommandOutput, renderContextCommand, renderContextSearch, type SearchResult } from "./commands/context.ts";
 // Compression pipeline
 export {
 	type CodeCompressOptions,
