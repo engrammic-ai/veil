@@ -13,6 +13,7 @@ import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
+import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
@@ -465,19 +466,22 @@ export class VeilHarness {
 		if (this.capturesThisTurn >= this.captureConfig.maxItemsPerTurn) return;
 		if (this.totalCaptures >= this.captureConfig.maxItemsPerSession) return;
 
+		// Normalize to OKF-style CaptureDocument
+		const doc = normalizeCapture(toolName, args, extracted, rule);
+
 		// Build metadata for content-type detection
 		const argObj = args as Record<string, unknown> | undefined;
 		const metadata: ContentMetadata = {
 			filePath: argObj?.file_path as string | undefined,
 			toolName,
-			tags: rule.tags,
+			tags: doc.tags,
 		};
 
 		// Compress by content type (sync path: config, conversation; code needs async parser)
-		const { compressed, ratio } = compressSync(extracted.text, { metadata });
+		const { compressed, ratio } = compressSync(doc.body, { metadata });
 
 		// Use compressed if it saved space, otherwise truncate original
-		const toStore = ratio < 1 ? compressed : smartTruncate(extracted.text, this.captureConfig.maxChars);
+		const toStore = ratio < 1 ? compressed : smartTruncate(doc.body, this.captureConfig.maxChars);
 
 		// Token budget check
 		const incomingTokens = this.estimateTokens(toStore);
@@ -523,8 +527,8 @@ export class VeilHarness {
 			return;
 		}
 
-		// Generate tags, merging extractor-discovered tags
-		const tags = [...rule.tags, ...generateInternalTags(toolName, args), ...(extracted.extraTags ?? [])];
+		// Generate tags: CaptureDocument tags + internal structural tags
+		const tags = [...doc.tags, ...generateInternalTags(toolName, args)];
 
 		// Store in warm cache with tool call ID for faded history
 		this.emitMemoryEvent("remembering", toolName);
