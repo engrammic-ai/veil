@@ -16,19 +16,22 @@ export class StatusBarLayout {
 	}
 
 	render(width: number): string[] {
+		const STATUSBAR_PADDING = 2;
+		const effectiveWidth = width - STATUSBAR_PADDING;
 		const rightWidth = this.calculateRightWidth();
-		const leftWidth = Math.max(0, width - rightWidth - 2);
+		const leftWidth = Math.max(0, effectiveWidth - rightWidth - 2);
 
 		const leftLines = this.renderSide(this.leftWidgets, leftWidth);
 		const rightLines = this.renderSide(this.rightWidgets, rightWidth);
 
 		const maxLines = Math.max(leftLines.length, rightLines.length);
 		const result: string[] = [];
+		const padding = " ".repeat(STATUSBAR_PADDING);
 
 		for (let i = 0; i < maxLines; i++) {
 			const left = leftLines[i] || "";
 			const right = rightLines[i] || "";
-			result.push(this.combineLine(left, right, width));
+			result.push(padding + this.combineLine(left, right, effectiveWidth));
 		}
 
 		return result;

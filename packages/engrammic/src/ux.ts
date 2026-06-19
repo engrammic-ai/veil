@@ -23,7 +23,7 @@ export function formatProgressBar(percent: number, width: number): string {
 	const clamped = Math.max(0, Math.min(100, percent));
 	const filled = Math.round((clamped / 100) * width);
 	const empty = width - filled;
-	return "=".repeat(filled) + ".".repeat(empty);
+	return "█".repeat(filled) + "░".repeat(empty);
 }
 
 export function formatBox(content: string[], title?: string, width: number = 60): string[] {
@@ -31,19 +31,19 @@ export function formatBox(content: string[], title?: string, width: number = 60)
 	const lines: string[] = [];
 
 	if (title) {
-		const titlePart = `-- ${title} `;
+		const titlePart = `─ ${title} `;
 		const remaining = width - 1 - titlePart.length;
-		lines.push(`+${titlePart}${"-".repeat(Math.max(0, remaining))}+`);
+		lines.push(`╭${titlePart}${"─".repeat(Math.max(0, remaining))}╮`);
 	} else {
-		lines.push(`+${"-".repeat(width - 2)}+`);
+		lines.push(`╭${"─".repeat(width - 2)}╮`);
 	}
 
 	for (const line of content) {
 		const padded = line.slice(0, innerWidth).padEnd(innerWidth);
-		lines.push(`|  ${padded}|`);
+		lines.push(`│  ${padded}│`);
 	}
 
-	lines.push(`+${"-".repeat(width - 2)}+`);
+	lines.push(`╰${"─".repeat(width - 2)}╯`);
 	return lines;
 }
 

@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 )
 
@@ -12,6 +13,37 @@ const (
 	LocationUsrLocal = "/usr/local/bin"
 	LocationCustom   = "custom"
 )
+
+// VeilTheme returns a custom huh theme with Veil's pink/purple colors
+func VeilTheme() *huh.Theme {
+	t := huh.ThemeBase()
+
+	// Primary colors
+	pink := lipgloss.AdaptiveColor{Light: "205", Dark: "205"}
+	pinkDim := lipgloss.AdaptiveColor{Light: "168", Dark: "168"}
+	muted := lipgloss.AdaptiveColor{Light: "240", Dark: "240"}
+	green := lipgloss.AdaptiveColor{Light: "42", Dark: "42"}
+
+	// Focus styling
+	t.Focused.Base = t.Focused.Base.BorderForeground(pink)
+	t.Focused.Title = t.Focused.Title.Foreground(pink).Bold(true)
+	t.Focused.Description = t.Focused.Description.Foreground(muted)
+	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(pink)
+	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(pink).Bold(true)
+	t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(muted)
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Background(pink).Foreground(lipgloss.Color("0"))
+	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(pinkDim)
+	t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(pink)
+	t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(pink)
+
+	// Blurred styling
+	t.Blurred.Base = t.Blurred.Base.BorderForeground(muted)
+	t.Blurred.Title = t.Blurred.Title.Foreground(pinkDim)
+	t.Blurred.SelectSelector = t.Blurred.SelectSelector.Foreground(pinkDim)
+	t.Blurred.SelectedOption = t.Blurred.SelectedOption.Foreground(green)
+
+	return t
+}
 
 // IsTTY reports whether stdin is an interactive terminal.
 func IsTTY() bool {
@@ -37,7 +69,7 @@ func PromptInstallLocation() (string, error) {
 				).
 				Value(&choice),
 		),
-	)
+	).WithTheme(VeilTheme())
 
 	if err := form.Run(); err != nil {
 		return "", err
@@ -51,7 +83,7 @@ func PromptInstallLocation() (string, error) {
 					Title("Custom install path").
 					Value(&custom),
 			),
-		)
+		).WithTheme(VeilTheme())
 		if err := customForm.Run(); err != nil {
 			return "", err
 		}
@@ -75,7 +107,7 @@ func PromptPATH(rcFile string) (bool, error) {
 				Title("Add to PATH? (" + rcFile + ")").
 				Value(&consent),
 		),
-	)
+	).WithTheme(VeilTheme())
 
 	if err := form.Run(); err != nil {
 		return false, err
@@ -98,7 +130,7 @@ func PromptCompletions(shell string) (bool, error) {
 				Title("Install shell completions? (" + shell + ")").
 				Value(&consent),
 		),
-	)
+	).WithTheme(VeilTheme())
 
 	if err := form.Run(); err != nil {
 		return false, err
@@ -122,7 +154,7 @@ func PromptTelemetry() (bool, error) {
 				Description("No personal data is collected. You can change this later.").
 				Value(&consent),
 		),
-	)
+	).WithTheme(VeilTheme())
 
 	if err := form.Run(); err != nil {
 		return false, err

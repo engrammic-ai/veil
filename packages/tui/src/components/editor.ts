@@ -226,6 +226,7 @@ export interface EditorTheme {
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	promptPrefix?: string;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -324,6 +325,8 @@ export class Editor implements Component, Focusable {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
+	private promptPrefix: string;
+
 	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
 		this.tui = tui;
 		this.theme = theme;
@@ -332,6 +335,7 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		this.promptPrefix = options.promptPrefix ?? "";
 	}
 
 	/** Set of currently valid paste IDs, for marker-aware segmentation. */
@@ -501,8 +505,10 @@ export class Editor implements Component, Focusable {
 		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 
 		const result: string[] = [];
+		const prefixWidth = visibleWidth(this.promptPrefix);
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
+		let promptUsed = false;
 
 		// Render top border (with scroll indicator if scrolled down)
 		if (this.scrollOffset > 0) {
@@ -561,8 +567,14 @@ export class Editor implements Component, Focusable {
 			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
+			// Add prompt prefix on first content line (if not scrolled)
+			const linePrefix = !promptUsed && this.promptPrefix && this.scrollOffset === 0
+				? this.promptPrefix
+				: " ".repeat(prefixWidth);
+			promptUsed = true;
+
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			result.push(`${linePrefix}${leftPadding}${displayText}${padding}${lineRightPadding}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)

@@ -1009,7 +1009,32 @@ export class VeilHarness {
 	 * Execute a veil tool by name.
 	 */
 	async executeTool(name: string, params: Record<string, unknown>): Promise<ToolResult> {
-		return executeVeilTool(name, params, { manager: this.manager, onRecall: (ids) => this.onRecall(ids) });
+		// Emit pre-execution events
+		if (name === "veil_recall" || name === "veil_hydrate" || name === "veil_history") {
+			this.emitMemoryEvent("watching", `${name}...`);
+		} else if (name === "veil_remember") {
+			this.emitMemoryEvent("remembering", (params.content as string)?.slice(0, 30));
+		}
+
+		const result = await executeVeilTool(name, params, {
+			manager: this.manager,
+			onRecall: (ids) => this.onRecall(ids),
+		});
+
+		// Emit post-execution events for session stats tracking
+		if (result.success) {
+			if (name === "veil_recall" || name === "veil_hydrate" || name === "veil_history") {
+				this.emitMemoryEvent("recalled", name);
+			} else if (name === "veil_remember") {
+				this.emitMemoryEvent("learned", params.type as string);
+			} else if (name === "veil_promote") {
+				this.emitMemoryEvent("recalled", "promoted");
+			} else if (name === "veil_pin") {
+				this.emitMemoryEvent("learned", "pinned");
+			}
+		}
+
+		return result;
 	}
 
 	/**
