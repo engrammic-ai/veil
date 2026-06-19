@@ -47,6 +47,12 @@ Pin sparingly — only user preferences, hard constraints, or decisions that wou
 ### Cross-session
 Use \`history()\` when resuming work or referencing past sessions. Items from history can be \`promote()\`d into your active context.
 
+When to use \`history()\`:
+- Starting a session that continues prior work
+- User references "what we did before" or "last time"
+- You need context from a different project session
+- Picking up after a long gap (days/weeks)
+
 ### Anticipated items
 Items may auto-load based on the user's message. Treat them as suggestions — demote if irrelevant.
 
