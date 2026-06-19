@@ -240,7 +240,7 @@ function convertMessages(messages: Message[], isOAuth: boolean, _tools?: Tool[])
 			}
 		} else if (msg.role === "assistant") {
 			const blocks: ContentBlockParam[] = [];
-			for (const block of msg.content) {
+			for (const block of Array.isArray(msg.content) ? msg.content : []) {
 				if (block.type === "text" && block.text.trim()) {
 					blocks.push({ type: "text", text: sanitizeSurrogates(block.text) });
 				} else if (block.type === "thinking" && block.thinking.trim()) {
