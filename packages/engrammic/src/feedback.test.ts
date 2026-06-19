@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ContextCache, createItem } from "./cache.ts";
 import { applyTaskSuccessSignal, FeedbackTracker } from "./feedback.ts";
-import Database from "./sqlite.ts";
 
 function makeCache(): ContextCache {
 	return new ContextCache(":memory:");

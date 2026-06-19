@@ -5,6 +5,7 @@
 
 import type { ContextCache } from "./cache.ts";
 import { defaultFSRS } from "./fsrs.ts";
+import { markStaleItems } from "./staleness.ts";
 import type { ContextItem } from "./types.ts";
 import { estimateTokens } from "./utils.ts";
 
@@ -87,6 +88,15 @@ export function selectForTurn(cache: ContextCache, context: TurnContext, budget:
 }
 
 /**
+ * Wrapper around selectForTurn that marks stale items after selection.
+ */
+export function selectForTurnWithStaleness(cache: ContextCache, context: TurnContext, budget: number): SelectionResult {
+	const result = selectForTurn(cache, context, budget);
+	result.items = markStaleItems(result.items);
+	return result;
+}
+
+/**
  * Format selected context items grouped by type as markdown sections.
  * Based on spec section 3.5.
  */
@@ -117,7 +127,8 @@ export function formatSelectedContext(items: ContextItem[]): string {
 			const age = relativeAge(item.lastAccess);
 			const snippet = item.content.slice(0, 120).replace(/\n/g, " ");
 			const file = item.tags.find((t) => t.includes("/") || t.includes("."));
-			return file ? `- [${file}] ${age}: ${snippet}` : `- ${age}: ${snippet}`;
+			const stalePrefix = item.isStale ? "[STALE] " : "";
+			return file ? `- ${stalePrefix}[${file}] ${age}: ${snippet}` : `- ${stalePrefix}${age}: ${snippet}`;
 		});
 
 		sections.push(`## ${heading}\n${lines.join("\n")}`);

@@ -18,6 +18,7 @@ export interface WidgetContext {
 	veilHarness?: VeilHarness;
 	footerData: ReadonlyFooterDataProvider;
 	theme: Theme;
+	modelName?: string;
 }
 
 export interface StatusBarWidget {

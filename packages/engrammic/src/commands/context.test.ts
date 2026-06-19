@@ -11,6 +11,8 @@ function makeItem(overrides: Partial<ContextItem> = {}): ContextItem {
 		createdAt: Date.now(),
 		lastAccess: Date.now(),
 		accessCount: 1,
+		usedCount: 0,
+		ignoredCount: 0,
 		decayScore: 1.0,
 		cognitiveWeight: 0,
 		stability: 0.5,

@@ -12,7 +12,6 @@
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
-import { applyTaskSuccessSignal, FeedbackTracker, type FeedbackResult } from "./feedback.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
@@ -27,6 +26,7 @@ import {
 } from "./convergence.ts";
 import { getExtractor } from "./extractors/index.ts";
 import type { EnhancedCaptureRule, ExtractorResult } from "./extractors/types.ts";
+import { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
 import {
 	advanceGoalState,
 	createGoalInferenceState,

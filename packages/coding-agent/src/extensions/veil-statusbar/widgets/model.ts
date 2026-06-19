@@ -12,24 +12,18 @@ export class ModelWidget implements StatusBarWidget {
 
 	init(_config: Record<string, unknown>, ctx: WidgetContext): void {
 		this.ctx = ctx;
-		const footer = ctx.footerData;
-		if (typeof (footer as Record<string, unknown>).getModel === "function") {
-			this.modelName = ((footer as Record<string, unknown>).getModel as () => string)() || "";
-		}
-		if (typeof (footer as Record<string, unknown>).getEffort === "function") {
-			this.effort = ((footer as Record<string, unknown>).getEffort as () => string)() || "";
-		}
+		this.modelName = ctx.modelName || "";
 	}
 
 	render(_width: number): string[] {
-		const theme = this.ctx?.theme;
+		const _theme = this.ctx?.theme;
 
 		let line = this.modelName || "unknown";
 		if (this.effort) {
 			line += ` • ${this.effort} effort`;
 		}
 
-		return [theme ? theme.fg("dim", line) : line];
+		return [line];
 	}
 
 	update(event: WidgetEvent): void {

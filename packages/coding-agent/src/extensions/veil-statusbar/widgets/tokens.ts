@@ -23,7 +23,7 @@ export class TokensWidget implements StatusBarWidget {
 		const outputStr = this.formatTokens(this.output);
 
 		const line = `Cached: ${cachedStr}  ↑${inputStr}  ↓${outputStr}`;
-		return [theme ? theme.fg("dim", line) : line];
+		return [theme ? theme.fg("muted", line) : line];
 	}
 
 	update(event: WidgetEvent): void {

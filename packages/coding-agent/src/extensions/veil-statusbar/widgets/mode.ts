@@ -15,8 +15,9 @@ export class ModeWidget implements StatusBarWidget {
 
 	render(_width: number): string[] {
 		const theme = this.ctx?.theme;
-		const line = `mode: ${this.mode}`;
-		return [theme ? theme.fg("dim", line) : line];
+		const modeColored = theme ? theme.fg("accent", this.mode) : this.mode;
+		const line = `mode: ${modeColored}`;
+		return [line];
 	}
 
 	update(event: WidgetEvent): void {

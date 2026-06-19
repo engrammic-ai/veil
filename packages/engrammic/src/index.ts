@@ -143,13 +143,13 @@ export {
 	type TurnContext,
 } from "./retrieval.ts";
 export type { ScorerWeights } from "./scorer.ts";
+export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export {
 	checkStaleness,
 	getResourceMetadata,
 	markStaleItems,
 	type StalenessCheck,
 } from "./staleness.ts";
-export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export { executeVeilTool, TOOL_SCHEMAS, type ToolContext, type ToolDefinition, type ToolResult } from "./tools.ts";
 export {
 	handleTrigger,

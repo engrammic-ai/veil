@@ -25,8 +25,9 @@ export class ContextBarWidget implements StatusBarWidget {
 		const usedK = this.formatTokens(this.used);
 		const totalK = this.formatTokens(this.total);
 
-		const line = `Context: [${bar}] ${usedK}/${totalK} (${percent}%)`;
-		return [theme ? theme.fg("dim", line) : line];
+		const barColored = theme ? theme.fg("accent", bar) : bar;
+		const line = `Context: [${barColored}] ${usedK}/${totalK} (${percent}%)`;
+		return [line];
 	}
 
 	update(event: WidgetEvent): void {

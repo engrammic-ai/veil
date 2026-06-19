@@ -172,3 +172,207 @@ function buildIndex(items: ContextItem[], _outputDir: string): string {
 
 	return lines.join("\n");
 }
+
+// ─── Import ───────────────────────────────────────────────────────────────────
+
+export interface ImportOptions {
+	inputDir: string;
+	merge?: boolean;
+	preserveIds?: boolean;
+}
+
+export interface ImportResult {
+	imported: number;
+	skipped: number;
+	errors: string[];
+}
+
+interface ParsedFrontmatter {
+	id?: string;
+	type: string;
+	title: string;
+	timestamp: string;
+	resource?: string;
+	tags: string[];
+	outcome?: string;
+	stability?: number;
+	difficulty?: number;
+	links?: Array<{ rel: string; target: string; label?: string }>;
+}
+
+interface ParsedMemory {
+	frontmatter: ParsedFrontmatter;
+	body: string;
+}
+
+export function parseMemoryFile(content: string): ParsedMemory | null {
+	if (!content.startsWith("---")) return null;
+	const end = content.indexOf("\n---", 3);
+	if (end === -1) return null;
+
+	const yamlBlock = content.slice(3, end).trim();
+	const body = content.slice(end + 4).trim();
+
+	const fm = parseYaml(yamlBlock);
+	if (!fm.type || !fm.title || !fm.timestamp) return null;
+	if (!Array.isArray(fm.tags)) fm.tags = [];
+	return { frontmatter: fm as ParsedFrontmatter, body };
+}
+
+function parseScalar(s: string): string | number | boolean {
+	s = s.trim();
+	if (s === "true") return true;
+	if (s === "false") return false;
+	const n = Number(s);
+	if (!Number.isNaN(n) && s !== "") return n;
+	if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
+	return s;
+}
+
+function parseYaml(yaml: string): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	const lines = yaml.split("\n");
+	let i = 0;
+
+	while (i < lines.length) {
+		const keyMatch = lines[i].match(/^(\w[\w-]*):\s*(.*)?$/);
+		if (!keyMatch) {
+			i++;
+			continue;
+		}
+
+		const key = keyMatch[1];
+		const rest = (keyMatch[2] ?? "").trim();
+
+		if (rest === "" && lines[i + 1]?.match(/^\s+-/)) {
+			const items: unknown[] = [];
+			i++;
+			while (i < lines.length && lines[i].match(/^\s+-\s/)) {
+				const m = lines[i].match(/^\s+-\s+(.*)/);
+				if (m) items.push(parseScalar(m[1]));
+				i++;
+			}
+			result[key] = items;
+		} else if (rest.startsWith("[")) {
+			const inner = rest.slice(1, rest.lastIndexOf("]"));
+			result[key] = inner
+				.split(",")
+				.map((s) => parseScalar(s.trim()))
+				.filter((s) => s !== "");
+			i++;
+		} else {
+			result[key] = parseScalar(rest);
+			i++;
+		}
+	}
+
+	const linksBlock = parseLinksBlock(yaml);
+	if (linksBlock !== null) result.links = linksBlock;
+
+	return result;
+}
+
+function parseLinksBlock(yaml: string): Array<{ rel: string; target: string; label?: string }> | null {
+	const linksIdx = yaml.search(/^links:/m);
+	if (linksIdx === -1) return null;
+
+	const after = yaml.slice(linksIdx + 6);
+	const items: Array<{ rel: string; target: string; label?: string }> = [];
+	let cur: Partial<{ rel: string; target: string; label: string }> | null = null;
+
+	for (const line of after.split("\n")) {
+		const newItemField = line.match(/^\s+-\s+(rel|target|label):\s*(.*)/);
+		if (newItemField) {
+			if (cur?.rel && cur.target) items.push(cur as { rel: string; target: string; label?: string });
+			cur = { [newItemField[1]]: parseScalar(newItemField[2]).toString() };
+			continue;
+		}
+		const contField = line.match(/^\s{2,}(rel|target|label):\s*(.*)/);
+		if (contField && cur) {
+			cur[contField[1] as "rel" | "target" | "label"] = parseScalar(contField[2]).toString();
+			continue;
+		}
+		if (line.match(/^\w/) && !line.match(/^-\s/)) break;
+	}
+
+	if (cur?.rel && cur.target) items.push(cur as { rel: string; target: string; label?: string });
+	return items.length > 0 ? items : null;
+}
+
+const OKF_TYPE_MAP: Record<string, ContextItemType> = {
+	edit: "episodic",
+	error: "episodic",
+	read: "episodic",
+	bash: "episodic",
+	decision: "episodic",
+	fact: "fact",
+	procedure: "procedural",
+};
+
+function mapType(okfType: string): ContextItemType {
+	return OKF_TYPE_MAP[okfType] ?? "episodic";
+}
+
+const ALLOWED_LINK_RELS = new Set<string>(["caused_by", "fixes", "supersedes", "related", "file", "error"]);
+
+function toCaptureLinkRel(rel: string): CaptureLink["rel"] {
+	return (ALLOWED_LINK_RELS.has(rel) ? rel : "related") as CaptureLink["rel"];
+}
+
+export async function importBundle(
+	cache: ContextCache,
+	manager: ContextManager,
+	options: ImportOptions,
+): Promise<ImportResult> {
+	const result: ImportResult = { imported: 0, skipped: 0, errors: [] };
+	const memoriesDir = join(options.inputDir, "memories");
+
+	let files: string[];
+	try {
+		files = await readdir(memoriesDir);
+	} catch {
+		result.errors.push(`Cannot read memories directory: ${memoriesDir}`);
+		return result;
+	}
+
+	for (const file of files) {
+		if (!file.endsWith(".md")) continue;
+
+		let content: string;
+		try {
+			content = await readFile(join(memoriesDir, file), "utf-8");
+		} catch {
+			result.errors.push(`Failed to read file: ${file}`);
+			continue;
+		}
+
+		const parsed = parseMemoryFile(content);
+		if (!parsed) {
+			result.errors.push(`Invalid format: ${file}`);
+			continue;
+		}
+
+		const bodyHash = hashContent(parsed.body);
+		const existing = cache.getByHash(bodyHash);
+		if (existing && !options.merge) {
+			result.skipped++;
+			continue;
+		}
+
+		const type = mapType(parsed.frontmatter.type);
+		const item = manager.remember(parsed.body, type, parsed.frontmatter.tags);
+
+		if (parsed.frontmatter.links?.length) {
+			const captureLinks: CaptureLink[] = parsed.frontmatter.links.map((l) => ({
+				rel: toCaptureLinkRel(l.rel),
+				target: l.target,
+				...(l.label ? { label: l.label } : {}),
+			}));
+			cache.addLinks(item.id, captureLinks);
+		}
+
+		result.imported++;
+	}
+
+	return result;
+}

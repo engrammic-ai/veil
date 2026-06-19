@@ -543,6 +543,8 @@ describe("ContextCache.updateByDedupeKey", () => {
 			createdAt: Date.now(),
 			lastAccess: Date.now(),
 			accessCount: 1,
+			usedCount: 0,
+			ignoredCount: 0,
 			decayScore: 0,
 			cognitiveWeight: 0,
 			stability: 0.5,

@@ -31,6 +31,7 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 				sessionManager: ctx.sessionManager,
 				footerData,
 				theme,
+				modelName: ctx.model?.name,
 			};
 
 			for (const id of config.left) {

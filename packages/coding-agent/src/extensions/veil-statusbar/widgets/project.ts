@@ -29,7 +29,7 @@ export class ProjectWidget implements StatusBarWidget {
 			line += ` ${added} ${removed}`;
 		}
 
-		return [theme ? theme.fg("dim", line) : line];
+		return [line];
 	}
 
 	update(event: WidgetEvent): void {
