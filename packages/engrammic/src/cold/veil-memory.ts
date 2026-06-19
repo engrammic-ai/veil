@@ -6,16 +6,43 @@
  */
 
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 // Import from veil-memory package
-import { type ConflictPair, type CurrentBelief, MemoryStore, type StoreConfig } from "@veil/memory";
+import {
+	type ConflictPair,
+	type CurrentBelief,
+	MemoryStore,
+	OllamaEmbedder,
+	ServerEmbedder,
+	type StoreConfig,
+} from "@veil/memory";
 import type { ContextItem } from "../types.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
+
+type EmbedderTier = "none" | "light" | "balanced" | "quality" | "max" | "ollama";
+
+interface EmbedderConfig {
+	tier: EmbedderTier;
+	port?: number;
+}
+
+function readEmbedderConfig(): EmbedderConfig | null {
+	const configPath = join(homedir(), ".veil", "embedder.json");
+	if (!existsSync(configPath)) return null;
+	try {
+		return JSON.parse(readFileSync(configPath, "utf-8"));
+	} catch {
+		return null;
+	}
+}
 
 export interface VeilMemoryColdStoreConfig extends ColdStoreConfig {
 	dbPath?: string;
 	agentId?: string;
-	// Optional: enable Ollama embeddings for semantic search
-	enableEmbeddings?: boolean;
+	// Optional: override embedder config (defaults to reading ~/.veil/embedder.json)
+	embedderTier?: EmbedderTier;
 	ollamaBaseUrl?: string;
 }
 
@@ -44,12 +71,22 @@ export class VeilMemoryColdStore implements ColdStore {
 
 		this.store = new MemoryStore(storeConfig);
 
-		// Wire up embedder for semantic search
-		if (config.enableEmbeddings !== false) {
+		// Wire up embedder for semantic search based on tier
+		const embedderConfig = readEmbedderConfig();
+		const tier = config.embedderTier ?? embedderConfig?.tier ?? "none";
+
+		if (tier !== "none") {
 			try {
-				const { OllamaEmbedder } = require("@veil/memory");
-				const embedder = new OllamaEmbedder(config.ollamaBaseUrl);
-				this.store.setEmbedder(embedder);
+				if (tier === "ollama") {
+					const embedder = new OllamaEmbedder(
+						config.ollamaBaseUrl ? { baseUrl: config.ollamaBaseUrl } : undefined,
+					);
+					this.store.setEmbedder(embedder);
+				} else {
+					// light/balanced/quality/max use local embedder server
+					const embedder = new ServerEmbedder(embedderConfig?.port);
+					this.store.setEmbedder(embedder);
+				}
 				this._embedderStatus = "active";
 			} catch (err) {
 				this._embedderStatus = "failed";

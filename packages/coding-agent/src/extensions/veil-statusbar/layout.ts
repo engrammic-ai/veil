@@ -31,7 +31,7 @@ export class StatusBarLayout {
 		for (let i = 0; i < maxLines; i++) {
 			const left = leftLines[i] || "";
 			const right = rightLines[i] || "";
-			result.push(padding + this.combineLine(left, right, effectiveWidth));
+			result.push(padding + this.combineLine(left, right, effectiveWidth) + padding);
 		}
 
 		return result;
@@ -59,8 +59,8 @@ export class StatusBarLayout {
 	}
 
 	private calculateRightWidth(): number {
-		// TODO: widgets should expose a preferredWidth(); 30 is a placeholder until that API exists
-		return this.rightWidgets.length > 0 ? 30 : 0;
+		// TODO: widgets should expose a preferredWidth(); 36 gives room for cat widget box (34 chars)
+		return this.rightWidgets.length > 0 ? 36 : 0;
 	}
 
 	private renderSide(widgets: StatusBarWidget[], width: number): string[] {

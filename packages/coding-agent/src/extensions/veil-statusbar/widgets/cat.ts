@@ -43,10 +43,12 @@ export class CatWidget implements StatusBarWidget {
 		const detail = this.detail ? `"${this.truncate(this.detail, 32)}"` : "";
 		const theme = this.ctx?.theme;
 
-		const catWidth = 7;
 		const minTextWidth = 20;
 		const textWidth = Math.max(minTextWidth, label.length, detail.length);
-		const innerWidth = catWidth + 4 + textWidth;
+		// Middle line = │ + space + cat(7) + gap(2) + text + pad(2) + │ = 14 + textWidth
+		// Border = ┌ + dashes(innerWidth+2) + ┐ = innerWidth + 4
+		// Match: innerWidth + 4 = 14 + textWidth => innerWidth = 10 + textWidth
+		const innerWidth = 10 + textWidth;
 
 		const colorFn = theme ? (s: string) => theme.fg(frame.color, s) : (s: string) => s;
 		const mutedFn = theme ? (s: string) => theme.fg("muted", s) : (s: string) => s;

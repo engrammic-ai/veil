@@ -1,12 +1,12 @@
 {
 	"name": "@engrammic/veil",
-	"version": "0.1.11",
+	"version": "0.1.12",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@engrammic/veil",
-			"version": "0.1.11",
+			"version": "0.1.12",
 			"license": "MIT",
 			"dependencies": {
 				"@earendil-works/pi-agent-core": "^0.79.6",
@@ -569,8 +569,8 @@
 			}
 		},
 		"node_modules/@engrammic/veil-context": {
-			"version": "0.0.1",
-			"resolved": "https://registry.npmjs.org/@engrammic/veil-context/-/veil-context-0.0.1.tgz",
+			"version": "0.0.2",
+			"resolved": "https://registry.npmjs.org/@engrammic/veil-context/-/veil-context-0.0.2.tgz",
 			"dependencies": {
 				"@veil/memory": "*",
 				"better-sqlite3": "11.10.0",
