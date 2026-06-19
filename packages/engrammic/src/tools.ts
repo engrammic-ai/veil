@@ -19,14 +19,15 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 	{
 		name: "veil_recall",
 		description:
-			"Search your memory for relevant past context. Returns items wrapped in <veil-recall count=N> tags. If count > 0, you have memories - read them. Use the IDs to promote or hydrate items.",
+			"Search your memory for relevant past context. Supports semantic queries and/or tag filtering. Returns items wrapped in <veil-recall count=N> tags. If count > 0, you have memories - read them. Use the IDs to promote or hydrate items.",
 		parameters: {
 			type: "object",
 			properties: {
-				tags: { type: "array", items: { type: "string" }, description: "Tags to search for" },
+				query: { type: "string", description: "Semantic search query (searches content)" },
+				tags: { type: "array", items: { type: "string" }, description: "Tags to filter by" },
 				limit: { type: "number", description: "Maximum number of results (default: 10)" },
 			},
-			required: ["tags"],
+			required: [],
 		},
 	},
 	{
@@ -144,7 +145,7 @@ export async function executeVeilTool(
 ): Promise<ToolResult> {
 	switch (name) {
 		case "veil_recall":
-			return executeRecall(params as { tags: string[]; limit?: number }, ctx);
+			return executeRecall(params as { query?: string; tags?: string[]; limit?: number }, ctx);
 		case "veil_promote":
 			return await executePromote(params as { id: string }, ctx);
 		case "veil_demote":
@@ -166,8 +167,21 @@ export async function executeVeilTool(
 	}
 }
 
-async function executeRecall(params: { tags: string[]; limit?: number }, ctx: ToolContext): Promise<ToolResult> {
-	const items = await ctx.manager.recall(params.tags, params.limit ?? 10);
+async function executeRecall(
+	params: { query?: string; tags?: string[]; limit?: number },
+	ctx: ToolContext,
+): Promise<ToolResult> {
+	const limit = params.limit ?? 10;
+
+	let items: ContextItem[];
+	if (params.query) {
+		items = await ctx.manager.recallByQuery(params.query, params.tags ?? [], limit);
+	} else if (params.tags && params.tags.length > 0) {
+		items = await ctx.manager.recall(params.tags, limit);
+	} else {
+		return { success: false, error: "Provide either query or tags parameter" };
+	}
+
 	const result = items.map((item) => ({ id: item.id, stub: formatStub(item) }));
 	ctx.onRecall?.(items.map((i) => i.id));
 

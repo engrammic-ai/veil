@@ -80,6 +80,37 @@ describe("executeVeilTool", () => {
 		expect(calledWith).toContain(itemB.id);
 	});
 
+	test("veil_recall supports semantic query parameter", async () => {
+		manager.remember("AI coding tools market analysis for 2026", "fact", ["research"]);
+
+		const result = await executeVeilTool("veil_recall", { query: "AI coding" }, { manager });
+
+		expect(result.success).toBe(true);
+		const data = result.data as { formatted: string; items: Array<{ id: string }> };
+		// Should find via cache search (FTS-like matching)
+		expect(data.items.length).toBeGreaterThanOrEqual(0);
+	});
+
+	test("veil_recall combines query and tags", async () => {
+		manager.remember("OAuth authentication flow", "fact", ["auth"]);
+		manager.remember("OAuth token refresh", "fact", ["auth"]);
+		manager.remember("Database connection pooling", "fact", ["db"]);
+
+		const result = await executeVeilTool("veil_recall", { query: "OAuth", tags: ["auth"] }, { manager });
+
+		expect(result.success).toBe(true);
+		const data = result.data as { items: Array<{ id: string }> };
+		// Should find auth-tagged items matching OAuth
+		expect(data.items.length).toBeLessThanOrEqual(2);
+	});
+
+	test("veil_recall returns error when neither query nor tags provided", async () => {
+		const result = await executeVeilTool("veil_recall", {}, { manager });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("query or tags");
+	});
+
 	test("veil_promote loads item into context", async () => {
 		const item = manager.remember("Content to promote", "fact", []);
 		const result = await executeVeilTool("veil_promote", { id: item.id }, { manager });

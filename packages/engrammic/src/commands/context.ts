@@ -123,6 +123,22 @@ export async function renderContextCommand(
 	const coldContent = `${c.blue}○${c.reset} ${c.blue}Storage${c.reset}   ${coldText}`;
 	lines.push(`  ${boxBorder}│${c.reset} ${pad(coldContent, 1 + 1 + 7 + 3 + coldText.length)} ${boxBorder}│${c.reset}`);
 
+	// Embedder/semantic search status
+	const coldStats = harness.getManager().getColdStats?.();
+	if (coldStats?.embedderStatus) {
+		const statusIcon =
+			coldStats.embedderStatus === "active"
+				? `${c.green}on${c.reset}`
+				: coldStats.embedderStatus === "failed"
+					? `${c.orange}FAILED${c.reset}`
+					: `${c.dim}off${c.reset}`;
+		const errorSuffix = coldStats.embedderError ? ` ${c.dim}(${coldStats.embedderError.slice(0, 20)})${c.reset}` : "";
+		const statusText = `${statusIcon}${errorSuffix}`;
+		const semanticContent = `  ${c.cyan}Semantic${c.reset}  ${statusText}`;
+		// Approximate visual length (varies with color codes)
+		lines.push(`  ${boxBorder}│${c.reset} ${pad(semanticContent, 2 + 8 + 2 + 6)} ${boxBorder}│${c.reset}`);
+	}
+
 	lines.push(`  ${boxBorder}╰${"─".repeat(W - 2)}╯${c.reset}`);
 	lines.push("");
 

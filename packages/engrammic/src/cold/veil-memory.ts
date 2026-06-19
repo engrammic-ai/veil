@@ -19,9 +19,13 @@ export interface VeilMemoryColdStoreConfig extends ColdStoreConfig {
 	ollamaBaseUrl?: string;
 }
 
+export type EmbedderStatus = "active" | "failed" | "disabled";
+
 export class VeilMemoryColdStore implements ColdStore {
 	private store: MemoryStore;
 	private namespace: string;
+	private _embedderStatus: EmbedderStatus = "disabled";
+	private _embedderError?: string;
 
 	readonly capabilities: ColdStoreCapabilities = {
 		semantic: true, // sqlite-vec embeddings
@@ -46,8 +50,11 @@ export class VeilMemoryColdStore implements ColdStore {
 				const { OllamaEmbedder } = require("@veil/memory");
 				const embedder = new OllamaEmbedder(config.ollamaBaseUrl);
 				this.store.setEmbedder(embedder);
-			} catch {
-				// Embedder not available, semantic search disabled
+				this._embedderStatus = "active";
+			} catch (err) {
+				this._embedderStatus = "failed";
+				this._embedderError = err instanceof Error ? err.message : String(err);
+				console.warn(`[veil-memory] Embedder init failed: ${this._embedderError}. Falling back to FTS5.`);
 			}
 		}
 	}
@@ -128,8 +135,22 @@ export class VeilMemoryColdStore implements ColdStore {
 		conflicts: number;
 		avgRetrievability: number;
 		lowRCount: number;
+		embedderStatus: EmbedderStatus;
+		embedderError?: string;
 	} {
-		return this.store.stats();
+		return {
+			...this.store.stats(),
+			embedderStatus: this._embedderStatus,
+			embedderError: this._embedderError,
+		};
+	}
+
+	get embedderStatus(): EmbedderStatus {
+		return this._embedderStatus;
+	}
+
+	get embedderError(): string | undefined {
+		return this._embedderError;
 	}
 
 	getConflicts(): ConflictPair[] {

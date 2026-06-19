@@ -14,7 +14,7 @@ import { buildBehavioralManifest } from "./anticipate.ts";
 import { ContextCache, createItem } from "./cache.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import type { ColdStore } from "./cold/interface.ts";
-import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
+import { type EmbedderStatus, VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { EvictionController } from "./eviction.ts";
 import { findEvictionCandidates, rankItems } from "./scorer.ts";
 import type {
@@ -148,6 +148,40 @@ export class ContextManager {
 		}
 
 		return [];
+	}
+
+	/**
+	 * Retrieve items by semantic query with optional tag filtering.
+	 * Uses cache text search, falls back to cold storage for deeper search.
+	 */
+	async recallByQuery(query: string, tags: string[], limit: number = 10): Promise<ContextItem[]> {
+		// Search warm cache first
+		const warmItems = this.cache.searchItems(query, limit * 2);
+		const filtered =
+			tags.length > 0 ? warmItems.filter((item) => tags.some((t) => item.tags.includes(t))) : warmItems;
+
+		if (filtered.length >= limit) {
+			const taskCtx: TaskContext = { tags };
+			const ranked = rankItems(filtered, taskCtx, this.config);
+			return ranked.slice(0, limit).map((r) => r.item);
+		}
+
+		// Fall back to cold storage for deeper search
+		if (this.cold?.query) {
+			const coldItems = await this.cold.query(query, tags, limit);
+			// Merge with warm results, dedupe by ID
+			const seenIds = new Set(filtered.map((i) => i.id));
+			const merged = [...filtered];
+			for (const item of coldItems) {
+				if (!seenIds.has(item.id)) {
+					merged.push(item);
+					seenIds.add(item.id);
+				}
+			}
+			return merged.slice(0, limit);
+		}
+
+		return filtered.slice(0, limit);
 	}
 
 	/**
@@ -562,6 +596,25 @@ export class ContextManager {
 				summary: i.content.slice(0, 50),
 				sessionDate: new Date(i.createdAt).toLocaleDateString(),
 			}));
+	}
+
+	/**
+	 * Get cold storage stats including embedder status.
+	 * Returns null if cold store doesn't support getStats.
+	 */
+	getColdStats(): {
+		total: number;
+		byType: { episodic: number; factual: number; procedural: number };
+		conflicts: number;
+		avgRetrievability: number;
+		lowRCount: number;
+		embedderStatus: EmbedderStatus;
+		embedderError?: string;
+	} | null {
+		if (this.cold && "getStats" in this.cold) {
+			return (this.cold as VeilMemoryColdStore).getStats();
+		}
+		return null;
 	}
 
 	/**
