@@ -54,10 +54,22 @@ type VersionCache interface {
 // FetchReleases returns all releases for the given channel.
 // Results are cached for 1 hour via cache.
 func FetchReleases(cache VersionCache, channel Channel) ([]Release, error) {
-	if raw, ok := cache.GetVersions(); ok {
-		var all []Release
-		if err := json.Unmarshal(raw, &all); err == nil {
-			return filterByChannel(all, channel), nil
+	return fetchReleasesInternal(cache, channel, false)
+}
+
+// FetchReleasesRefresh fetches releases from GitHub, bypassing cache.
+// Use for commands like `releases` and `update` where fresh data is expected.
+func FetchReleasesRefresh(cache VersionCache, channel Channel) ([]Release, error) {
+	return fetchReleasesInternal(cache, channel, true)
+}
+
+func fetchReleasesInternal(cache VersionCache, channel Channel, refresh bool) ([]Release, error) {
+	if !refresh {
+		if raw, ok := cache.GetVersions(); ok {
+			var all []Release
+			if err := json.Unmarshal(raw, &all); err == nil {
+				return filterByChannel(all, channel), nil
+			}
 		}
 	}
 
@@ -76,9 +88,24 @@ func FetchReleases(cache VersionCache, channel Channel) ([]Release, error) {
 	return filterByChannel(all, channel), nil
 }
 
-// GetLatest returns the newest release for the given channel.
+// GetLatest returns the newest release for the given channel (uses cache).
 func GetLatest(cache VersionCache, channel Channel) (*Release, error) {
-	releases, err := FetchReleases(cache, channel)
+	return getLatestInternal(cache, channel, false)
+}
+
+// GetLatestRefresh returns the newest release, bypassing cache.
+func GetLatestRefresh(cache VersionCache, channel Channel) (*Release, error) {
+	return getLatestInternal(cache, channel, true)
+}
+
+func getLatestInternal(cache VersionCache, channel Channel, refresh bool) (*Release, error) {
+	var releases []Release
+	var err error
+	if refresh {
+		releases, err = FetchReleasesRefresh(cache, channel)
+	} else {
+		releases, err = FetchReleases(cache, channel)
+	}
 	if err != nil {
 		return nil, err
 	}

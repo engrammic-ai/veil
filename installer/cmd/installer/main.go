@@ -203,7 +203,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 
 	if version != "" {
 		// User requested a specific version; find it in the release list.
-		releases, err := config.FetchReleases(cache, ch)
+		releases, err := config.FetchReleasesRefresh(cache, ch)
 		if err != nil {
 			exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch releases: %w", err))
 		}
@@ -218,7 +218,7 @@ func runInstall(cmd *cobra.Command, args []string) {
 			exitcodes.Exit(exitcodes.ErrGeneral, fmt.Sprintf("version %q not found in channel %q", version, channel))
 		}
 	} else {
-		rel, err = config.GetLatest(cache, ch)
+		rel, err = config.GetLatestRefresh(cache, ch)
 		if err != nil {
 			exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch latest release: %w", err))
 		}
@@ -538,7 +538,7 @@ func runReleases(cmd *cobra.Command, args []string) {
 	}
 
 	ch := config.Channel(channel)
-	releases, err := config.FetchReleases(cache, ch)
+	releases, err := config.FetchReleasesRefresh(cache, ch)
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch releases: %w", err))
 	}
