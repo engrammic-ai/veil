@@ -36,6 +36,7 @@ import {
 } from "./goal-inference.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { buildContextSection, buildFailureSection } from "./injection.ts";
+import { CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
 import { type SelectionResult, selectForTurn, type TurnContext } from "./retrieval.ts";
@@ -987,6 +988,14 @@ export class VeilHarness {
 			items: rankedItems.map(({ item, score }) => ({ item, score })),
 			budget: window.budget,
 		});
+	}
+
+	/**
+	 * Get the context management prompt for system prompt injection.
+	 * This teaches the model how to use veil tools effectively.
+	 */
+	getSystemPromptSection(): string {
+		return CONTEXT_MANAGEMENT_PROMPT;
 	}
 
 	/**

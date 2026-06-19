@@ -1,24 +1,33 @@
 // packages/engrammic/src/prompts.ts
 
-export const CONTEXT_MANAGEMENT_PROMPT = `## Context Management
+export const CONTEXT_MANAGEMENT_PROMPT = `## Working Memory
 
-Your context window is finite and managed. Items appear as stubs like [EPISODE:abc123:summary].
-You must actively curate what stays loaded.
+You have a managed context window. Items appear as stubs: \`[EPISODE:id:summary]\`
 
-BEFORE starting a subtask: call recall(tags) with 2-3 relevant tags. Don't assume you remember — check first.
+**The \`<veil-context>\` block** shown each turn is your current working set. Scan it before recalling more; what you need may already be there.
 
-AFTER completing a subtask: demote items not relevant to the next step. If you wouldn't cite it in your next 3 responses, demote it.
+### Core loop
 
-ALWAYS pin immediately: user preferences, constraints, design decisions. These must never be lost mid-task.
+1. **Before diving in:** Glance at \`<veil-context>\`. If gaps exist, \`recall()\` with 1-3 semantic tags (what it's *about*: "user-constraints", "auth-flow", "error-handling").
 
-USE remember() for: your interpretations, implications, non-obvious discoveries. Don't remember raw outputs — auto-capture handles those.
+2. **While working:** Reference stubs by ID when citing. \`hydrate()\` only when you need to reason over full content, not just acknowledge something exists.
 
-Demoting is safe. Recall is fast. Trust the system to find things again.
+3. **After completing a step:** \`demote()\` items you won't reference in the next few turns. Keep 5-7 items max unless actively synthesizing.
 
-Anti-patterns to avoid:
-- Don't pin speculatively
-- Don't keep more than 5-7 items promoted at once
-- Don't call forget() during active work — only at explicit cleanup
+### What to pin
+Pin sparingly — only user preferences, hard constraints, or decisions that would cause harm if forgotten. If unsure, don't pin.
+
+### What to remember
+\`remember()\` your interpretations: implications, connections, non-obvious conclusions. Raw outputs are auto-captured.
+
+### Cross-session
+Use \`history()\` when resuming work or referencing past sessions.
+
+### Anticipated items
+Items may auto-load based on the user's message. Treat them as suggestions — demote if irrelevant.
+
+---
+*Trust the system. Demote freely. Recall often. The goal is a focused context, not a complete one.*
 `;
 
 export interface CheckpointPromptOptions {
