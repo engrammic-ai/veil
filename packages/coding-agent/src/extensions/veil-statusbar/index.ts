@@ -39,10 +39,27 @@ const ENGRAMMIC_TOOL_STATES: Record<string, CatState> = {
 	revise: "remembering",
 };
 
+// Map veil_* custom tool names to cat states
+const VEIL_TOOL_STATES: Record<string, CatState> = {
+	veil_recall: "recalled",
+	veil_history: "recalled",
+	veil_hydrate: "recalled",
+	veil_remember: "learned",
+	veil_promote: "recalled",
+	veil_demote: "watching",
+	veil_pin: "learned",
+	veil_unpin: "watching",
+	veil_forget: "watching",
+};
+
 function getEngrammicToolName(fullToolName: string): string | null {
 	// Match mcp__engrammic__<tool> or mcp__claude_ai_engrammic__<tool>
 	const match = fullToolName.match(/^mcp__(?:claude_ai_)?engrammic__(.+)$/);
 	return match ? match[1] : null;
+}
+
+function getVeilToolState(toolName: string): CatState | null {
+	return VEIL_TOOL_STATES[toolName] ?? null;
 }
 
 // Module-level state for session stats
@@ -54,30 +71,47 @@ let sessionStats = {
 let currentLayout: StatusBarLayout | null = null;
 
 export default function veilStatusbar(pi: ExtensionAPI) {
-	// Subscribe to tool results to track engrammic MCP calls
+	// Subscribe to tool results to track engrammic MCP and veil_* calls
 	pi.on("tool_result", (event: ToolResultEvent) => {
+		if (!currentLayout) return;
+
+		// Try engrammic MCP tools first
 		const engrammicTool = getEngrammicToolName(event.toolName);
-		if (!engrammicTool || !currentLayout) return;
+		let catState: CatState | null = null;
+		let toolKey: string | null = null;
 
-		const catState = ENGRAMMIC_TOOL_STATES[engrammicTool];
-		if (!catState) return;
+		if (engrammicTool) {
+			catState = ENGRAMMIC_TOOL_STATES[engrammicTool] ?? null;
+			toolKey = engrammicTool;
+		} else {
+			// Try veil_* custom tools
+			catState = getVeilToolState(event.toolName);
+			toolKey = event.toolName;
+		}
 
-		// Update session stats
-		if (engrammicTool === "remember" || engrammicTool === "hypothesize" || engrammicTool === "revise") {
+		if (!catState || !toolKey) return;
+
+		// Update session stats based on tool type
+		if (toolKey === "remember" || toolKey === "hypothesize" || toolKey === "revise" || toolKey === "veil_remember") {
 			sessionStats.remembered++;
 		} else if (
-			engrammicTool === "learn" ||
-			engrammicTool === "commit" ||
-			engrammicTool === "decide" ||
-			engrammicTool === "accept"
+			toolKey === "learn" ||
+			toolKey === "commit" ||
+			toolKey === "decide" ||
+			toolKey === "accept" ||
+			toolKey === "veil_pin"
 		) {
 			sessionStats.learned++;
 		} else if (
-			engrammicTool === "recall" ||
-			engrammicTool === "trace" ||
-			engrammicTool === "history" ||
-			engrammicTool === "patterns" ||
-			engrammicTool === "reason"
+			toolKey === "recall" ||
+			toolKey === "trace" ||
+			toolKey === "history" ||
+			toolKey === "patterns" ||
+			toolKey === "reason" ||
+			toolKey === "veil_recall" ||
+			toolKey === "veil_history" ||
+			toolKey === "veil_hydrate" ||
+			toolKey === "veil_promote"
 		) {
 			sessionStats.recalled++;
 		}
