@@ -94,7 +94,8 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		const hasVisibleContent = message.content.some(
+		const messageContent = Array.isArray(message.content) ? message.content : [];
+		const hasVisibleContent = messageContent.some(
 			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
 		);
 
@@ -103,8 +104,8 @@ export class AssistantMessageComponent extends Container {
 		}
 
 		// Render content in order
-		for (let i = 0; i < message.content.length; i++) {
-			const content = message.content[i];
+		for (let i = 0; i < messageContent.length; i++) {
+			const content = messageContent[i];
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
@@ -112,7 +113,7 @@ export class AssistantMessageComponent extends Container {
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				const hasVisibleContentAfter = message.content
+				const hasVisibleContentAfter = messageContent
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
@@ -141,7 +142,7 @@ export class AssistantMessageComponent extends Container {
 
 		// Check if aborted - show after partial content
 		// But only if there are no tool calls (tool execution components will show the error)
-		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		const hasToolCalls = messageContent.some((c) => c.type === "toolCall");
 		this.hasToolCalls = hasToolCalls;
 		if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {

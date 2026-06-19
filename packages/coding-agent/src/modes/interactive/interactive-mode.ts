@@ -85,6 +85,7 @@ import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
+import { getSessionStats as getMcpSessionStats } from "../../extensions/veil-statusbar/index.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -3253,7 +3254,7 @@ export class InteractiveMode {
 			if (message.role === "assistant") {
 				this.addMessageToChat(message);
 				// Render tool call components
-				for (const content of message.content) {
+				for (const content of Array.isArray(message.content) ? message.content : []) {
 					if (content.type === "toolCall") {
 						const component = new ToolExecutionComponent(
 							content.name,
@@ -3426,8 +3427,18 @@ export class InteractiveMode {
 		if (this.session.veilHarness?.isCatEnabled()) {
 			const sessionEnd = this.session.veilHarness.renderSessionEnd();
 			if (sessionEnd) {
-				process.stdout.write(`\n${sessionEnd}\n\n`);
+				process.stdout.write(`\n${sessionEnd}\n`);
 			}
+			// Also show MCP engrammic stats if any operations were performed
+			const mcpStats = getMcpSessionStats();
+			if (mcpStats.remembered > 0 || mcpStats.learned > 0 || mcpStats.recalled > 0) {
+				process.stdout.write(
+					chalk.dim(
+						`    mcp: remembered ${mcpStats.remembered} | learned ${mcpStats.learned} | recalled ${mcpStats.recalled}\n`,
+					),
+				);
+			}
+			process.stdout.write("\n");
 		}
 
 		const resumeCommand = formatResumeCommand(this.sessionManager);
