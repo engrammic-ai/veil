@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { EmbedResponse, ServerStatus } from "./types.ts";
 import { DEFAULT_CONFIG, type EmbedderConfig } from "./types.ts";
 
-export const CONFIG_DIR = join(homedir(), ".config", "veil");
+export const CONFIG_DIR = join(homedir(), ".veil");
 export const CONFIG_FILE = join(CONFIG_DIR, "embedder.json");
 export const PID_FILE = join(CONFIG_DIR, "embedder.pid");
 export const LOCK_FILE = join(CONFIG_DIR, "embedder.lock");
