@@ -44,10 +44,10 @@ export class ProjectWidget implements StatusBarWidget {
 	}
 
 	private formatCwd(): string {
-		const cwd = this.ctx?.session?.sessionManager?.getCwd() || process.cwd();
+		const cwd = this.ctx?.sessionManager?.getCwd() || process.cwd();
 		const home = process.env.HOME || process.env.USERPROFILE || "";
 		if (home && cwd.startsWith(home)) {
-			return "~" + cwd.slice(home.length);
+			return `~${cwd.slice(home.length)}`;
 		}
 		return cwd;
 	}

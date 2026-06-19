@@ -1,7 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import type { VeilHarness } from "@engrammic/veil-context";
-import type { AgentSession } from "../../core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
+import type { ReadonlySessionManager } from "../../core/session-manager.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 
 export type CatState = "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict";
@@ -14,11 +14,10 @@ export type WidgetEvent =
 	| { type: "mode"; mode: string };
 
 export interface WidgetContext {
-	session: AgentSession;
+	sessionManager: ReadonlySessionManager;
 	veilHarness?: VeilHarness;
 	footerData: ReadonlyFooterDataProvider;
 	theme: Theme;
-	terminal: { width: number; height: number };
 }
 
 export interface StatusBarWidget {
