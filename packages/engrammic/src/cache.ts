@@ -5,6 +5,7 @@
 
 import { createHash } from "node:crypto";
 import type BetterSqlite3 from "better-sqlite3";
+import { defaultFSRS } from "./fsrs.ts";
 import Database from "./sqlite.ts";
 import type { ContextItem, Trigger } from "./types.ts";
 import { CoAccessTracker } from "./worldview/co-access.ts";
@@ -27,6 +28,7 @@ export class ContextCache {
 	private stmtGet: BetterSqlite3.Statement;
 	private stmtGetByHash: BetterSqlite3.Statement;
 	private stmtTouch: BetterSqlite3.Statement;
+	private stmtTouchWithFSRS: BetterSqlite3.Statement;
 	private stmtUpdateCognitiveWeight: BetterSqlite3.Statement;
 	private stmtDelete: BetterSqlite3.Statement;
 	private stmtGetAll: BetterSqlite3.Statement;
@@ -74,6 +76,7 @@ export class ContextCache {
 				id, content, content_hash,
 				created_at, last_access, access_count,
 				decay_score, cognitive_weight,
+				stability, difficulty,
 				type, tags, pinned,
 				kg_pointer, depends_on,
 				valid_from, valid_until,
@@ -81,6 +84,7 @@ export class ContextCache {
 			) VALUES (
 				?, ?, ?,
 				?, ?, ?,
+				?, ?,
 				?, ?,
 				?, ?, ?,
 				?, ?,
@@ -95,6 +99,10 @@ export class ContextCache {
 
 		this.stmtTouch = this.db.prepare(
 			"UPDATE items SET last_access = ?, access_count = access_count + 1 WHERE id = ?",
+		);
+
+		this.stmtTouchWithFSRS = this.db.prepare(
+			"UPDATE items SET last_access = ?, access_count = access_count + 1, stability = ? WHERE id = ?",
 		);
 
 		this.stmtUpdateCognitiveWeight = this.db.prepare(`
@@ -254,8 +262,21 @@ export class ContextCache {
 			// Column already exists
 		}
 
+		// Migration: add FSRS columns
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN stability REAL DEFAULT 0.5");
+		} catch {
+			// Column already exists
+		}
+		try {
+			this.db.exec("ALTER TABLE items ADD COLUMN difficulty REAL DEFAULT 0.5");
+		} catch {
+			// Column already exists
+		}
+
 		// Index must be created after migration adds the column
 		this.db.exec("CREATE INDEX IF NOT EXISTS idx_source_tool_call_id ON items(source_tool_call_id)");
+		this.db.exec("CREATE INDEX IF NOT EXISTS idx_stability ON items(stability)");
 
 		// Hydration events table for Phase 6 learning
 		this.db.exec(`
@@ -425,6 +446,8 @@ export class ContextCache {
 			item.accessCount,
 			item.decayScore,
 			item.cognitiveWeight,
+			item.stability,
+			item.difficulty,
 			item.type,
 			JSON.stringify(item.tags),
 			item.pinned ? 1 : 0,
@@ -509,6 +532,18 @@ export class ContextCache {
 	touch(id: string): void {
 		const now = Date.now();
 		this.stmtTouch.run(now, id);
+	}
+
+	/**
+	 * Touch with FSRS stability update.
+	 * Computes new stability based on how long since last access and current retrievability.
+	 */
+	touchWithFSRS(item: ContextItem): void {
+		const now = Date.now();
+		const daysSinceAccess = defaultFSRS.daysSince(item.lastAccess, now);
+		const retrievability = defaultFSRS.computeRetrievability(item.stability, daysSinceAccess);
+		const newStability = defaultFSRS.updateStability(item.stability, item.difficulty, retrievability, item.type);
+		this.stmtTouchWithFSRS.run(now, newStability, item.id);
 	}
 
 	updateCognitiveWeight(id: string, delta: number): void {
@@ -704,6 +739,8 @@ export class ContextCache {
 			accessCount: row.access_count,
 			decayScore: row.decay_score,
 			cognitiveWeight: row.cognitive_weight,
+			stability: row.stability ?? 0.5,
+			difficulty: row.difficulty ?? 0.5,
 			type: row.type,
 			tags: JSON.parse(row.tags),
 			pinned: row.pinned === 1,
@@ -739,6 +776,8 @@ export function createItem(
 		accessCount: 1,
 		decayScore: 0,
 		cognitiveWeight: 0,
+		stability: defaultFSRS.getInitialStability(type),
+		difficulty: 0.5,
 		type,
 		tags,
 		pinned: false,

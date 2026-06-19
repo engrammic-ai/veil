@@ -1,8 +1,11 @@
 /**
  * Heuristic relevance scoring for context items.
  * No LLM calls - all computable from metadata.
+ *
+ * Uses FSRS retrievability for recency scoring instead of simple exponential decay.
  */
 
+import { defaultFSRS } from "./fsrs.ts";
 import type { ContextItem, ContextManagerConfig, TaskContext } from "./types.ts";
 import type { StructuralFloor } from "./worldview/structural-floor.ts";
 
@@ -42,13 +45,9 @@ export function computeRelevance(
 ): number {
 	const now = Date.now();
 
-	// Per-item half-life: explicit items decay slower than auto items
-	const halfLifeMinutes = item.source === "explicit" ? 240 : 30;
-	const halfLifeHours = halfLifeMinutes / 60;
-
-	// Recency: exponential decay
-	const ageHours = (now - item.lastAccess) / (1000 * 60 * 60);
-	const recency = Math.exp(-ageHours / halfLifeHours);
+	// Recency via FSRS retrievability (uses item's stability)
+	const daysSinceAccess = defaultFSRS.daysSince(item.lastAccess, now);
+	const recency = defaultFSRS.computeRetrievability(item.stability, daysSinceAccess);
 
 	// Frequency: log scale (diminishing returns)
 	const frequency = Math.log1p(item.accessCount) / Math.log(10);

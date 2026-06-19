@@ -16,6 +16,8 @@ function createMockItem(overrides?: Partial<ContextItem>): ContextItem {
 		accessCount: 1,
 		decayScore: 0,
 		cognitiveWeight: 0,
+		stability: 0.5,
+		difficulty: 0.5,
 		type: "episodic",
 		tags: [],
 		pinned: false,

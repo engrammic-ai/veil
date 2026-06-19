@@ -16,6 +16,10 @@ export interface ContextItem {
 	decayScore: number;
 	cognitiveWeight: number; // -1 to +1, success/failure attribution
 
+	// FSRS parameters
+	stability: number; // days until R drops to 0.9
+	difficulty: number; // 0.1-0.9, how hard to remember
+
 	// Classification
 	type: ContextItemType;
 	tags: string[];

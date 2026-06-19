@@ -112,6 +112,8 @@ export class VeilMemoryColdStore implements ColdStore {
 				accessCount: 1,
 				decayScore: stub.retrievability,
 				cognitiveWeight: 0,
+				stability: 0.5,
+				difficulty: 0.5,
 				type: this.reverseMapType(stub.memoryType),
 				tags: [],
 				pinned: false,
@@ -238,6 +240,8 @@ export class VeilMemoryColdStore implements ColdStore {
 			accessCount: belief.recallCount,
 			decayScore: belief.retrievability,
 			cognitiveWeight: belief.confidence * 2 - 1, // 0-1 → -1 to +1
+			stability: belief.stability,
+			difficulty: belief.difficulty,
 			type: this.reverseMapType(belief.memoryType),
 			tags: [], // TODO: retrieve from event
 			pinned: false,

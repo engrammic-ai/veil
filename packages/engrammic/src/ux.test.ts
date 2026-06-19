@@ -118,6 +118,8 @@ function makeEvicted(count: number): EvictionCandidate[] {
 			accessCount: 1,
 			decayScore: 0.5,
 			cognitiveWeight: 0,
+			stability: 0.5,
+			difficulty: 0.5,
 			type: "fact" as const,
 			tags: [`tag-${i}`],
 			pinned: false,

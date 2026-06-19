@@ -66,6 +66,7 @@ export {
 } from "./convergence.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { createVeilExtension } from "./extension.ts";
+export { DEFAULT_FSRS_CONFIG, defaultFSRS, type FSRSConfig, FSRSEngine } from "./fsrs.ts";
 export {
 	advanceGoalState,
 	createGoalInferenceState,

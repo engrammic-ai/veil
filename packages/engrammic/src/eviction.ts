@@ -7,6 +7,7 @@
  * - Item size caps: truncate oversized items to prevent budget bloat
  */
 
+import { defaultFSRS } from "./fsrs.ts";
 import type { ContextItem, ContextManagerConfig } from "./types.ts";
 import { estimateTokens, smartTruncate } from "./utils.ts";
 
@@ -105,5 +106,23 @@ export class EvictionController {
 		}
 
 		return item;
+	}
+
+	/**
+	 * Check if an item should be evicted based on FSRS retrievability.
+	 * Returns true if retrievability is below threshold.
+	 */
+	shouldEvictByFSRS(item: ContextItem, now: number = Date.now()): boolean {
+		const daysSinceAccess = defaultFSRS.daysSince(item.lastAccess, now);
+		const retrievability = defaultFSRS.computeRetrievability(item.stability, daysSinceAccess);
+		return defaultFSRS.shouldEvict(retrievability);
+	}
+
+	/**
+	 * Get retrievability for an item.
+	 */
+	getRetrievability(item: ContextItem, now: number = Date.now()): number {
+		const daysSinceAccess = defaultFSRS.daysSince(item.lastAccess, now);
+		return defaultFSRS.computeRetrievability(item.stability, daysSinceAccess);
 	}
 }

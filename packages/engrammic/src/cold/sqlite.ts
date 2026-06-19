@@ -163,6 +163,8 @@ export class SqliteColdStore implements ColdStore {
 			accessCount: row.access_count,
 			decayScore: row.decay_score,
 			cognitiveWeight: row.cognitive_weight,
+			stability: row.stability ?? 0.5,
+			difficulty: row.difficulty ?? 0.5,
 			type: row.type as ContextItem["type"],
 			tags: JSON.parse(row.tags),
 			pinned: row.pinned === 1,

@@ -25,6 +25,8 @@ describe("MemoryColdStore", () => {
 			accessCount: 1,
 			decayScore: 1.0,
 			cognitiveWeight: 0,
+			stability: 0.5,
+			difficulty: 0.5,
 			type: "fact" as const,
 			tags: ["test"],
 			pinned: false,
