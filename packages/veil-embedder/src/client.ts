@@ -4,7 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EmbedResponse, ServerStatus } from "./types.ts";
@@ -13,9 +13,11 @@ import { DEFAULT_CONFIG, type EmbedderConfig } from "./types.ts";
 export const CONFIG_DIR = join(homedir(), ".config", "veil");
 export const CONFIG_FILE = join(CONFIG_DIR, "embedder.json");
 export const PID_FILE = join(CONFIG_DIR, "embedder.pid");
+export const LOCK_FILE = join(CONFIG_DIR, "embedder.lock");
 export const LOG_DIR = join(homedir(), ".local", "share", "veil");
 export const LOG_FILE = join(LOG_DIR, "embedder.log");
 const DEFAULT_PORT = 19532;
+const LOCK_TIMEOUT_MS = 10000; // 10 second lock timeout
 
 export function loadConfig(): EmbedderConfig {
 	if (existsSync(CONFIG_FILE)) {
@@ -77,34 +79,97 @@ export class EmbedderClient {
 
 		this.starting = (async () => {
 			try {
-				const serverPath = join(import.meta.dirname, "server.js");
-				if (!existsSync(serverPath)) {
-					console.error("veil-embedder server not found at", serverPath);
+				// Try to acquire lock to prevent multiple spawns
+				if (!this.tryAcquireLock()) {
+					// Another process is starting the server, wait for it
+					const startTime = Date.now();
+					while (Date.now() - startTime < this.startTimeoutMs) {
+						await new Promise((r) => setTimeout(r, 500));
+						if (await this.isRunning()) {
+							return true;
+						}
+					}
 					return false;
 				}
 
-				const child = spawn("node", [serverPath], {
-					detached: true,
-					stdio: "ignore",
-				});
-
-				child.unref();
-
-				const startTime = Date.now();
-				while (Date.now() - startTime < this.startTimeoutMs) {
-					await new Promise((r) => setTimeout(r, 500));
+				try {
+					// Double-check after acquiring lock
 					if (await this.isRunning()) {
 						return true;
 					}
-				}
 
-				return false;
+					const serverPath = join(import.meta.dirname, "server.js");
+					if (!existsSync(serverPath)) {
+						console.error("veil-embedder server not found at", serverPath);
+						return false;
+					}
+
+					const child = spawn("node", [serverPath], {
+						detached: true,
+						stdio: "ignore",
+						env: { ...process.env, VEIL_EMBEDDER_MANAGED: "1" },
+					});
+
+					child.unref();
+
+					const startTime = Date.now();
+					while (Date.now() - startTime < this.startTimeoutMs) {
+						await new Promise((r) => setTimeout(r, 500));
+						if (await this.isRunning()) {
+							return true;
+						}
+					}
+
+					return false;
+				} finally {
+					this.releaseLock();
+				}
 			} finally {
 				this.starting = null;
 			}
 		})();
 
 		return this.starting;
+	}
+
+	private tryAcquireLock(): boolean {
+		try {
+			if (!existsSync(CONFIG_DIR)) {
+				mkdirSync(CONFIG_DIR, { recursive: true });
+			}
+
+			// Check for stale lock
+			if (existsSync(LOCK_FILE)) {
+				try {
+					const lockData = JSON.parse(readFileSync(LOCK_FILE, "utf-8"));
+					const lockAge = Date.now() - lockData.timestamp;
+					if (lockAge < LOCK_TIMEOUT_MS) {
+						return false; // Lock is fresh, someone else is starting
+					}
+					// Lock is stale, remove it
+				} catch {
+					// Invalid lock file, remove it
+				}
+				unlinkSync(LOCK_FILE);
+			}
+
+			// Write our lock
+			writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	private releaseLock(): void {
+		try {
+			if (existsSync(LOCK_FILE)) {
+				const lockData = JSON.parse(readFileSync(LOCK_FILE, "utf-8"));
+				if (lockData.pid === process.pid) {
+					unlinkSync(LOCK_FILE);
+				}
+			}
+		} catch {}
 	}
 
 	async ensureRunning(): Promise<boolean> {
@@ -164,11 +229,29 @@ export class EmbedderClient {
 	}
 }
 
+export interface ServerPidInfo {
+	pid: number;
+	port?: number;
+	startedAt?: string;
+	managed?: boolean;
+}
+
 export function getServerPid(): number | null {
+	const info = getServerPidInfo();
+	return info?.pid ?? null;
+}
+
+export function getServerPidInfo(): ServerPidInfo | null {
 	if (!existsSync(PID_FILE)) return null;
 	try {
-		const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
-		return Number.isNaN(pid) ? null : pid;
+		const content = readFileSync(PID_FILE, "utf-8").trim();
+		// Handle both old format (just PID) and new JSON format
+		if (content.startsWith("{")) {
+			const data = JSON.parse(content) as ServerPidInfo;
+			return Number.isNaN(data.pid) ? null : data;
+		}
+		const pid = parseInt(content, 10);
+		return Number.isNaN(pid) ? null : { pid };
 	} catch {
 		return null;
 	}

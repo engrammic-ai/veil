@@ -14,11 +14,13 @@ export {
 	EmbedderClient,
 	type EmbedderClientConfig,
 	getServerPid,
+	getServerPidInfo,
 	isServerProcessRunning,
 	LOG_DIR,
 	LOG_FILE,
 	loadConfig,
 	PID_FILE,
+	type ServerPidInfo,
 	saveConfig,
 } from "./client.ts";
 export {

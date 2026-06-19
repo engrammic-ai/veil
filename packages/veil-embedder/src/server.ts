@@ -27,6 +27,67 @@ const PID_FILE = join(CONFIG_DIR, "embedder.pid");
 const LOG_DIR = join(homedir(), ".local", "share", "veil");
 const LOG_FILE = join(LOG_DIR, "embedder.log");
 
+interface PidFileData {
+	pid: number;
+	port?: number;
+	startedAt?: string;
+	managed?: boolean;
+}
+
+function getExistingPid(): PidFileData | null {
+	if (!existsSync(PID_FILE)) return null;
+	try {
+		const content = readFileSync(PID_FILE, "utf-8").trim();
+		// Handle both old format (just PID) and new JSON format
+		if (content.startsWith("{")) {
+			const data = JSON.parse(content) as PidFileData;
+			return Number.isNaN(data.pid) ? null : data;
+		}
+		const pid = parseInt(content, 10);
+		return Number.isNaN(pid) ? null : { pid };
+	} catch {
+		return null;
+	}
+}
+
+function isProcessRunning(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function killProcess(pid: number): boolean {
+	try {
+		process.kill(pid, "SIGTERM");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number = 5000): Promise<boolean> {
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		if (!isProcessRunning(pid)) return true;
+		await new Promise((r) => setTimeout(r, 100));
+	}
+	return false;
+}
+
+async function checkPortInUse(port: number): Promise<boolean> {
+	try {
+		const res = await fetch(`http://127.0.0.1:${port}/status`, {
+			signal: AbortSignal.timeout(1000),
+		});
+		return res.ok;
+	} catch {
+		return false;
+	}
+}
+
 function setupFileLogging(): void {
 	if (!existsSync(LOG_DIR)) {
 		mkdirSync(LOG_DIR, { recursive: true });
@@ -83,8 +144,64 @@ function resolveCachePath(cachePath: string): string {
 }
 
 async function main() {
+	// Tag process for identification
+	process.title = "veil-embedder";
+
 	setupFileLogging();
 	const config = loadConfig();
+
+	// Check for existing server instance
+	console.log("Checking for existing embedder instances...");
+	const existingPidData = getExistingPid();
+
+	if (existingPidData) {
+		const pidInfo = existingPidData.startedAt
+			? `PID ${existingPidData.pid}, started ${existingPidData.startedAt}`
+			: `PID ${existingPidData.pid}`;
+		console.log(`  Found PID file: ${pidInfo}`);
+
+		if (isProcessRunning(existingPidData.pid)) {
+			console.log(`  Process ${existingPidData.pid} is running`);
+
+			// Check if it's actually responding on the port
+			if (await checkPortInUse(config.port)) {
+				console.log(`  Server responding on port ${config.port}`);
+				console.log(`Embedder server already running (PID ${existingPidData.pid}). Exiting.`);
+				process.exit(0);
+			}
+
+			// Process exists but not responding - kill it
+			console.log(`  Server NOT responding on port ${config.port} - stale process`);
+			console.log(`Shutting down stale embedder process (PID ${existingPidData.pid})...`);
+			killProcess(existingPidData.pid);
+			if (!(await waitForProcessExit(existingPidData.pid))) {
+				console.error(`Failed to stop process ${existingPidData.pid} gracefully. Force killing...`);
+				try {
+					process.kill(existingPidData.pid, "SIGKILL");
+				} catch {}
+				await waitForProcessExit(existingPidData.pid, 2000);
+			}
+			console.log(`  Process ${existingPidData.pid} terminated`);
+		} else {
+			console.log(`  Process ${existingPidData.pid} is NOT running (stale PID file)`);
+			// Clean up stale PID file
+			try {
+				const { unlinkSync } = require("node:fs");
+				unlinkSync(PID_FILE);
+				console.log(`  Removed stale PID file`);
+			} catch {}
+		}
+	} else {
+		console.log("  No PID file found");
+	}
+
+	// Check if port is in use by something else
+	if (await checkPortInUse(config.port)) {
+		console.error(`Port ${config.port} is already in use by another process (not managed by veil).`);
+		process.exit(1);
+	}
+	console.log(`  Port ${config.port} is available`);
+	console.log("");
 
 	const cacheDir = resolveCachePath(config.cachePath);
 	configureCacheDir(cacheDir);
@@ -212,7 +329,14 @@ async function main() {
 	try {
 		await fastify.listen({ port: config.port, host: "127.0.0.1" });
 		console.log(`Server listening on http://127.0.0.1:${config.port}`);
-		writeFileSync(PID_FILE, process.pid.toString());
+		// Write PID file with metadata for identification
+		const pidData = JSON.stringify({
+			pid: process.pid,
+			port: config.port,
+			startedAt: new Date().toISOString(),
+			managed: process.env.VEIL_EMBEDDER_MANAGED === "1",
+		});
+		writeFileSync(PID_FILE, pidData);
 	} catch (err) {
 		console.error("Failed to start server:", err);
 		process.exit(1);

@@ -126,17 +126,23 @@ export async function renderContextCommand(
 	// Embedder/semantic search status
 	const coldStats = harness.getManager().getColdStats?.();
 	if (coldStats?.embedderStatus) {
+		const statusWord =
+			coldStats.embedderStatus === "active" ? "on" : coldStats.embedderStatus === "failed" ? "FAILED" : "off";
 		const statusIcon =
 			coldStats.embedderStatus === "active"
-				? `${c.green}on${c.reset}`
+				? `${c.green}${statusWord}${c.reset}`
 				: coldStats.embedderStatus === "failed"
-					? `${c.orange}FAILED${c.reset}`
-					: `${c.dim}off${c.reset}`;
-		const errorSuffix = coldStats.embedderError ? ` ${c.dim}(${coldStats.embedderError.slice(0, 20)})${c.reset}` : "";
-		const statusText = `${statusIcon}${errorSuffix}`;
+					? `${c.orange}${statusWord}${c.reset}`
+					: `${c.dim}${statusWord}${c.reset}`;
+		const errorSuffix = coldStats.embedderError ? ` (${coldStats.embedderError.slice(0, 20)})` : "";
+		const errorSuffixStyled = coldStats.embedderError
+			? ` ${c.dim}(${coldStats.embedderError.slice(0, 20)})${c.reset}`
+			: "";
+		const statusText = `${statusIcon}${errorSuffixStyled}`;
 		const semanticContent = `  ${c.cyan}Semantic${c.reset}  ${statusText}`;
-		// Approximate visual length (varies with color codes)
-		lines.push(`  ${boxBorder}│${c.reset} ${pad(semanticContent, 2 + 8 + 2 + 6)} ${boxBorder}│${c.reset}`);
+		// Visual length: 2 spaces + "Semantic"(8) + 2 spaces + statusWord + errorSuffix
+		const visualLen = 2 + 8 + 2 + statusWord.length + errorSuffix.length;
+		lines.push(`  ${boxBorder}│${c.reset} ${pad(semanticContent, visualLen)} ${boxBorder}│${c.reset}`);
 	}
 
 	lines.push(`  ${boxBorder}╰${"─".repeat(W - 2)}╯${c.reset}`);

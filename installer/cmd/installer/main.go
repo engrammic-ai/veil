@@ -37,17 +37,24 @@ var (
 )
 
 func main() {
+	// Auto-install/update installer to ~/.local/bin on every run
+	ensureInstallerInstalled()
+
 	if err := rootCmd.Execute(); err != nil {
 		// cobra already prints the error; use ErrGeneral as the fallback.
 		exitcodes.Exit(exitcodes.ErrGeneral, "")
 	}
 }
 
+// InstallerVersion should match app.InstallerVersion
+const InstallerVersion = "0.1.17"
+
 var rootCmd = &cobra.Command{
-	Use:   "veil-installer",
-	Short: "Veil CLI installer and manager",
-	Long:  "A TUI-based installer for the Veil CLI tool. Installs, updates, and manages Veil releases.",
-	Run:   runInstall,
+	Use:     "veil-installer",
+	Short:   "Veil CLI installer and manager",
+	Long:    "A TUI-based installer for the Veil CLI tool. Installs, updates, and manages Veil releases.",
+	Version: InstallerVersion,
+	Run:     runInstall,
 }
 
 var installCmd = &cobra.Command{
@@ -109,7 +116,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVarP(&yes, "yes", "y", false, "Assume yes to all prompts")
 	rootCmd.PersistentFlags().StringVar(&channel, "channel", "stable", "Release channel (stable, beta, nightly)")
-	rootCmd.PersistentFlags().StringVar(&version, "version", "", "Specific version to install (e.g. 1.2.3)")
+	rootCmd.PersistentFlags().StringVarP(&version, "install-version", "V", "", "Specific version to install (e.g. 1.2.3)")
 	rootCmd.PersistentFlags().StringVar(&path, "path", "", "Installation path (defaults to system path)")
 	rootCmd.PersistentFlags().StringVar(&proxyURL, "proxy", "", "HTTP/HTTPS proxy URL")
 	rootCmd.PersistentFlags().StringVar(&caCert, "ca-cert", "", "Path to CA certificate PEM file")
@@ -405,7 +412,7 @@ func runUpdate(cmd *cobra.Command, args []string) {
 	}
 
 	ch := config.Channel(channel)
-	latest, err := config.GetLatest(cache, ch)
+	latest, err := config.GetLatestRefresh(cache, ch)
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch latest release: %w", err))
 	}
@@ -661,7 +668,7 @@ func runCheck(cmd *cobra.Command, args []string) {
 	}
 
 	ch := config.Channel(channel)
-	latest, err := config.GetLatest(cache, ch)
+	latest, err := config.GetLatestRefresh(cache, ch)
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch latest release: %w", err))
 	}
@@ -738,6 +745,91 @@ func runEmbedderCacheClear(cmd *cobra.Command, args []string) {
 	if !quiet {
 		fmt.Printf("Cleared %d cached model files (%s).\n", fileCount, sizeStr)
 	}
+}
+
+// ensureInstallerInstalled copies the running binary to ~/.local/bin/veil-installer
+// if not already there, or updates it if the running binary is newer.
+func ensureInstallerInstalled() {
+	exePath, err := os.Executable()
+	if err != nil {
+		return // silently fail, not critical
+	}
+
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	destDir := filepath.Join(home, ".local", "bin")
+	destPath := filepath.Join(destDir, "veil-installer")
+
+	// Already running from installed location
+	if exePath == destPath {
+		return
+	}
+
+	// Check if we need to install or update
+	srcInfo, err := os.Stat(exePath)
+	if err != nil {
+		return
+	}
+
+	needsInstall := false
+	if destInfo, err := os.Stat(destPath); os.IsNotExist(err) {
+		needsInstall = true
+	} else if err == nil && srcInfo.ModTime().After(destInfo.ModTime()) {
+		// Source is newer, update
+		needsInstall = true
+	}
+
+	if !needsInstall {
+		return
+	}
+
+	// Create destination directory
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return
+	}
+
+	// Copy executable
+	srcFile, err := os.Open(exePath)
+	if err != nil {
+		return
+	}
+	defer srcFile.Close()
+
+	tmpFile, err := os.CreateTemp(destDir, "veil-installer-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.ReadFrom(srcFile); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	tmpFile.Close()
+
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		os.Remove(tmpPath)
+		return
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return
+	}
+
+	// Add to PATH if needed
+	shell := platform.DetectShell()
+	shellCfg := platform.GetShellConfig(shell)
+	_ = install.ModifyPATH(shellCfg, destDir)
 }
 
 func formatBytes(b int64) string {

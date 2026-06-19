@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 	"github.com/engrammic-ai/veil-installer/internal/ui"
 	"github.com/engrammic-ai/veil-installer/internal/verify"
 )
+
+// InstallerVersion is the version of the installer itself.
+const InstallerVersion = "0.1.17"
 
 // embedderConfig is the JSON config for the embedder server.
 type embedderConfig struct {
@@ -300,14 +304,15 @@ func (m *Model) View() string {
 	var header string
 
 	// Show big banner only at start, then switch to mini cat
+	versionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v" + InstallerVersion)
 	if m.showBanner && m.state == StateDetectPlatform {
 		header = ui.RenderBanner() + "\n" +
 			lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
-			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+			versionStyle + "\n\n"
 	} else {
 		// Use mini cat for progress
 		header = lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +
-			lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v0.1.0") + "\n\n"
+			versionStyle + "\n\n"
 	}
 
 	var body string
@@ -459,7 +464,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 
 			if m.flagVersion != "" {
 				// User requested specific version
-				releases, err := config.FetchReleases(cache, ch)
+				releases, err := config.FetchReleasesRefresh(cache, ch)
 				if err != nil {
 					return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch releases: %w", err)}
 				}
@@ -473,7 +478,7 @@ func (m *Model) runStep(s State) tea.Cmd {
 			}
 
 			// Get latest
-			rel, err := config.GetLatest(cache, ch)
+			rel, err := config.GetLatestRefresh(cache, ch)
 			if err != nil {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch latest: %w", err)}
 			}
@@ -668,6 +673,36 @@ func (m *Model) startEmbedderServer() tea.Cmd {
 		if _, err := os.Stat(veilBin); os.IsNotExist(err) {
 			m.addDebug("veil binary not found, skipping embedder start")
 			return stepDoneMsg{result: ResultOK}
+		}
+
+		// Check if embedder is already running
+		configDir := m.getConfigDir()
+		pidFile := filepath.Join(configDir, "embedder.pid")
+		if pidData, err := os.ReadFile(pidFile); err == nil {
+			// Try to parse PID (handle both old format and JSON)
+			pidStr := strings.TrimSpace(string(pidData))
+			var pid int
+			if strings.HasPrefix(pidStr, "{") {
+				var info struct{ Pid int `json:"pid"` }
+				if json.Unmarshal(pidData, &info) == nil {
+					pid = info.Pid
+				}
+			} else {
+				pid, _ = strconv.Atoi(pidStr)
+			}
+
+			if pid > 0 {
+				// Check if process is running (signal 0 checks existence)
+				proc, err := os.FindProcess(pid)
+				if err == nil {
+					// On Unix, Signal(nil) or Signal(syscall.Signal(0)) checks if process exists
+					if err := proc.Signal(nil); err == nil {
+						m.addDebug(fmt.Sprintf("embedder server already running (PID %d)", pid))
+						return stepDoneMsg{result: ResultOK}
+					}
+				}
+				m.addDebug(fmt.Sprintf("found stale PID file (PID %d not running)", pid))
+			}
 		}
 
 		m.addDebug("starting embedder server")
