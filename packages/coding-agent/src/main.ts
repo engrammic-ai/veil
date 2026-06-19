@@ -746,7 +746,12 @@ export async function main(args: string[], options?: MainOptions) {
 							execute: async (_toolCallId: string, params: Record<string, unknown>) => {
 								const result = await veilHarness!.executeTool(tool.name, params);
 								return {
-									content: result.success ? JSON.stringify(result.data) : (result.error ?? "Unknown error"),
+									content: [
+										{
+											type: "text" as const,
+											text: result.success ? JSON.stringify(result.data) : (result.error ?? "Unknown error"),
+										},
+									],
 									isError: !result.success,
 								};
 							},
