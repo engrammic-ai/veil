@@ -6,21 +6,9 @@ export type PermissionMode = "auto-accept" | "default" | "cautious";
 
 const PERMISSION_MODES: PermissionMode[] = ["auto-accept", "default", "cautious"];
 
-const DANGEROUS_TOOLS = new Set([
-	"bash",
-	"write",
-	"edit",
-	"notebook_edit",
-	"mcp_tool",
-]);
+const DANGEROUS_TOOLS = new Set(["bash", "write", "edit", "notebook_edit", "mcp_tool"]);
 
-const SAFE_TOOLS = new Set([
-	"read",
-	"grep",
-	"glob",
-	"list_directory",
-	"search",
-]);
+const SAFE_TOOLS = new Set(["read", "grep", "glob", "list_directory", "search"]);
 
 export class PermissionManager {
 	private mode: PermissionMode = "default";

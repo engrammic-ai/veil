@@ -19,6 +19,7 @@ export interface WidgetContext {
 	footerData: ReadonlyFooterDataProvider;
 	theme: Theme;
 	modelName?: string;
+	permissionMode?: string;
 }
 
 export interface StatusBarWidget {

@@ -3620,8 +3620,9 @@ export class InteractiveMode {
 	}
 
 	private cyclePermissionMode(): void {
-		// TODO: Implement permission mode cycling when the feature is built
-		this.showStatus("Permission mode cycling not yet implemented");
+		const newMode = this.session.permissionManager.cycleMode();
+		this.footer.invalidate();
+		this.showStatus(`Permission mode: ${newMode}`);
 	}
 
 	private cycleThinkingLevel(): void {

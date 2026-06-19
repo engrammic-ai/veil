@@ -11,6 +11,7 @@ export class ModeWidget implements StatusBarWidget {
 
 	init(_config: Record<string, unknown>, ctx: WidgetContext): void {
 		this.ctx = ctx;
+		this.mode = ctx.permissionMode || "default";
 	}
 
 	render(_width: number): string[] {
