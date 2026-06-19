@@ -114,17 +114,20 @@ export function serializeConversation(messages: Message[]): string {
 			const content =
 				typeof msg.content === "string"
 					? msg.content
-					: msg.content
-							.filter((c): c is { type: "text"; text: string } => c.type === "text")
-							.map((c) => c.text)
-							.join("");
+					: Array.isArray(msg.content)
+						? msg.content
+								.filter((c): c is { type: "text"; text: string } => c.type === "text")
+								.map((c) => c.text)
+								.join("")
+						: "";
 			if (content) parts.push(`[User]: ${content}`);
 		} else if (msg.role === "assistant") {
 			const textParts: string[] = [];
 			const thinkingParts: string[] = [];
 			const toolCalls: string[] = [];
 
-			for (const block of msg.content) {
+			const contentArray = Array.isArray(msg.content) ? msg.content : [];
+			for (const block of contentArray) {
 				if (block.type === "text") {
 					textParts.push(block.text);
 				} else if (block.type === "thinking") {
@@ -148,7 +151,8 @@ export function serializeConversation(messages: Message[]): string {
 				parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
 			}
 		} else if (msg.role === "toolResult") {
-			const content = msg.content
+			const contentArray = Array.isArray(msg.content) ? msg.content : [];
+			const content = contentArray
 				.filter((c): c is { type: "text"; text: string } => c.type === "text")
 				.map((c) => c.text)
 				.join("");

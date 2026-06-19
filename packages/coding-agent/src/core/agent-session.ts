@@ -620,6 +620,7 @@ export class AgentSession {
 		if (message.role !== "user") return "";
 		const content = message.content;
 		if (typeof content === "string") return content;
+		if (!Array.isArray(content)) return "";
 		const textBlocks = content.filter((c) => c.type === "text");
 		return textBlocks.map((c) => (c as TextContent).text).join("");
 	}
@@ -3151,14 +3152,18 @@ export class AgentSession {
 				if (m.role !== "assistant") return false;
 				const msg = m as AssistantMessage;
 				// Skip aborted messages with no content
-				if (msg.stopReason === "aborted" && msg.content.length === 0) return false;
+				const contentArray = Array.isArray(msg.content) ? msg.content : [];
+				if (msg.stopReason === "aborted" && contentArray.length === 0) return false;
 				return true;
 			});
 
 		if (!lastAssistant) return undefined;
 
 		let text = "";
-		for (const content of (lastAssistant as AssistantMessage).content) {
+		const lastContent = Array.isArray((lastAssistant as AssistantMessage).content)
+			? (lastAssistant as AssistantMessage).content
+			: [];
+		for (const content of lastContent) {
 			if (content.type === "text") {
 				text += content.text;
 			}
