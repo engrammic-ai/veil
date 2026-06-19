@@ -23,5 +23,5 @@ export function getPreset(name: string): PresetConfig | undefined {
 }
 
 export function getDefaultPreset(): PresetConfig {
-	return PRESETS.demo;
+	return PRESETS.full;
 }
