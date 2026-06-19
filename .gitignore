@@ -53,3 +53,7 @@ installer/dist/
 packages/coding-agent/bundled-extensions/*.js
 packages/coding-agent/bundled-extensions/*.d.ts
 packages/coding-agent/bundled-extensions/*.map
+
+# Generated model files (rebuilt on each build)
+packages/ai/src/models.generated.ts
+packages/ai/src/image-models.generated.ts
