@@ -533,6 +533,12 @@ export class VeilHarness {
 		// Store in warm cache with tool call ID for faded history
 		this.emitMemoryEvent("remembering", toolName);
 		const item = this.manager.remember(toStore, rule.type, tags, toolCallId, resolvedDedupeKey);
+
+		// Persist CaptureDocument links for graph traversal
+		if (doc.links.length > 0) {
+			this.manager.getCache().addLinks(item.id, doc.links);
+		}
+
 		this.autoCapturedIds.add(item.id);
 		this.emitMemoryEvent("learned", `captured ${toolName}`);
 		this.tokenBudget.used += incomingTokens;

@@ -5,6 +5,7 @@
 
 import { createHash } from "node:crypto";
 import type BetterSqlite3 from "better-sqlite3";
+import type { CaptureLink } from "./capture-document.ts";
 import { defaultFSRS } from "./fsrs.ts";
 import Database from "./sqlite.ts";
 import type { ContextItem, Trigger } from "./types.ts";
@@ -56,6 +57,11 @@ export class ContextCache {
 	// Episode link statements
 	private stmtLinkEpisodes: BetterSqlite3.Statement;
 	private stmtGetRelatedEpisodes: BetterSqlite3.Statement;
+
+	// Memory link statements
+	private stmtAddLinks: BetterSqlite3.Statement;
+	private stmtGetLinks: BetterSqlite3.Statement;
+	private stmtGetBacklinks: BetterSqlite3.Statement;
 
 	// Eviction ledger statements
 	private stmtLogEviction: BetterSqlite3.Statement;
@@ -191,6 +197,19 @@ export class ContextCache {
 			SELECT target_id AS linked_id, relation FROM episode_links WHERE source_id = ?
 			UNION
 			SELECT source_id AS linked_id, relation FROM episode_links WHERE target_id = ?
+		`);
+
+		this.stmtAddLinks = this.db.prepare(`
+			INSERT OR IGNORE INTO memory_links (source_id, target, rel, label)
+			VALUES (?, ?, ?, ?)
+		`);
+
+		this.stmtGetLinks = this.db.prepare(`
+			SELECT target, rel, label FROM memory_links WHERE source_id = ?
+		`);
+
+		this.stmtGetBacklinks = this.db.prepare(`
+			SELECT source_id, rel, label FROM memory_links WHERE target = ?
 		`);
 
 		this.stmtLogEviction = this.db.prepare(
@@ -404,6 +423,20 @@ export class ContextCache {
 				task_bias REAL NOT NULL DEFAULT 0,
 				updated_at INTEGER NOT NULL
 			);
+		`);
+
+		// Memory links for graph traversal (CaptureDocument links)
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS memory_links (
+				source_id TEXT NOT NULL,
+				target TEXT NOT NULL,
+				rel TEXT NOT NULL,
+				label TEXT,
+				PRIMARY KEY (source_id, target, rel),
+				FOREIGN KEY (source_id) REFERENCES items(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
+			CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target);
 		`);
 
 		// Phase D: Attempts table for failure-memory
@@ -731,6 +764,37 @@ export class ContextCache {
 				return item ? { item, relation: row.relation } : null;
 			})
 			.filter(Boolean) as Array<{ item: ContextItem; relation: string }>;
+	}
+
+	addLinks(itemId: string, links: CaptureLink[]): void {
+		const insert = this.db.transaction(() => {
+			for (const link of links) {
+				this.stmtAddLinks.run(itemId, link.target, link.rel, link.label ?? null);
+			}
+		});
+		insert();
+	}
+
+	getLinks(itemId: string): CaptureLink[] {
+		const rows = this.stmtGetLinks.all(itemId) as Array<{ target: string; rel: string; label: string | null }>;
+		return rows.map((r) => ({
+			rel: r.rel as CaptureLink["rel"],
+			target: r.target,
+			...(r.label !== null ? { label: r.label } : {}),
+		}));
+	}
+
+	getBacklinks(target: string): Array<{ sourceId: string; rel: string; label?: string }> {
+		const rows = this.stmtGetBacklinks.all(target) as Array<{
+			source_id: string;
+			rel: string;
+			label: string | null;
+		}>;
+		return rows.map((r) => ({
+			sourceId: r.source_id,
+			rel: r.rel,
+			...(r.label !== null ? { label: r.label } : {}),
+		}));
 	}
 
 	close(): void {
