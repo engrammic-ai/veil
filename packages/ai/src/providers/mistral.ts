@@ -6,6 +6,7 @@ import type {
 	ContentChunk,
 	FunctionTool,
 } from "@mistralai/mistralai/models/components";
+import { registerApiProvider } from "../api-registry.ts";
 import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
@@ -130,6 +131,14 @@ export const streamSimpleMistral: StreamFunction<"mistral-conversations", Simple
 	} satisfies MistralOptions);
 };
 
+export function register(): void {
+	registerApiProvider({
+		api: "mistral-conversations",
+		stream: streamMistral,
+		streamSimple: streamSimpleMistral,
+	});
+}
+
 function createOutput(model: Model<"mistral-conversations">): AssistantMessage {
 	return {
 		role: "assistant",
@@ -226,7 +235,7 @@ function buildRequestOptions(model: Model<"mistral-conversations">, options?: Mi
 
 	// Mistral infrastructure uses `x-affinity` for KV-cache reuse (prefix caching).
 	// Respect explicit caller-provided header values.
-	if (options?.sessionId && !headers["x-affinity"]) {
+	if (shouldUsePromptCaching(options) && !headers["x-affinity"]) {
 		headers["x-affinity"] = options.sessionId;
 	}
 
@@ -255,6 +264,7 @@ function buildChatPayload(
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;
 	if (options?.reasoningEffort) payload.reasoningEffort = options.reasoningEffort;
+	if (shouldUsePromptCaching(options)) payload.promptCacheKey = options.sessionId;
 
 	if (context.systemPrompt) {
 		payload.messages.unshift({
@@ -264,6 +274,31 @@ function buildChatPayload(
 	}
 
 	return payload;
+}
+
+function shouldUsePromptCaching(options?: MistralOptions): options is MistralOptions & { sessionId: string } {
+	return options?.cacheRetention !== "none" && !!options?.sessionId;
+}
+
+function getMistralCachedPromptTokens(usage: unknown, promptTokens: number): number {
+	const rawUsage = usage as {
+		promptTokensDetails?: { cachedTokens?: unknown } | null;
+		prompt_tokens_details?: { cached_tokens?: unknown } | null;
+		promptTokenDetails?: { cachedTokens?: unknown } | null;
+		prompt_token_details?: { cached_tokens?: unknown } | null;
+		numCachedTokens?: unknown;
+		num_cached_tokens?: unknown;
+	};
+	const rawCachedTokens =
+		rawUsage.promptTokensDetails?.cachedTokens ??
+		rawUsage.prompt_tokens_details?.cached_tokens ??
+		rawUsage.promptTokenDetails?.cachedTokens ??
+		rawUsage.prompt_token_details?.cached_tokens ??
+		rawUsage.numCachedTokens ??
+		rawUsage.num_cached_tokens ??
+		0;
+	const cachedTokens = typeof rawCachedTokens === "number" && Number.isFinite(rawCachedTokens) ? rawCachedTokens : 0;
+	return Math.min(promptTokens, Math.max(0, cachedTokens));
 }
 
 async function consumeChatStream(
@@ -305,11 +340,16 @@ async function consumeChatStream(
 		output.responseId ||= chunk.id;
 
 		if (chunk.usage) {
-			output.usage.input = chunk.usage.promptTokens || 0;
+			const promptTokens = chunk.usage.promptTokens || 0;
+			const cachedPromptTokens = getMistralCachedPromptTokens(chunk.usage, promptTokens);
+
+			output.usage.input = Math.max(0, promptTokens - cachedPromptTokens);
 			output.usage.output = chunk.usage.completionTokens || 0;
-			output.usage.cacheRead = 0;
+			output.usage.cacheRead = cachedPromptTokens;
 			output.usage.cacheWrite = 0;
-			output.usage.totalTokens = chunk.usage.totalTokens || output.usage.input + output.usage.output;
+			output.usage.totalTokens =
+				chunk.usage.totalTokens ||
+				output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
 			calculateCost(model, output.usage);
 		}
 
@@ -488,9 +528,8 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 				result.push({ role: "user", content: sanitizeSurrogates(msg.content) });
 				continue;
 			}
-			const userContent = Array.isArray(msg.content) ? msg.content : [];
-			const hadImages = userContent.some((item) => item.type === "image");
-			const content: ContentChunk[] = userContent
+			const hadImages = msg.content.some((item) => item.type === "image");
+			const content: ContentChunk[] = msg.content
 				.filter((item) => item.type === "text" || supportsImages)
 				.map((item) => {
 					if (item.type === "text") return { type: "text", text: sanitizeSurrogates(item.text) };
@@ -510,7 +549,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 			const contentParts: ContentChunk[] = [];
 			const toolCalls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
 
-			for (const block of Array.isArray(msg.content) ? msg.content : []) {
+			for (const block of msg.content) {
 				if (block.type === "text") {
 					if (block.text.trim().length > 0) {
 						contentParts.push({ type: "text", text: sanitizeSurrogates(block.text) });
@@ -541,15 +580,14 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 		}
 
 		const toolContent: ContentChunk[] = [];
-		const toolResultContent = Array.isArray(msg.content) ? msg.content : [];
-		const textResult = toolResultContent
+		const textResult = msg.content
 			.filter((part) => part.type === "text")
 			.map((part) => (part.type === "text" ? sanitizeSurrogates(part.text) : ""))
 			.join("\n");
-		const hasImages = toolResultContent.some((part) => part.type === "image");
+		const hasImages = msg.content.some((part) => part.type === "image");
 		const toolText = buildToolResultText(textResult, hasImages, supportsImages, msg.isError);
 		toolContent.push({ type: "text", text: toolText });
-		for (const part of toolResultContent) {
+		for (const part of msg.content) {
 			if (!supportsImages) continue;
 			if (part.type !== "image") continue;
 			toolContent.push({
