@@ -522,7 +522,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		const preloadedByPath = new Map(
 			preTrustExtensions.extensions
-				.filter((extension) => !extension.path.startsWith("<inline:"))
+				.filter((extension) => !extension.path.startsWith("<inline:") && !extension.path.startsWith("<builtin:"))
 				.map((extension) => [extension.resolvedPath, extension]),
 		);
 		const failedPreloadPaths = new Set(
@@ -543,8 +543,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 			loadedByPath.set(extension.resolvedPath, extension);
 		}
 
-		const inlineExtensions = preTrustExtensions.extensions.filter((extension) =>
-			extension.path.startsWith("<inline:"),
+		const inlineExtensions = preTrustExtensions.extensions.filter(
+			(extension) => extension.path.startsWith("<inline:") || extension.path.startsWith("<builtin:"),
 		);
 		const userExtensions = extensionPaths
 			.map((path) => loadedByPath.get(this.resolveExtensionLoadPath(path)))
@@ -893,7 +893,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const errors: Array<{ path: string; error: string }> = [];
 
 		for (const [index, factory] of this.extensionFactories.entries()) {
-			const extensionPath = `<inline:${index + 1}>`;
+			const extensionPath = factory.name ? `<builtin:${factory.name}>` : `<inline:${index + 1}>`;
 			try {
 				const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath);
 				extensions.push(extension);
@@ -1007,7 +1007,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const toolOwners = new Map<string, string>();
 		const flagOwners = new Map<string, string>();
 
-		const isBuiltin = (path: string) => path.startsWith("<inline:");
+		const isBuiltin = (path: string) => path.startsWith("<inline:") || path.startsWith("<builtin:");
 
 		for (const ext of extensions) {
 			// Check tools

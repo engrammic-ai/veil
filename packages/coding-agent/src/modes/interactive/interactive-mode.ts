@@ -1473,14 +1473,18 @@ export class InteractiveMode {
 				addLoadedSection("Prompts", promptCompactList, templateList);
 			}
 
-			if (extensions.length > 0) {
-				const groups = this.buildScopeGroups(extensions);
+			// Filter out builtin extensions from display
+			const userExtensions = extensions.filter(
+				(ext) => !ext.path.startsWith("<inline:") && !ext.path.startsWith("<builtin:"),
+			);
+			if (userExtensions.length > 0) {
+				const groups = this.buildScopeGroups(userExtensions);
 				const extList = this.formatScopeGroups(groups, {
 					formatPath: (item) => this.formatExtensionDisplayPath(item.path),
 					formatPackagePath: (item) =>
 						this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
 				});
-				const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
+				const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(userExtensions));
 				addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
 			}
 
