@@ -38,6 +38,16 @@ function usage(): string {
 }
 
 function resolveServerPath(): string | undefined {
+	// Fall back to package location (for development)
+	const require = createRequire(import.meta.url);
+	try {
+		const entry = require.resolve("@veil/embedder");
+		const serverPath = `${dirname(entry)}/server.js`;
+		if (existsSync(serverPath)) {
+			return serverPath;
+		}
+	} catch {}
+
 	// Check installed location first (~/.local/share/veil/embedder/server.js)
 	const home = process.env.HOME || process.env.USERPROFILE || "";
 	if (home) {
@@ -47,15 +57,7 @@ function resolveServerPath(): string | undefined {
 		}
 	}
 
-	// Fall back to package location (for development)
-	const require = createRequire(import.meta.url);
-	try {
-		const entry = require.resolve("@veil/embedder");
-		const serverPath = `${dirname(entry)}/server.js`;
-		return existsSync(serverPath) ? serverPath : undefined;
-	} catch {
-		return undefined;
-	}
+	return undefined;
 }
 
 function formatUptime(ms: number): string {
