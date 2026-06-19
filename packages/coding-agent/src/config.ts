@@ -488,7 +488,21 @@ export const PACKAGE_NAME: string = pkg.name || "@engrammic/veil-coding-agent";
 export const APP_NAME: string = piConfigName || "veil";
 export const APP_TITLE: string = piConfigName ? APP_NAME : "veil";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".veil";
-export const VERSION: string = pkg.version || "0.1.0";
+// Try to read version from .veil-version file (written by installer), fallback to package.json
+function getInstalledVersion(): string {
+	if (pkg.version && pkg.version !== "0.1.0") return pkg.version;
+	try {
+		// Check for .veil-version next to the binary
+		const binDir = dirname(process.execPath);
+		const versionFile = join(binDir, ".veil-version");
+		const version = readFileSync(versionFile, "utf-8").trim();
+		if (version) return version;
+	} catch {
+		// Ignore - fall through to default
+	}
+	return pkg.version || "0.1.0";
+}
+export const VERSION: string = getInstalledVersion();
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
