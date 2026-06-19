@@ -32,13 +32,34 @@ const VEIL_TOOL_STATES: Record<string, CatState> = {
 };
 
 let currentLayout: StatusBarLayout | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+const IDLE_TIMEOUT_MS = 120000; // 2 minutes to go to sleep
+
+function resetIdleTimer() {
+	if (idleTimer) clearTimeout(idleTimer);
+	idleTimer = setTimeout(() => {
+		if (currentLayout) {
+			currentLayout.emit({ type: "memory", state: "sleeping" as CatState, detail: "" });
+		}
+	}, IDLE_TIMEOUT_MS);
+}
+
+function wakeUp() {
+	if (currentLayout) {
+		currentLayout.emit({ type: "memory", state: "watching" as CatState, detail: "" });
+	}
+	resetIdleTimer();
+}
 
 export default function veilStatusbar(pi: ExtensionAPI) {
 	// Subscribe to tool results to track veil_* custom tool calls only
 	pi.on("tool_result", (event: ToolResultEvent) => {
 		if (!currentLayout) return;
 
-		// Only track veil_* custom tools
+		// Reset idle timer on any tool activity
+		resetIdleTimer();
+
+		// Only track veil_* custom tools for cat state
 		const catState = VEIL_TOOL_STATES[event.toolName] ?? null;
 		if (!catState) return;
 
@@ -102,7 +123,13 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 		});
 	});
 
+	// Wake up cat on user activity
+	pi.on("turn_start", () => {
+		wakeUp();
+	});
+
 	pi.on("session_shutdown", () => {
+		if (idleTimer) clearTimeout(idleTimer);
 		currentLayout = null;
 	});
 }

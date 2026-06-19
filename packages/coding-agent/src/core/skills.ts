@@ -96,12 +96,14 @@ function validateName(name: string): string[] {
 		errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
 	}
 
-	if (!/^[a-z0-9-]+$/.test(name)) {
-		errors.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
+	if (!/^[a-z0-9][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)?$/.test(name)) {
+		errors.push(
+			`name contains invalid characters (must be lowercase a-z, 0-9, hyphens, with optional namespace:name format)`,
+		);
 	}
 
-	if (name.startsWith("-") || name.endsWith("-")) {
-		errors.push(`name must not start or end with a hyphen`);
+	if (name.endsWith("-") || name.includes("-:") || name.includes(":-")) {
+		errors.push(`name must not have hyphens at segment boundaries`);
 	}
 
 	if (name.includes("--")) {

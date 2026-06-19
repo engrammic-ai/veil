@@ -49,6 +49,8 @@ jobs:
         run: npm run build
 
       - name: Build release binaries and archives
+        env:
+          VEIL_VERSION: ${{ inputs.version }}
         run: ./scripts/build-release.sh
 
       - name: Create GitHub Release
