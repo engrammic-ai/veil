@@ -39,9 +39,12 @@ func writeEmbedderConfig(configDir, tier string) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
+	home, _ := os.UserHomeDir()
+	cacheDir := filepath.Join(home, ".cache", "veil", "models")
+
 	cfg := embedderConfig{
 		Tier:          tier,
-		CachePath:     filepath.Join(configDir, "models"),
+		CachePath:     cacheDir,
 		IdleTimeoutMs: 30 * 60 * 1000, // 30 minutes
 		Port:          19532,
 	}

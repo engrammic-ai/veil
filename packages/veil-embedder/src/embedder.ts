@@ -13,10 +13,23 @@ export interface Embedder {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pipelineFn: any = null;
+let cacheConfigured = false;
+
+export function configureCacheDir(cacheDir: string): void {
+	if (cacheConfigured) return;
+	// Will be applied when transformers is imported
+	process.env.TRANSFORMERS_CACHE_DIR = cacheDir;
+	cacheConfigured = true;
+}
 
 async function loadPipeline() {
 	if (!pipelineFn) {
 		const transformers = await import("@xenova/transformers");
+		// Set cache directory if configured via env
+		const cacheDir = process.env.TRANSFORMERS_CACHE_DIR;
+		if (cacheDir && transformers.env) {
+			transformers.env.cacheDir = cacheDir;
+		}
 		pipelineFn = transformers.pipeline;
 	}
 	return pipelineFn;

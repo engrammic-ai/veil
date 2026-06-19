@@ -10,7 +10,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { homedir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
-import { createEmbedder, type Embedder } from "./embedder.ts";
+import { configureCacheDir, createEmbedder, type Embedder } from "./embedder.ts";
 import {
 	DEFAULT_CONFIG,
 	type EmbedderConfig,
@@ -87,7 +87,7 @@ async function main() {
 	const config = loadConfig();
 
 	const cacheDir = resolveCachePath(config.cachePath);
-	process.env.TRANSFORMERS_CACHE = cacheDir;
+	configureCacheDir(cacheDir);
 	if (!existsSync(cacheDir)) {
 		mkdirSync(cacheDir, { recursive: true });
 	}
