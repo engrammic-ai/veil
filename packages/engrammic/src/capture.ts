@@ -53,6 +53,7 @@ export function getCaptureRule(toolName: string, args: unknown): EnhancedCapture
 			};
 
 		case "websearch":
+		case "web_search":
 			return {
 				type: "fact",
 				tags: ["web", "search"],
@@ -62,6 +63,7 @@ export function getCaptureRule(toolName: string, args: unknown): EnhancedCapture
 			};
 
 		case "webfetch":
+		case "web_fetch":
 			return {
 				type: "fact",
 				tags: ["web", "fetch"],

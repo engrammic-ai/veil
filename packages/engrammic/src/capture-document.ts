@@ -45,7 +45,9 @@ const TOOL_TYPE_MAP: Record<string, CaptureType> = {
 	agent: "subagent",
 	skill: "skill",
 	websearch: "search",
+	web_search: "search",
 	webfetch: "read",
+	web_fetch: "read",
 };
 
 function mapToolToType(toolName: string): CaptureType {

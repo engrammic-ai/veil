@@ -113,6 +113,9 @@ export class ContextManager {
 		const item = createItem(content, type, tags, toolCallId);
 		this.cache.put(item);
 
+		// Track in budget (auto-captured items should count toward eviction threshold)
+		this.budget.usedTokens += estimateTokens(item.content);
+
 		if (dedupeKey) {
 			this.cache.registerDedupeKey(dedupeKey, item.id);
 		}
@@ -618,9 +621,30 @@ export class ContextManager {
 	}
 
 	/**
+	 * Flush all warm cache items to cold storage.
+	 * Call before session end to persist captured data.
+	 */
+	async flush(): Promise<number> {
+		const items = this.cache.getAll();
+		let flushed = 0;
+		for (const item of items) {
+			if (item.kgPointer) continue; // Already in cold
+			try {
+				await this.demoteToCold(item);
+				flushed++;
+			} catch {
+				// Circuit breaker may trip; continue with remaining items
+			}
+		}
+		return flushed;
+	}
+
+	/**
 	 * Close all connections.
+	 * Flushes warm cache to cold storage before closing.
 	 */
 	async close(): Promise<void> {
+		await this.flush();
 		this.cache.close();
 		await this.cold.close();
 	}
