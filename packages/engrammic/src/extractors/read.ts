@@ -117,6 +117,24 @@ function extractStructuredData(content: string, ext: string): string {
 		for (const m of content.matchAll(keyRe)) {
 			if (keys.length < 20) keys.push(m[1]);
 		}
+	} else if (ext === "toml") {
+		const sectionRe = /^\[(\w+)\]/gm;
+		const keyRe = /^(\w+)\s*=/gm;
+		for (const m of content.matchAll(sectionRe)) {
+			if (keys.length < 20) keys.push(`[${m[1]}]`);
+		}
+		for (const m of content.matchAll(keyRe)) {
+			if (keys.length < 20) keys.push(m[1]);
+		}
+	} else if (ext === "ini") {
+		const sectionRe = /^\[(\w+)\]/gm;
+		const keyRe = /^(\w+)\s*=/gm;
+		for (const m of content.matchAll(sectionRe)) {
+			if (keys.length < 20) keys.push(`[${m[1]}]`);
+		}
+		for (const m of content.matchAll(keyRe)) {
+			if (keys.length < 20) keys.push(m[1]);
+		}
 	}
 
 	if (keys.length > 0) {
@@ -139,7 +157,7 @@ export const readExtractor: Extractor = (ctx: ExtractorContext): ExtractorResult
 		structure = extractStructureFast(ctx.content, ext);
 	} else if (["md", "markdown"].includes(ext)) {
 		structure = extractMarkdownStructure(ctx.content);
-	} else if (["json", "yaml", "yml"].includes(ext)) {
+	} else if (["json", "yaml", "yml", "toml", "ini"].includes(ext)) {
 		structure = extractStructuredData(ctx.content, ext);
 	} else {
 		// Plain text - just line count and preview

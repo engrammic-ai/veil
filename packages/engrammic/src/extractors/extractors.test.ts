@@ -201,6 +201,43 @@ describe("readExtractor", () => {
 		expect(result.text).toContain("Title");
 		expect(result.text).toContain("Section");
 	});
+
+	it("extracts JSON top-level keys", () => {
+		const jsonContent = `{\n  "name": "my-pkg",\n  "version": "1.0.0",\n  "description": "test"\n}`;
+		const result = readExtractor(ctx({ args: { file_path: "package.json" }, content: jsonContent }));
+		expect(result.text).toContain("name");
+		expect(result.text).toContain("version");
+		expect(result.text).toContain("description");
+		expect(result.extraTags).toContain("ext:json");
+	});
+
+	it("extracts YAML top-level keys", () => {
+		const yamlContent = `name: my-app\nversion: 1.0.0\ndependencies:\n  - foo\n  - bar\n`;
+		const result = readExtractor(ctx({ args: { file_path: "config.yaml" }, content: yamlContent }));
+		expect(result.text).toContain("name");
+		expect(result.text).toContain("version");
+		expect(result.text).toContain("dependencies");
+		expect(result.extraTags).toContain("ext:yaml");
+	});
+
+	it("extracts TOML keys and sections", () => {
+		const tomlContent = `name = "my-app"\nversion = "1.0.0"\n\n[dependencies]\nfoo = "1.0"\nbar = "2.0"\n`;
+		const result = readExtractor(ctx({ args: { file_path: "Cargo.toml" }, content: tomlContent }));
+		expect(result.text).toContain("[dependencies]");
+		expect(result.text).toContain("name");
+		expect(result.text).toContain("version");
+		expect(result.extraTags).toContain("ext:toml");
+	});
+
+	it("extracts INI sections and keys", () => {
+		const iniContent = `[database]\nhost = localhost\nport = 5432\n\n[server]\nport = 8080\n`;
+		const result = readExtractor(ctx({ args: { file_path: "config.ini" }, content: iniContent }));
+		expect(result.text).toContain("[database]");
+		expect(result.text).toContain("[server]");
+		expect(result.text).toContain("host");
+		expect(result.text).toContain("port");
+		expect(result.extraTags).toContain("ext:ini");
+	});
 });
 
 // ---------------------------------------------------------------------------
