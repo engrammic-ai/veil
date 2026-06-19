@@ -124,9 +124,23 @@ export {
 // Core
 export { ContextManager } from "./manager.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
+export {
+	computeRelevanceScore,
+	formatSelectedContext,
+	type SelectionResult,
+	selectForTurn,
+	type TurnContext,
+} from "./retrieval.ts";
 export type { ScorerWeights } from "./scorer.ts";
 export { computeRelevance, findEvictionCandidates, rankItems } from "./scorer.ts";
 export { executeVeilTool, TOOL_SCHEMAS, type ToolContext, type ToolDefinition, type ToolResult } from "./tools.ts";
+export {
+	handleTrigger,
+	isDangerousCommand,
+	type TriggerContext,
+	type TriggerResult,
+	type TriggerType,
+} from "./triggers.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,

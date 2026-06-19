@@ -37,8 +37,10 @@ import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { buildContextSection, buildFailureSection } from "./injection.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
+import { type SelectionResult, selectForTurn, type TurnContext } from "./retrieval.ts";
 import { rankItems } from "./scorer.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
+import { handleTrigger, isDangerousCommand, type TriggerResult } from "./triggers.ts";
 import type {
 	CaptureConfig,
 	ContextManagerConfig,
@@ -282,6 +284,53 @@ export class VeilHarness {
 
 		// Don't block any tool calls - just manage context
 		return undefined;
+	}
+
+	/**
+	 * Check for trigger-based auto-recall based on tool name and args.
+	 * Returns recalled items and reason, or null if no triggers fired.
+	 *
+	 * Called in beforeToolCall to surface relevant memories before an action.
+	 */
+	checkTriggers(toolName: string, args: unknown, result?: unknown): TriggerResult | null {
+		const argObj = args as Record<string, unknown> | undefined;
+
+		if (toolName === "Edit" || toolName === "Write") {
+			const filePath = argObj?.file_path as string | undefined;
+			if (filePath) {
+				return handleTrigger(this.manager.getCache(), { type: "pre_edit", filePath });
+			}
+		}
+
+		if (toolName === "Bash") {
+			const command = (argObj?.command ?? argObj?.cmd) as string | undefined;
+			if (command && isDangerousCommand(command)) {
+				return handleTrigger(this.manager.getCache(), { type: "pre_bash", command });
+			}
+		}
+
+		if (result !== undefined) {
+			const resultObj = result as Record<string, unknown> | undefined;
+			const isError =
+				resultObj?.isError === true ||
+				(typeof resultObj?.content === "string" && /error|exception|failed/i.test(resultObj.content as string));
+			if (isError) {
+				const errorText =
+					typeof resultObj?.content === "string"
+						? (resultObj.content as string)
+						: JSON.stringify(result).slice(0, 500);
+				return handleTrigger(this.manager.getCache(), { type: "error_observed", errorText });
+			}
+		}
+
+		if (toolName === "Grep" || toolName === "Search") {
+			const searchTerms = (argObj?.pattern ?? argObj?.query ?? argObj?.search) as string | undefined;
+			if (searchTerms) {
+				return handleTrigger(this.manager.getCache(), { type: "pre_search", searchTerms });
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -1045,6 +1094,16 @@ export class VeilHarness {
 			this.triggers.push(trigger);
 			this.manager.getCache().persistTrigger(trigger);
 		}
+	}
+
+	/**
+	 * Select the most relevant context items for the current turn, packed into the given token budget.
+	 * Defaults to (maxTokens - reserveTokens) if budget is not provided.
+	 */
+	selectContextForTurn(context: TurnContext, budget?: number): SelectionResult {
+		const cfg = this.manager.getConfig();
+		const effectiveBudget = budget ?? cfg.maxTokens - cfg.reserveTokens;
+		return selectForTurn(this.manager.getCache(), context, effectiveBudget);
 	}
 
 	/**
