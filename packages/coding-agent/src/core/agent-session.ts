@@ -82,6 +82,7 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { PermissionManager } from "./permission-manager.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
@@ -262,6 +263,7 @@ export class AgentSession {
 	readonly settingsManager: SettingsManager;
 
 	private _veilHarness: VeilHarness | undefined;
+	private _permissionManager = new PermissionManager();
 	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
@@ -363,6 +365,10 @@ export class AgentSession {
 		return this._veilHarness;
 	}
 
+	get permissionManager(): PermissionManager {
+		return this._permissionManager;
+	}
+
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
 		apiKey: string;
 		headers?: Record<string, string>;
@@ -413,12 +419,24 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }, signal) => {
-			// Veil hook first (eviction check)
+			// Permission check first
+			if (this._permissionManager.shouldPrompt(toolCall.name)) {
+				const argsPreview = JSON.stringify(args).slice(0, 100);
+				const approved = await this._extensionUIContext?.confirm(
+					"Tool Approval",
+					`Allow ${toolCall.name}? Args: ${argsPreview}`,
+				);
+				if (!approved) {
+					return { block: true, reason: "User denied tool execution" };
+				}
+			}
+
+			// Veil hook second (eviction check)
 			if (this._veilHarness) {
 				await this._veilHarness.beforeToolCall({ toolCall: { name: toolCall.name }, args }, signal);
 			}
 
-			// Extension hooks second
+			// Extension hooks third
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
