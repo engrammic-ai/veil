@@ -21,59 +21,77 @@ function formatItemLine(item: ContextItem): string {
 	return `  +- ${summary}...  ${tokStr} ${source}${pinned}`;
 }
 
-export async function renderContextCommand(harness: VeilHarness): Promise<ContextCommandOutput> {
+export interface ContextCommandOptions {
+	/** Number of conversation messages */
+	messageCount?: number;
+	/** System prompt token estimate */
+	systemPromptTokens?: number;
+	/** Active MCP tools count */
+	mcpToolCount?: number;
+	/** Active builtin tools count */
+	builtinToolCount?: number;
+}
+
+export async function renderContextCommand(
+	harness: VeilHarness,
+	options: ContextCommandOptions = {},
+): Promise<ContextCommandOutput> {
 	const window = harness.getWindow();
 	const stats = await harness.getManager().getStats();
 	const config = harness.getManager().getConfig();
 
-	const content: string[] = [];
+	const lines: string[] = [];
 
-	// Hot items section with visual indicator
+	// Budget bar at top
+	const budget = window.budget;
+	const usedPercent = budget.maxTokens > 0 ? (budget.usedTokens / budget.maxTokens) * 100 : 0;
+	const progressBar = formatProgressBar(usedPercent, 40);
+	lines.push("");
+	lines.push(`  ${progressBar}`);
+	lines.push(`  ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent.toFixed(0)}%)  evict@${(config.evictionThresholdDefault * 100).toFixed(0)}%`);
+	lines.push("");
+
+	// Context window contents
+	lines.push("  ┌─ Window ─────────────────────────────────┐");
+
+	// System prompt & tools
+	if (options.systemPromptTokens !== undefined) {
+		lines.push(`  │  System     ${formatTokens(options.systemPromptTokens).padStart(8)} tok            │`);
+	}
+	if (options.builtinToolCount !== undefined || options.mcpToolCount !== undefined) {
+		const builtin = options.builtinToolCount ?? 0;
+		const mcp = options.mcpToolCount ?? 0;
+		lines.push(`  │  Tools      ${builtin} builtin, ${mcp} MCP`.padEnd(42) + "│");
+	}
+	if (options.messageCount !== undefined) {
+		lines.push(`  │  Messages   ${options.messageCount}`.padEnd(42) + "│");
+	}
+
+	lines.push("  ├─ Veil Memory ────────────────────────────┤");
+
+	// Hot items
 	const hotTokens = window.items.reduce((sum, i) => sum + estimateTokens(i.content), 0);
-	content.push("");
-	content.push(`  ◉ Hot (loaded)    ${window.items.length} items  ${formatTokens(hotTokens)} tok`);
+	lines.push(`  │  ◉ Hot      ${window.items.length} items  ${formatTokens(hotTokens)} tok`.padEnd(42) + "│");
 
-	if (window.items.length === 0) {
-		content.push("      (empty)");
-	} else {
-		for (const item of window.items.slice(0, 3)) {
-			content.push(formatItemLine(item));
+	if (window.items.length > 0) {
+		for (const item of window.items.slice(0, 2)) {
+			const summary = item.content.slice(0, 28).replace(/\n/g, " ").trim();
+			lines.push(`  │    ${summary}...`.padEnd(42) + "│");
 		}
-		if (window.items.length > 3) {
-			content.push(`      ⋮ ${window.items.length - 3} more`);
+		if (window.items.length > 2) {
+			lines.push(`  │    ⋮ ${window.items.length - 2} more`.padEnd(42) + "│");
 		}
 	}
 
-	content.push("");
-
-	// Warm/cold with visual indicators
+	// Warm/cold
 	const warmTotal = stats.warm.episodic + stats.warm.fact + stats.warm.procedural;
-	content.push(`  ◐ Warm (cached)   ${warmTotal} items`);
-	content.push(`  ○ Cold (storage)  ${stats.coldPointers} items`);
+	lines.push(`  │  ◐ Warm     ${warmTotal} items (cache)`.padEnd(42) + "│");
+	lines.push(`  │  ○ Cold     ${stats.coldPointers} items (storage)`.padEnd(42) + "│");
 
-	content.push("");
-	content.push("  ─".repeat(25));
-	content.push("");
+	lines.push("  └─────────────────────────────────────────┘");
+	lines.push("");
 
-	// Budget with progress bar
-	const budget = window.budget;
-	const usedPercent = budget.maxTokens > 0 ? (budget.usedTokens / budget.maxTokens) * 100 : 0;
-	const progressBar = formatProgressBar(usedPercent, 24);
-	content.push(`  ${progressBar}`);
-	content.push(
-		`  ${formatTokens(budget.usedTokens)} / ${formatTokens(budget.maxTokens)} (${usedPercent.toFixed(0)}%)`,
-	);
-
-	// Threshold
-	const thresholdPercent = (config.evictionThresholdDefault * 100).toFixed(0);
-	content.push(`  Eviction: ${thresholdPercent}%`);
-
-	content.push("");
-
-	// Wrap in box
-	const boxed = formatBox(content, "Veil Context", BOX_WIDTH);
-
-	return { lines: boxed };
+	return { lines };
 }
 
 export async function renderContextSearch(harness: VeilHarness, query: string): Promise<ContextCommandOutput> {

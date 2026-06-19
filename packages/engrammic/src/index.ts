@@ -43,6 +43,7 @@ export {
 	type ZepColdStoreConfig,
 } from "./cold/index.ts";
 export {
+	type ContextCommandOptions,
 	type ContextCommandOutput,
 	renderContextCommand,
 	renderContextSearch,

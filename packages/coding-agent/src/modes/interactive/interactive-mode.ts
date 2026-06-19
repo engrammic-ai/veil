@@ -5728,7 +5728,17 @@ export class InteractiveMode {
 			// Treat bare args as implicit search
 			output = await renderContextSearch(this.session.veilHarness, stripped);
 		} else {
-			output = await renderContextCommand(this.session.veilHarness);
+			// Gather context window info
+			const messages = this.sessionManager.getBranch().filter((e) => e.type === "message");
+			const tools = this.session.getAllTools();
+			const mcpTools = tools.filter((t) => t.sourceInfo?.source === "mcp");
+			const builtinTools = tools.filter((t) => t.sourceInfo?.source !== "mcp");
+
+			output = await renderContextCommand(this.session.veilHarness, {
+				messageCount: messages.length,
+				mcpToolCount: mcpTools.length,
+				builtinToolCount: builtinTools.length,
+			});
 		}
 
 		this.chatContainer.addChild(new Spacer(1));
