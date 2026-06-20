@@ -24,7 +24,7 @@ import (
 )
 
 // InstallerVersion is the version of the installer itself.
-const InstallerVersion = "0.1.18"
+const InstallerVersion = "0.1.19"
 
 // embedderConfig is the JSON config for the embedder server.
 type embedderConfig struct {
@@ -340,6 +340,12 @@ func (m *Model) View() string {
 		body = m.miniCat.ViewWithStatus("Checking for existing installation...", m.spinner.View())
 	case StatePromptUpgrade:
 		body = m.miniCat.View() + "\n\nAn existing installation was found. Upgrade? [y/N]"
+	case StatePromptForce:
+		version := "latest"
+		if m.release != nil {
+			version = m.release.Version
+		}
+		body = m.miniCat.View() + fmt.Sprintf("\n\nAlready at version %s. Reinstall anyway? [y/N]", version)
 	case StateFetchVersions:
 		body = m.miniCat.ViewWithStatus("Fetching available versions...", m.spinner.View())
 	case StatePromptVersion:
@@ -441,6 +447,14 @@ func (m *Model) runStep(s State) tea.Cmd {
 		// For interactive, we'd need key handling - for now auto-approve
 		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 
+	case StatePromptForce:
+		// Already at version - only reinstall if --yes flag is set
+		if m.flagYes {
+			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		}
+		// Default: skip reinstall
+		return func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+
 	case StateFetchVersions:
 		return func() tea.Msg {
 			m.addDebug("initializing download client")
@@ -483,6 +497,20 @@ func (m *Model) runStep(s State) tea.Cmd {
 				return stepDoneMsg{result: ResultError, err: fmt.Errorf("fetch latest: %w", err)}
 			}
 			m.addDebug(fmt.Sprintf("found version %s", rel.Version))
+
+			// Check if already at this version
+			if _, err := os.Stat(m.installPath); err == nil {
+				versionFile := filepath.Join(filepath.Dir(m.installPath), ".veil-version")
+				if data, err := os.ReadFile(versionFile); err == nil {
+					current := strings.TrimSpace(string(data))
+					target := strings.TrimPrefix(rel.Version, "v")
+					if current == target || current == "v"+target {
+						m.addDebug(fmt.Sprintf("already at version %s", current))
+						return stepDoneMsg{result: ResultAlreadyLatest, data: rel}
+					}
+				}
+			}
+
 			return stepDoneMsg{result: ResultOK, data: rel}
 		}
 

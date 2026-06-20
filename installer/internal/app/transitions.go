@@ -6,8 +6,9 @@ type Result int
 const (
 	ResultOK Result = iota
 	ResultUnsupported
-	ResultConflict   // existing install found
-	ResultVersionSet // --version flag provided
+	ResultConflict      // existing install found
+	ResultVersionSet    // --version flag provided
+	ResultAlreadyLatest // already at target version
 	ResultTimeout
 	ResultError
 	ResultMismatch
@@ -51,7 +52,16 @@ func nextState(current State, result Result) State {
 		if result == ResultOK || result == ResultVersionSet {
 			return StateDownload
 		}
+		if result == ResultAlreadyLatest {
+			return StatePromptForce
+		}
 		return StateFailNetwork
+
+	case StatePromptForce:
+		if result == ResultOK {
+			return StateDownload // User chose to force reinstall
+		}
+		return StateSuccess // User declined, exit successfully
 
 	case StatePromptVersion, StateValidateVer:
 		if result == ResultOK {

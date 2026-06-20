@@ -9,6 +9,7 @@ const (
 	StateFetchVersions
 	StatePromptVersion
 	StatePromptUpgrade
+	StatePromptForce // Already at version, ask to force reinstall
 	StateValidateVer
 	StateDownload
 	StateVerifySum
@@ -40,6 +41,8 @@ func (s State) String() string {
 		return "PromptVersion"
 	case StatePromptUpgrade:
 		return "PromptUpgrade"
+	case StatePromptForce:
+		return "PromptForce"
 	case StateValidateVer:
 		return "ValidateVer"
 	case StateDownload:

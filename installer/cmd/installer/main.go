@@ -47,7 +47,7 @@ func main() {
 }
 
 // InstallerVersion should match app.InstallerVersion
-const InstallerVersion = "0.1.18"
+const InstallerVersion = "0.1.19"
 
 var rootCmd = &cobra.Command{
 	Use:     "veil-installer",
@@ -231,7 +231,24 @@ func runInstall(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if !quiet {
+	// Check if already at this version
+	destPath, err := resolveInstallPath()
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, err)
+	}
+
+	if _, err := os.Stat(destPath); err == nil {
+		current := installedVersion(destPath)
+		if current == rel.Version || current == "v"+rel.Version {
+			if !quiet {
+				fmt.Printf("Already at version %s\n", current)
+			}
+			return
+		}
+		if !quiet {
+			fmt.Printf("Updating veil from %s to %s\n", current, rel.Version)
+		}
+	} else if !quiet {
 		fmt.Printf("Installing veil %s\n", rel.Version)
 	}
 
@@ -240,11 +257,6 @@ func runInstall(cmd *cobra.Command, args []string) {
 	downloadURL, ok := rel.GetAssetURL(assetKey)
 	if !ok {
 		exitcodes.Exit(exitcodes.ErrGeneral, fmt.Sprintf("no binary available for platform %q (asset key: %s)", plat, assetKey))
-	}
-
-	destPath, err := resolveInstallPath()
-	if err != nil {
-		exitcodes.ExitError(exitcodes.ErrGeneral, err)
 	}
 
 	client, err := newDownloadClient()
