@@ -1,9 +1,9 @@
 #!/bin/sh
 # Veil bootstrap installer
 # Usage:
-#   curl -fsSL https://install.veil.dev | sh
-#   curl -fsSL https://install.veil.dev | VEIL_VERSION=1.2.3 sh
-#   curl -fsSL https://install.veil.dev | VEIL_INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://veil.engrammic.ai/install | sh
+#   curl -fsSL https://veil.engrammic.ai/install | VEIL_VERSION=v1.2.3 sh
+#   curl -fsSL https://veil.engrammic.ai/install | VEIL_INSTALL_DIR=/usr/local/bin sh
 #
 # Downloads the correct installer binary for your platform, verifies its
 # SHA256 checksum, and runs it. The installer binary handles all further
@@ -27,7 +27,7 @@ RELEASES_URL="https://github.com/${REPO}/releases"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ---------------------------------------------------------------------------
-# Output helpers (no echo -e; use printf for POSIX portability)
+# Output helpers
 # ---------------------------------------------------------------------------
 _tty_colors() {
     if [ -t 1 ]; then
@@ -81,20 +81,20 @@ _check_deps() {
 # HTTP fetch (curl with wget fallback)
 # ---------------------------------------------------------------------------
 _fetch() {
-    _url="$1"
-    _dest="$2"   # path, or "-" for stdout
+    _fetch_url="$1"
+    _fetch_out="$2"   # path, or "-" for stdout
 
     if _require_cmd curl; then
-        if [ "$_dest" = "-" ]; then
-            curl -fsSL "$_url"
+        if [ "$_fetch_out" = "-" ]; then
+            curl -fsSL "$_fetch_url"
         else
-            curl -fsSL --retry 3 --retry-delay 2 -o "$_dest" "$_url"
+            curl -fsSL --retry 3 --retry-delay 2 -o "$_fetch_out" "$_fetch_url"
         fi
     else
-        if [ "$_dest" = "-" ]; then
-            wget -qO- "$_url"
+        if [ "$_fetch_out" = "-" ]; then
+            wget -qO- "$_fetch_url"
         else
-            wget -q --tries=3 -O "$_dest" "$_url"
+            wget -q --tries=3 -O "$_fetch_out" "$_fetch_url"
         fi
     fi
 }
@@ -120,47 +120,10 @@ _detect_arch() {
     esac
 }
 
-# Detect libc variant on Linux (glibc vs musl).
-# Mirrors the logic in installer/internal/platform/detect.go.
-_detect_libc() {
-    # Check for musl loader paths first — no subprocess needed.
-    for _musl_path in \
-        /lib/ld-musl-x86_64.so.1 \
-        /lib/ld-musl-aarch64.so.1 \
-        /lib/ld-musl-armhf.so.1
-    do
-        if [ -e "$_musl_path" ]; then
-            printf 'musl'
-            return
-        fi
-    done
-
-    # Fall back to ldd --version output inspection.
-    if _require_cmd ldd; then
-        _ldd_out="$(ldd --version 2>&1 || true)"
-        case "$_ldd_out" in
-            *musl*)                 printf 'musl';  return ;;
-            *[Gg][Nn][Uu]*|*glibc*) printf 'glibc'; return ;;
-        esac
-    fi
-
-    # Default: glibc is the most common libc on Linux.
-    printf 'glibc'
-}
-
-# Returns a platform string matching the Go installer binary names:
-#   linux-x64-glibc  linux-x64-musl  linux-arm64-glibc  linux-arm64-musl
-#   darwin-x64       darwin-arm64
 _detect_platform() {
     _os="$(_detect_os)"
     _arch="$(_detect_arch)"
-
-    if [ "$_os" = "linux" ]; then
-        _libc="$(_detect_libc)"
-        printf '%s-%s-%s' "$_os" "$_arch" "$_libc"
-    else
-        printf '%s-%s' "$_os" "$_arch"
-    fi
+    printf '%s-%s' "$_os" "$_arch"
 }
 
 # ---------------------------------------------------------------------------
@@ -168,7 +131,6 @@ _detect_platform() {
 # ---------------------------------------------------------------------------
 _latest_version() {
     _json="$(_fetch "$API_URL" -)" || die "Could not reach GitHub API. Check your network connection."
-    # Extract "tag_name" with POSIX tools only (no jq required).
     printf '%s' "$_json" \
         | grep '"tag_name"' \
         | head -n1 \
@@ -178,34 +140,31 @@ _latest_version() {
 # ---------------------------------------------------------------------------
 # Checksum verification
 # ---------------------------------------------------------------------------
-_sha256sum_bin() {
+_sha256sum_cmd() {
     if _require_cmd sha256sum; then
         printf 'sha256sum'
     elif _require_cmd shasum; then
         printf 'shasum -a 256'
     else
-        warn "No sha256sum or shasum found — skipping checksum verification."
         printf ''
     fi
 }
 
 _verify_checksum() {
-    _file="$1"
-    _expected_sum="$2"
+    _vc_file="$1"
+    _vc_expected="$2"
 
-    _sum_cmd="$(_sha256sum_bin)"
+    _sum_cmd="$(_sha256sum_cmd)"
     if [ -z "$_sum_cmd" ]; then
-        return 0  # already warned above
+        warn "No sha256sum or shasum found - skipping checksum verification."
+        return 0
     fi
 
-    # Compute actual checksum.
-    _actual_sum="$(eval "$_sum_cmd" "$_file" | awk '{print $1}')"
-
-    if [ "$_actual_sum" != "$_expected_sum" ]; then
-        die "Checksum mismatch for $(basename "$_file").
-  expected: $_expected_sum
-  got:      $_actual_sum
-Remove any cached downloads and try again, or report this at ${RELEASES_URL}."
+    _actual="$(eval "$_sum_cmd" "$_vc_file" | awk '{print $1}')"
+    if [ "$_actual" != "$_vc_expected" ]; then
+        die "Checksum mismatch for $(basename "$_vc_file").
+  expected: $_vc_expected
+  got:      $_actual"
     fi
 }
 
@@ -213,36 +172,36 @@ Remove any cached downloads and try again, or report this at ${RELEASES_URL}."
 # Download + verify installer binary
 # ---------------------------------------------------------------------------
 _download_installer() {
-    _platform="$1"
-    _version="$2"
-    _tmpdir="$3"
+    _dl_platform="$1"
+    _dl_version="$2"
+    _dl_tmpdir="$3"
 
-    _base="veil-installer-${_platform}"
-    _bin_url="${RELEASES_URL}/download/${_version}/${_base}"
-    _sum_url="${_bin_url}.sha256"
-    _dest="${_tmpdir}/${_base}"
+    _dl_base="veil-installer-${_dl_platform}"
+    _dl_url="${RELEASES_URL}/download/${_dl_version}/${_dl_base}"
+    _dl_dest="${_dl_tmpdir}/${_dl_base}"
+    _dl_checksums_url="${RELEASES_URL}/download/${_dl_version}/checksums.sha256"
 
-    info "Downloading installer binary for ${_platform} (${_version})..."
-    _fetch "$_bin_url" "$_dest" || die "Download failed. Check your network or try again later.
-  URL: $_bin_url"
+    info "Downloading installer for ${_dl_platform} (${_dl_version})..."
+    _fetch "$_dl_url" "$_dl_dest" || die "Download failed: $_dl_url"
     ok "Download complete."
 
-    # Fetch checksum file and verify.
-    _sum_file="${_dest}.sha256"
-    info "Fetching checksum..."
-    if _fetch "$_sum_url" "$_sum_file" 2>/dev/null; then
-        # The .sha256 file may contain just the hex digest or be in
-        # '<digest>  <filename>' format — grab the first field.
-        _expected="$(awk '{print $1}' "$_sum_file")"
-        info "Verifying checksum..."
-        _verify_checksum "$_dest" "$_expected"
-        ok "Checksum verified."
+    # Verify checksum from consolidated checksums.sha256 file
+    _dl_checksums="${_dl_tmpdir}/checksums.sha256"
+    info "Verifying checksum..."
+    if _fetch "$_dl_checksums_url" "$_dl_checksums" 2>/dev/null; then
+        _expected="$(grep "${_dl_base}" "$_dl_checksums" | awk '{print $1}')"
+        if [ -n "$_expected" ]; then
+            _verify_checksum "$_dl_dest" "$_expected"
+            ok "Checksum verified."
+        else
+            warn "No checksum found for ${_dl_base} in checksums.sha256"
+        fi
     else
-        warn "Checksum file not found at release — skipping verification."
+        warn "checksums.sha256 not found - skipping verification."
     fi
 
-    chmod +x "$_dest"
-    printf '%s' "$_dest"
+    chmod +x "$_dl_dest"
+    printf '%s' "$_dl_dest"
 }
 
 # ---------------------------------------------------------------------------
@@ -251,20 +210,18 @@ _download_installer() {
 main() {
     printf '\n'
     printf '  Veil Installer\n'
-    printf '  https://veil.dev\n'
+    printf '  https://veil.engrammic.ai\n'
     printf '\n'
 
     _tty_colors
     _check_deps
 
-    # Resolve platform.
     _platform="$(_detect_platform)"
     ok "Platform: ${_platform}"
 
-    # Resolve version.
     _version="${VEIL_VERSION:-}"
     if [ -z "$_version" ]; then
-        info "Fetching latest release version..."
+        info "Fetching latest release..."
         _version="$(_latest_version)"
         if [ -z "$_version" ]; then
             die "Could not determine latest release. Set VEIL_VERSION=<tag> and retry."
@@ -272,23 +229,21 @@ main() {
     fi
     ok "Version:  ${_version}"
 
-    # Build temp dir.
     _tmpdir="$(_mktmpdir)"
 
-    # Download and verify the installer binary.
     _installer="$(_download_installer "$_platform" "$_version" "$_tmpdir")"
 
-    # Build argument list for the installer binary.
-    set -- --version "$_version"
+    # Pass version to installer (without 'v' prefix for semver compatibility)
+    _ver_arg="$(printf '%s' "$_version" | sed 's/^v//')"
+    set -- --install-version "$_ver_arg"
     if [ -n "${VEIL_INSTALL_DIR:-}" ]; then
-        set -- "$@" --install-dir "$VEIL_INSTALL_DIR"
+        set -- "$@" --path "$VEIL_INSTALL_DIR"
     fi
 
     printf '\n'
     info "Running installer..."
     printf '\n'
 
-    # Hand off to the Go installer binary.
     exec "$_installer" "$@"
 }
 

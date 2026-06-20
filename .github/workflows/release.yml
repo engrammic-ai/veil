@@ -53,6 +53,24 @@ jobs:
           VEIL_VERSION: ${{ inputs.version }}
         run: ./scripts/build-release.sh
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: installer/go.sum
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Build installer binaries
+        working-directory: installer
+        run: just release
+
+      - name: Merge installer binaries
+        run: |
+          cp installer/dist/veil-installer-* packages/coding-agent/binaries/
+          cd packages/coding-agent/binaries
+          sha256sum veil-installer-* >> checksums.sha256
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,4 +80,4 @@ jobs:
             --title "v${{ inputs.version }}" \
             --generate-notes \
             ${{ inputs.prerelease && '--prerelease' || '' }} \
-            veil-*.tar.gz veil-*.zip checksums.sha256
+            veil-*.tar.gz veil-*.zip veil-installer-* checksums.sha256

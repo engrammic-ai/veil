@@ -76,3 +76,18 @@ release: build-all
 # Install locally
 install: build
     cp {{dist_dir}}/{{binary_name}} ~/.local/bin/
+
+# Build server for local testing
+build-server:
+    cp scripts/install.sh cmd/server/install.sh
+    cp scripts/install.ps1 cmd/server/install.ps1
+    go build -o {{dist_dir}}/veil-server ./cmd/server
+    rm cmd/server/install.sh cmd/server/install.ps1
+
+# Deploy server to Cloud Run
+deploy:
+    gcloud run deploy veil-installer \
+        --source=. \
+        --region=europe-north1 \
+        --allow-unauthenticated \
+        --port=8080
