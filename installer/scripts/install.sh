@@ -169,6 +169,33 @@ _verify_checksum() {
 }
 
 # ---------------------------------------------------------------------------
+# Version check
+# ---------------------------------------------------------------------------
+_installed_version() {
+    if _require_cmd veil; then
+        veil --version 2>/dev/null | head -n1 | sed 's/[^0-9.]//g'
+    else
+        printf ''
+    fi
+}
+
+_strip_v() {
+    printf '%s' "$1" | sed 's/^v//'
+}
+
+_version_gte() {
+    # Returns 0 (true) if $1 >= $2
+    _v1="$(_strip_v "$1")"
+    _v2="$(_strip_v "$2")"
+    [ "$_v1" = "$_v2" ] && return 0
+    # Use sort -V if available, otherwise simple string compare
+    if printf '%s\n%s' "$_v2" "$_v1" | sort -V 2>/dev/null | head -n1 | grep -qx "$_v2"; then
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # Download + verify installer binary
 # ---------------------------------------------------------------------------
 _download_installer() {
@@ -228,6 +255,16 @@ main() {
         fi
     fi
     ok "Version:  ${_version}"
+
+    # Check if already installed and up to date
+    _installed="$(_installed_version)"
+    if [ -n "$_installed" ]; then
+        if _version_gte "$_installed" "$_version"; then
+            ok "Already up to date (v${_installed})"
+            exit 0
+        fi
+        info "Updating from v${_installed} to ${_version}..."
+    fi
 
     _tmpdir="$(_mktmpdir)"
 
