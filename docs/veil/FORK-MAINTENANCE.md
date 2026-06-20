@@ -43,6 +43,11 @@ git push origin main
 **Skip:**
 - Branding changes (logos, docs about pi.dev)
 - Pi-specific features we don't need
+- `.github/workflows/issue-gate.yml` and similar Pi repo automation
+
+**Keep (don't delete):**
+- `packages/ai/src/models.generated.ts` - upstream code imports this
+- `packages/ai/src/image-models.generated.ts` - upstream code imports this
 
 ## Conflict Zones
 
