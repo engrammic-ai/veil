@@ -37,12 +37,14 @@ export const DEFAULT_FSRS_CONFIG: FSRSConfig = {
 		procedural: 0.25, // 6 hours
 		fact: 0.083, // 2 hours
 		decision: 0.5, // 12 hours
+		intent: 9999, // never decays
 	},
 	stabilityCap: {
 		episodic: 1, // max 1 day for episodic
 		procedural: 7, // max 7 days for procedural
 		fact: 3, // max 3 days for facts
 		decision: 7, // max 7 days for decisions
+		intent: 9999, // pinned, never evicted
 	},
 	evictionThreshold: 0.1,
 };

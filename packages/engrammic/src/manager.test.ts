@@ -120,6 +120,53 @@ describe("ContextManager decay scheduling", () => {
 	});
 });
 
+describe("ContextManager intent eviction exclusion", () => {
+	let testDir: string;
+	let manager: ContextManager;
+
+	beforeEach(() => {
+		testDir = join(process.cwd(), `.test-mgr-intent-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+		manager = makeManager(testDir);
+	});
+
+	afterEach(async () => {
+		await manager.close();
+		rmSync(testDir, { recursive: true });
+	});
+
+	test("intent items are not evicted during stage 2 (low score) eviction", async () => {
+		// Load 5 regular items to fill budget
+		for (let i = 0; i < 5; i++) {
+			const item = manager.remember(`regular item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
+			manager.load([item.id]);
+		}
+		// Load 1 intent item
+		const intentItem = manager.remember("intent: finish auth refactor".padEnd(80, "x"), "intent", ["intent"]);
+		manager.load([intentItem.id]);
+
+		const evicted = await manager.checkEviction({ tags: ["t"] });
+
+		const evictedIds = evicted.map((e) => e.item.id);
+		expect(evictedIds).not.toContain(intentItem.id);
+	});
+
+	test("intent items survive stage 3 (force) eviction", async () => {
+		// Load enough items to force stage 3 eviction
+		for (let i = 0; i < 6; i++) {
+			const item = manager.remember(`regular item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
+			manager.load([item.id]);
+		}
+		const intentItem = manager.remember("intent: finish auth refactor".padEnd(80, "x"), "intent", ["intent"]);
+		manager.load([intentItem.id]);
+
+		const evicted = await manager.checkEviction({ tags: ["t"] });
+
+		const evictedIds = evicted.map((e) => e.item.id);
+		expect(evictedIds).not.toContain(intentItem.id);
+	});
+});
+
 describe("ContextManager worldview enablement", () => {
 	let testDir: string;
 

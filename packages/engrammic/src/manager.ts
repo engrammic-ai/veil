@@ -331,7 +331,7 @@ export class ContextManager {
 
 			for (const { item, score } of candidates) {
 				if (this.budget.usedTokens <= availableTokens * (threshold - 0.1)) break;
-				if (item.pinned) continue;
+				if (item.pinned || item.type === "intent") continue;
 				if (this.eviction.isOnCooldown(item.id, currentTurn)) continue;
 
 				this.unload([item.id]);
@@ -343,7 +343,7 @@ export class ContextManager {
 
 		// Stage 3: Force evict if still over budget
 		while (this.budget.usedTokens > availableTokens) {
-			const items = Array.from(this.loaded.values()).filter((i) => !i.pinned);
+			const items = Array.from(this.loaded.values()).filter((i) => !i.pinned && i.type !== "intent");
 			if (items.length === 0) break;
 
 			const ranked = rankItems(items, taskCtx, this.config);

@@ -147,6 +147,8 @@ function typeHeading(type: ContextItem["type"]): string {
 			return "Facts";
 		case "decision":
 			return "Decisions";
+		case "intent":
+			return "Intents";
 	}
 }
 

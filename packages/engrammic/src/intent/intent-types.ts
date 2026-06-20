@@ -38,3 +38,12 @@ export interface ProjectIntentFile {
 	intents: Record<string, ProjectIntent>;
 	history: string[];
 }
+
+export interface SessionIntent extends IntentNode {
+	// Links session intent to project
+	projectIntentId?: string; // which project intent this serves
+	projectPhaseId?: string; // which phase of project intent
+
+	// Session scoping
+	sessionId: string;
+}

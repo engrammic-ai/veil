@@ -9,6 +9,7 @@ const TYPE_MAP: Record<ContextItem["type"], string> = {
 	fact: "FACT",
 	procedural: "PROC",
 	decision: "DECISION",
+	intent: "INTENT",
 };
 
 export function formatStub(item: ContextItem): string {

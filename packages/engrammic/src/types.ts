@@ -48,7 +48,7 @@ export interface ContextItem {
 }
 
 // Type alias extracted from ContextItem for reuse
-export type ContextItemType = "episodic" | "procedural" | "fact" | "decision";
+export type ContextItemType = "episodic" | "procedural" | "fact" | "decision" | "intent";
 
 // Trigger for pattern matching user messages (anticipatory loading)
 export interface Trigger {

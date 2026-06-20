@@ -275,7 +275,7 @@ export class ContextCache {
 				decay_score REAL DEFAULT 0.0,
 				cognitive_weight REAL DEFAULT 0.0,
 
-				type TEXT CHECK(type IN ('episodic', 'procedural', 'fact')) NOT NULL,
+				type TEXT CHECK(type IN ('episodic', 'procedural', 'fact', 'decision', 'intent')) NOT NULL,
 				tags TEXT NOT NULL,
 				pinned INTEGER DEFAULT 0,
 
