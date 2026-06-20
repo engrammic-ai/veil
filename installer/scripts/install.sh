@@ -41,8 +41,8 @@ _tty_colors() {
     fi
 }
 
-info()  { printf "${BLU}info${RST}  %s\n"  "$1"; }
-ok()    { printf "${GRN}ok${RST}    %s\n"  "$1"; }
+info()  { printf "${BLU}info${RST}  %s\n"  "$1" >&2; }
+ok()    { printf "${GRN}ok${RST}    %s\n"  "$1" >&2; }
 warn()  { printf "${YLW}warn${RST}  %s\n"  "$1" >&2; }
 die()   { printf "${RED}error${RST} %s\n" "$1" >&2; exit 1; }
 
