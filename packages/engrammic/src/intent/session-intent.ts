@@ -1,12 +1,65 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { IntentNode, SessionIntent } from "./intent-types.ts";
 import { generateIntentId } from "./project-intent.ts";
+
+export interface SessionIntentManagerOptions {
+	sessionId: string;
+	projectRoot: string;
+}
+
+interface PersistedState {
+	sessionId: string;
+	intents: Record<string, SessionIntent>;
+	createdAt: number;
+	updatedAt: number;
+}
 
 export class SessionIntentManager {
 	private intents = new Map<string, SessionIntent>();
 	private sessionId: string;
+	private projectRoot: string;
+	private createdAt: number;
 
-	constructor(sessionId: string) {
-		this.sessionId = sessionId;
+	constructor(options: SessionIntentManagerOptions) {
+		this.sessionId = options.sessionId;
+		this.projectRoot = options.projectRoot;
+		this.createdAt = Date.now();
+	}
+
+	static async load(options: SessionIntentManagerOptions): Promise<SessionIntentManager> {
+		const manager = new SessionIntentManager(options);
+		const filePath = manager.filePath();
+
+		try {
+			const raw = await readFile(filePath, "utf-8");
+			const state: PersistedState = JSON.parse(raw);
+			manager.createdAt = state.createdAt;
+			for (const intent of Object.values(state.intents)) {
+				manager.intents.set(intent.id, intent);
+			}
+		} catch (err: unknown) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT") {
+				console.warn(`[SessionIntentManager] Could not load ${filePath}:`, (err as Error).message);
+			}
+		}
+
+		return manager;
+	}
+
+	async save(): Promise<void> {
+		const dir = join(this.projectRoot, ".veil", "session-intents");
+		await mkdir(dir, { recursive: true });
+
+		const state: PersistedState = {
+			sessionId: this.sessionId,
+			intents: Object.fromEntries(this.intents.entries()),
+			createdAt: this.createdAt,
+			updatedAt: Date.now(),
+		};
+
+		await writeFile(this.filePath(), JSON.stringify(state, null, 2), "utf-8");
 	}
 
 	createPrimary(
@@ -24,6 +77,7 @@ export class SessionIntentManager {
 			sessionId: this.sessionId,
 		};
 		this.intents.set(intent.id, intent);
+		void this.save();
 		return intent;
 	}
 
@@ -47,6 +101,7 @@ export class SessionIntentManager {
 			current: status === "active" ? true : undefined,
 		};
 		this.intents.set(intent.id, intent);
+		void this.save();
 		return intent;
 	}
 
@@ -88,13 +143,13 @@ export class SessionIntentManager {
 		if (wasCurrent && intent.parent) {
 			this.advanceCurrentToNextPending(intent.parent);
 		}
+
+		void this.save();
 	}
 
 	abandon(id: string): void {
 		const intent = this.intents.get(id);
 		if (!intent) return;
-
-		const wasCurrent = intent.current === true;
 
 		this.intents.set(id, {
 			...intent,
@@ -102,10 +157,7 @@ export class SessionIntentManager {
 			current: undefined,
 		});
 
-		// Brief requires abandon does NOT advance current, just clears it if abandoned was current
-		if (wasCurrent) {
-			// current already cleared above — no advance
-		}
+		void this.save();
 	}
 
 	focus(id: string): void {
@@ -115,14 +167,20 @@ export class SessionIntentManager {
 		this.clearCurrentPointer();
 		const intent = this.intents.get(id)!;
 		this.intents.set(id, { ...intent, current: true });
+		void this.save();
 	}
 
 	getAll(): SessionIntent[] {
 		return Array.from(this.intents.values());
 	}
 
-	clear(): void {
+	async clear(): Promise<void> {
 		this.intents.clear();
+		await this.save();
+	}
+
+	private filePath(): string {
+		return join(this.projectRoot, ".veil", "session-intents", `${this.sessionId}.json`);
 	}
 
 	private clearCurrentPointer(): void {

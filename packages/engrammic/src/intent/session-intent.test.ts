@@ -1,10 +1,20 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SessionIntentManager } from "./session-intent.ts";
 
 let manager: SessionIntentManager;
+let tmpDir: string;
 
-beforeEach(() => {
-	manager = new SessionIntentManager("test-session");
+beforeEach(async () => {
+	tmpDir = await mkdtemp(join(tmpdir(), "veil-test-"));
+	manager = new SessionIntentManager({ sessionId: "test-session", projectRoot: tmpDir });
+});
+
+afterEach(async () => {
+	await rm(tmpDir, { recursive: true, force: true });
 });
 
 describe("createPrimary", () => {
@@ -206,12 +216,72 @@ describe("getAll and clear", () => {
 		expect(manager.getAll()).toHaveLength(2);
 	});
 
-	test("clear removes all intents", () => {
+	test("clear removes all intents", async () => {
 		const primary = manager.createPrimary("Do X");
 		manager.createSub("Step 1", primary.id);
-		manager.clear();
+		await manager.clear();
 		expect(manager.getAll()).toHaveLength(0);
 		expect(manager.getPrimary()).toBeNull();
 		expect(manager.getCurrent()).toBeNull();
+	});
+});
+
+describe("persistence", () => {
+	test("load returns empty manager for new session", async () => {
+		const m = await SessionIntentManager.load({ sessionId: "new-session", projectRoot: tmpDir });
+		expect(m.getAll()).toHaveLength(0);
+		expect(m.getPrimary()).toBeNull();
+	});
+
+	test("save creates directory and file", async () => {
+		manager.createPrimary("Save test");
+		await manager.save();
+		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
+		expect(existsSync(filePath)).toBe(true);
+	});
+
+	test("round-trip: create intents, save, load returns same state", async () => {
+		const primary = manager.createPrimary("Round trip");
+		manager.createSub("Sub step", primary.id, { status: "active" });
+		await manager.save();
+
+		const loaded = await SessionIntentManager.load({ sessionId: "test-session", projectRoot: tmpDir });
+		expect(loaded.getAll()).toHaveLength(2);
+		expect(loaded.getPrimary()?.content).toBe("Round trip");
+		expect(loaded.getCurrent()?.content).toBe("Sub step");
+	});
+
+	test("mutations auto-save (file updated after createSub)", async () => {
+		const primary = manager.createPrimary("Auto save test");
+		// wait for fire-and-forget save to complete
+		await new Promise((r) => setTimeout(r, 50));
+		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
+		expect(existsSync(filePath)).toBe(true);
+
+		manager.createSub("Sub", primary.id, { status: "active" });
+		await new Promise((r) => setTimeout(r, 50));
+		const raw = JSON.parse(await readFile(filePath, "utf-8"));
+		expect(Object.keys(raw.intents)).toHaveLength(2);
+	});
+
+	test("handles corrupt JSON gracefully", async () => {
+		const { mkdir, writeFile } = await import("node:fs/promises");
+		const dir = join(tmpDir, ".veil", "session-intents");
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "corrupt.json"), "not valid json");
+
+		const m = await SessionIntentManager.load({ sessionId: "corrupt", projectRoot: tmpDir });
+		expect(m.getAll()).toHaveLength(0);
+	});
+
+	test("saved file includes sessionId, createdAt, updatedAt", async () => {
+		manager.createPrimary("Check fields");
+		await manager.save();
+
+		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
+		const raw = JSON.parse(await readFile(filePath, "utf-8"));
+		expect(raw.sessionId).toBe("test-session");
+		expect(typeof raw.createdAt).toBe("number");
+		expect(typeof raw.updatedAt).toBe("number");
 	});
 });
