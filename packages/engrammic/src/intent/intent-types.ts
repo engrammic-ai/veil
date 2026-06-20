@@ -6,7 +6,7 @@ export interface IntentNode {
 	confidence: "explicit" | "inferred";
 	source: "user" | "brainstorm" | "plan" | "agent";
 
-	status: "active" | "completed" | "abandoned";
+	status: "active" | "completed" | "abandoned" | "pending";
 	createdAt: number;
 	completedAt?: number;
 
