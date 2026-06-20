@@ -699,6 +699,7 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+			const attribution = theme.fg("dim", "Built on Pi ") + theme.fg("accent", "<3") + theme.fg("dim", " pi.dev");
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -740,8 +741,8 @@ export class InteractiveMode {
 				`Veil can explain its own features and look up its docs. Ask it how to use or extend Veil.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => `${logo}  ${attribution}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${logo}  ${attribution}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -5882,9 +5883,12 @@ export class InteractiveMode {
 				const evicted = await this.session.veilHarness.forceEviction();
 				if (evicted.length > 0) {
 					this.showStatus(`Evicted ${evicted.length} item${evicted.length === 1 ? "" : "s"} to cold storage`);
+				} else {
+					this.showStatus("Nothing to evict (context already compact)");
 				}
 			} catch {
 				// Veil eviction failed, continue with Pi compaction if requested
+				this.showWarning("Veil eviction failed");
 			}
 		}
 

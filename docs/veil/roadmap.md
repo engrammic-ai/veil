@@ -1,122 +1,90 @@
-# Roadmap
+# Veil Roadmap
 
-Prototype phases for the Engrammic harness.
-
----
-
-## Phase 1: Core Scaffold (Week 1)
-
-**Goal**: Minimal harness with warm cache and pointer syntax.
-
-### Tasks
-
-- [ ] Fork Pi Agents (MIT licensed)
-- [ ] Add SQLite warm cache with schema from eviction-strategy.md
-- [ ] Implement pointer stub syntax: `[FILE:...]`, `[EPISODE:...]`, `[FACT:...]`
-- [ ] Add hydration function for stubs
-- [ ] Wire pre-tool-call hook for context refresh trigger
-
-### Success Criteria
-
-- Agent can reference `[FILE:path:lines]` and harness hydrates on demand
-- Warm cache persists across turns
-- Hook fires before each tool call
+Veil is a context-aware agent harness forked from [Pi](https://pi.dev). It adds autonomic context management — context that governs itself.
 
 ---
 
-## Phase 2: Eviction Loop (Week 2)
+## Vision
 
-**Goal**: Heuristic-based eviction without LLM calls.
+**Autonomic context for AI agents**: context that governs itself, so users (and agents) stop thinking about it. Robust, stable, self-governing, intelligent.
 
-### Tasks
-
-- [ ] Implement eviction_score() function
-- [ ] Add 4-stage eviction cascade (hard → soft → demote → rot)
-- [ ] Add `procedural` vs `episodic` tagging
-  - Heuristic: code/config = procedural, conversation/exploration = episodic
-- [ ] Implement checkpoint turns with agent self-triage prompt
-- [ ] Add cognitive weight tracking (+/- on tool success/failure)
-
-### Success Criteria
-
-- Context stays under 70% token limit automatically
-- Procedural items survive longer than episodic
-- Agent can see and respond to checkpoint prompts
+General-purpose: coding is the primary use case, but Veil works equally well for autonomous loops and MCP-driven task automation.
 
 ---
 
-## Phase 3: KG Integration (Week 3)
+## Architecture: Two-Speed
 
-**Goal**: Connect Engrammic KG as cold storage backend.
-
-### Tasks
-
-- [ ] Implement bi-temporal writes
-  - `valid_time` from git commit timestamp (when applicable)
-  - `system_time` from ingestion time
-- [ ] Add episode boundary detection using embedding discontinuity
-  - Use local model: `all-MiniLM-L6-v2` (80MB)
-  - Threshold: cosine < 0.7 = new episode
-- [ ] Implement demote_to_cold() with KG node creation
-- [ ] Add tombstone support (keep ID, drop content, preserve refs)
-- [ ] Wire `[FACT:...]` stubs to KG retrieval
-
-### Success Criteria
-
-- Episodes auto-close and summarize on boundary detection
-- Cold storage nodes have valid_time + system_time
-- Tombstoned items still retrievable by ID (show "evicted" state)
+- **Fast path (reflexes):** deterministic scorer + eviction on the hot path — no model, sub-10ms, never blocks
+- **Slow path (deliberation):** intelligent layer off the critical path that writes policy only (tuned parameters + worldview model) — never mutates live context
+- **Local-first:** everything works on local SQLite alone; cloud/KG is optional
 
 ---
 
-## Phase 4: Validation (Week 4)
+## Current State
 
-**Goal**: Tune and validate on real coding sessions.
-
-### Tasks
-
-- [ ] Run against 5+ real coding sessions (varied: debugging, feature, refactor)
-- [ ] Log all eviction decisions with reasoning
-- [ ] Track "user re-requested evicted content" events
-- [ ] Tune parameters:
-  - Recency half-life (default: 30min)
-  - Eviction score threshold (default: 0.3)
-  - Checkpoint interval (default: 10 turns)
-  - Rot decay factor (default: 0.95/week)
-- [ ] Add decay calibration: auto-adjust based on re-request rate
-
-### Success Criteria
-
-- <5% re-request rate for evicted content
-- Context churn measured and documented
-- Parameter recommendations for different workloads
+| Feature | Status |
+|---------|--------|
+| Fork & foundation | Done |
+| Warm cache (SQLite, WAL) | Done |
+| Harness wiring (AgentSession hooks) | Done |
+| Auto-capture of tool results | Done |
+| Context injection (`<veil-context>` stubs) | Done |
+| Heuristic eviction (3-stage cascade) | Done |
+| Cognitive weight tracking | Done |
+| Self-tuning (AIMD back-off) | Done |
+| Worldview (tree-sitter, PageRank, co-access) | Done |
+| Failure memory (attempt records, convergence monitor) | Done |
+| Compression pipeline (content-type routing) | Done |
+| Cold tier (local SQLite) | Done |
+| Cold tier (engrammic KG) | Stubbed, optional |
 
 ---
 
-## Future Phases
+## Roadmap
 
-### Phase 5: Anticipatory Loading
-- Keyword → action rules learned from past sessions
-- "user said 'test' → preload test files"
-- No LLM for prediction, just pattern matching
+### Shipping
 
-### Phase 6: Cross-Session Episodes
-- Episode chains via KG edges: "relates to yesterday's refactor"
-- "remind me what I tried last time" queries
+- Binary builds (`bun build --compile` for all platforms)
+- Install script (`curl -sSL https://veil.engrammic.ai/install | sh`)
+- GitHub Releases automation
+- User-facing docs
 
-### Phase 7: AST-Aware Compression
-- Function → `{signature} + [IMPL:hash]`
-- Class → `{declaration} + [METHODS:hash]`
-- Hydrate full impl only when referenced
+### CLI & UX
 
-### Phase 8: Confidence-Aware Retrieval
-- Track confidence on KG facts
-- Surface uncertainty: "I'm 40% sure X, want me to verify?"
+- `--veil` flag for enabling context management
+- `/context` command for inspection
+- Status bar integration
+
+### Extension API
+
+- Expose `pi.veil.*` namespace
+- Emit `context_eviction` / `context_checkpoint` events
+- Documentation + examples
+
+### Multi-Agent
+
+- Fork/merge VeilHarness across subagents
+- Shared context coordination
+
+### Optional Cloud
+
+- Engrammic KG cold adapter for cross-device/cross-session memory
+- Team/shared workspaces
+- Always opt-in — local SQLite is sufficient
 
 ---
 
-## Key Insight
+## Success Metrics
 
-> Start with eviction, not KG integration. Most harnesses fail by loading too much, not by retrieving poorly.
+| Metric | Target |
+|--------|--------|
+| Re-request rate | <5% |
+| Context overflow incidents | 0 |
+| Worldview staleness after file change | Invalidated same session |
+| Loop convergence | No silent infinite grind |
 
-Phases 1-2 are the critical path. Get eviction right first.
+---
+
+## Acknowledgments
+
+Veil is built on [Pi](https://pi.dev) by Mario Zechner and contributors. We're grateful for the solid foundation.
