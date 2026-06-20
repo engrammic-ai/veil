@@ -1,0 +1,874 @@
+diff --git a/packages/engrammic/src/cache.ts b/packages/engrammic/src/cache.ts
+index f2fbf5ac..ab8fb543 100644
+--- a/packages/engrammic/src/cache.ts
++++ b/packages/engrammic/src/cache.ts
+@@ -275,7 +275,7 @@ export class ContextCache {
+ 				decay_score REAL DEFAULT 0.0,
+ 				cognitive_weight REAL DEFAULT 0.0,
+ 
+-				type TEXT CHECK(type IN ('episodic', 'procedural', 'fact')) NOT NULL,
++				type TEXT CHECK(type IN ('episodic', 'procedural', 'fact', 'decision', 'intent')) NOT NULL,
+ 				tags TEXT NOT NULL,
+ 				pinned INTEGER DEFAULT 0,
+ 
+diff --git a/packages/engrammic/src/fsrs.ts b/packages/engrammic/src/fsrs.ts
+index d58fcdb9..451286d8 100644
+--- a/packages/engrammic/src/fsrs.ts
++++ b/packages/engrammic/src/fsrs.ts
+@@ -37,12 +37,14 @@ export const DEFAULT_FSRS_CONFIG: FSRSConfig = {
+ 		procedural: 0.25, // 6 hours
+ 		fact: 0.083, // 2 hours
+ 		decision: 0.5, // 12 hours
++		intent: 9999, // never decays
+ 	},
+ 	stabilityCap: {
+ 		episodic: 1, // max 1 day for episodic
+ 		procedural: 7, // max 7 days for procedural
+ 		fact: 3, // max 3 days for facts
+ 		decision: 7, // max 7 days for decisions
++		intent: 9999, // pinned, never evicted
+ 	},
+ 	evictionThreshold: 0.1,
+ };
+diff --git a/packages/engrammic/src/injection.ts b/packages/engrammic/src/injection.ts
+index 256687fa..abc4a5bc 100644
+--- a/packages/engrammic/src/injection.ts
++++ b/packages/engrammic/src/injection.ts
+@@ -9,6 +9,7 @@ const TYPE_MAP: Record<ContextItem["type"], string> = {
+ 	fact: "FACT",
+ 	procedural: "PROC",
+ 	decision: "DECISION",
++	intent: "INTENT",
+ };
+ 
+ export function formatStub(item: ContextItem): string {
+diff --git a/packages/engrammic/src/intent/index.ts b/packages/engrammic/src/intent/index.ts
+new file mode 100644
+index 00000000..dac77b6a
+--- /dev/null
++++ b/packages/engrammic/src/intent/index.ts
+@@ -0,0 +1,4 @@
++export type { IntentNode, ProjectIntent, ProjectIntentFile, SessionIntent } from "./intent-types.ts";
++export { generateIntentId, loadProjectIntent, saveProjectIntent } from "./project-intent.ts";
++export type { SessionIntentManagerOptions } from "./session-intent.ts";
++export { SessionIntentManager } from "./session-intent.ts";
+diff --git a/packages/engrammic/src/intent/intent-types.ts b/packages/engrammic/src/intent/intent-types.ts
+new file mode 100644
+index 00000000..bc4e671f
+--- /dev/null
++++ b/packages/engrammic/src/intent/intent-types.ts
+@@ -0,0 +1,49 @@
++export interface IntentNode {
++	id: string;
++	type: "primary" | "sub";
++	content: string;
++
++	confidence: "explicit" | "inferred";
++	source: "user" | "brainstorm" | "plan" | "agent";
++
++	status: "active" | "completed" | "abandoned" | "pending";
++	createdAt: number;
++	completedAt?: number;
++
++	supersedes?: string;
++
++	parent?: string;
++
++	current?: boolean;
++}
++
++export interface ProjectIntent {
++	id: string;
++	content: string;
++	status: "active" | "completed" | "paused";
++	createdAt: number;
++	updatedAt: number;
++
++	supersedes?: string;
++
++	phases?: Array<{
++		id: string;
++		content: string;
++		status: "completed" | "active" | "pending";
++	}>;
++}
++
++export interface ProjectIntentFile {
++	current: string | null;
++	intents: Record<string, ProjectIntent>;
++	history: string[];
++}
++
++export interface SessionIntent extends IntentNode {
++	// Links session intent to project
++	projectIntentId?: string; // which project intent this serves
++	projectPhaseId?: string; // which phase of project intent
++
++	// Session scoping
++	sessionId: string;
++}
+diff --git a/packages/engrammic/src/intent/intent.test.ts b/packages/engrammic/src/intent/intent.test.ts
+new file mode 100644
+index 00000000..6141443d
+--- /dev/null
++++ b/packages/engrammic/src/intent/intent.test.ts
+@@ -0,0 +1,106 @@
++import { mkdtemp, rm } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, beforeEach, describe, expect, test } from "vitest";
++import type { ProjectIntentFile } from "./intent-types.ts";
++import { generateIntentId, loadProjectIntent, saveProjectIntent } from "./project-intent.ts";
++
++let tmpDir: string;
++
++beforeEach(async () => {
++	tmpDir = await mkdtemp(join(tmpdir(), "veil-intent-test-"));
++});
++
++afterEach(async () => {
++	await rm(tmpDir, { recursive: true, force: true });
++});
++
++describe("loadProjectIntent", () => {
++	test("returns null for missing file", async () => {
++		const result = await loadProjectIntent(tmpDir);
++		expect(result).toBeNull();
++	});
++
++	test("returns null on invalid JSON (graceful error)", async () => {
++		const { mkdir, writeFile } = await import("node:fs/promises");
++		await mkdir(join(tmpDir, ".veil"), { recursive: true });
++		await writeFile(join(tmpDir, ".veil", "intent.json"), "{ invalid json");
++		const result = await loadProjectIntent(tmpDir);
++		expect(result).toBeNull();
++	});
++});
++
++describe("saveProjectIntent", () => {
++	test("creates .veil directory if needed", async () => {
++		const data: ProjectIntentFile = {
++			current: null,
++			intents: {},
++			history: [],
++		};
++		await saveProjectIntent(tmpDir, data);
++		const result = await loadProjectIntent(tmpDir);
++		expect(result).not.toBeNull();
++	});
++
++	test("round-trip: save then load returns same data", async () => {
++		const data: ProjectIntentFile = {
++			current: "intent_abc12345",
++			intents: {
++				intent_abc12345: {
++					id: "intent_abc12345",
++					content: "Build the intent tracking system",
++					status: "active",
++					createdAt: 1000000,
++					updatedAt: 1000001,
++					phases: [
++						{ id: "phase_1", content: "Create types", status: "completed" },
++						{ id: "phase_2", content: "Write tests", status: "active" },
++					],
++				},
++			},
++			history: [],
++		};
++		await saveProjectIntent(tmpDir, data);
++		const result = await loadProjectIntent(tmpDir);
++		expect(result).toEqual(data);
++	});
++});
++
++describe("history pruning", () => {
++	test("keeps last 10 history entries on save", async () => {
++		const history = Array.from({ length: 15 }, (_, i) => `intent_${i}`);
++		const data: ProjectIntentFile = {
++			current: null,
++			intents: {},
++			history,
++		};
++		await saveProjectIntent(tmpDir, data);
++		const result = await loadProjectIntent(tmpDir);
++		expect(result!.history).toHaveLength(10);
++		expect(result!.history).toEqual(history.slice(-10));
++	});
++
++	test("keeps history with <= 10 entries unchanged", async () => {
++		const history = ["intent_a", "intent_b", "intent_c"];
++		const data: ProjectIntentFile = {
++			current: null,
++			intents: {},
++			history,
++		};
++		await saveProjectIntent(tmpDir, data);
++		const result = await loadProjectIntent(tmpDir);
++		expect(result!.history).toEqual(history);
++	});
++});
++
++describe("generateIntentId", () => {
++	test("returns id with intent_ prefix", () => {
++		const id = generateIntentId();
++		expect(id).toMatch(/^intent_[A-Za-z0-9]{8}$/);
++	});
++
++	test("returns unique ids", () => {
++		const ids = new Set(Array.from({ length: 100 }, () => generateIntentId()));
++		expect(ids.size).toBe(100);
++	});
++});
+diff --git a/packages/engrammic/src/intent/project-intent.ts b/packages/engrammic/src/intent/project-intent.ts
+new file mode 100644
+index 00000000..6a6b0912
+--- /dev/null
++++ b/packages/engrammic/src/intent/project-intent.ts
+@@ -0,0 +1,38 @@
++import { randomBytes } from "node:crypto";
++import { mkdir, readFile, writeFile } from "node:fs/promises";
++import { join } from "node:path";
++import type { ProjectIntentFile } from "./intent-types.ts";
++
++const INTENT_FILE = ".veil/intent.json";
++const HISTORY_MAX = 10;
++
++export function generateIntentId(): string {
++	return `intent_${randomBytes(6).toString("base64url").slice(0, 8)}`;
++}
++
++export async function loadProjectIntent(projectRoot: string): Promise<ProjectIntentFile | null> {
++	const filePath = join(projectRoot, INTENT_FILE);
++	try {
++		const raw = await readFile(filePath, "utf-8");
++		return JSON.parse(raw) as ProjectIntentFile;
++	} catch (err) {
++		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
++			return null;
++		}
++		console.warn(`[intent] Failed to parse ${filePath}:`, err);
++		return null;
++	}
++}
++
++export async function saveProjectIntent(projectRoot: string, data: ProjectIntentFile): Promise<void> {
++	const dirPath = join(projectRoot, ".veil");
++	await mkdir(dirPath, { recursive: true });
++
++	const pruned: ProjectIntentFile = {
++		...data,
++		history: data.history.slice(-HISTORY_MAX),
++	};
++
++	const filePath = join(projectRoot, INTENT_FILE);
++	await writeFile(filePath, JSON.stringify(pruned, null, 2), "utf-8");
++}
+diff --git a/packages/engrammic/src/intent/session-intent.test.ts b/packages/engrammic/src/intent/session-intent.test.ts
+new file mode 100644
+index 00000000..f7f73b01
+--- /dev/null
++++ b/packages/engrammic/src/intent/session-intent.test.ts
+@@ -0,0 +1,287 @@
++import { existsSync } from "node:fs";
++import { mkdtemp, readFile, rm } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, beforeEach, describe, expect, test } from "vitest";
++import { SessionIntentManager } from "./session-intent.ts";
++
++let manager: SessionIntentManager;
++let tmpDir: string;
++
++beforeEach(async () => {
++	tmpDir = await mkdtemp(join(tmpdir(), "veil-test-"));
++	manager = new SessionIntentManager({ sessionId: "test-session", projectRoot: tmpDir });
++});
++
++afterEach(async () => {
++	await rm(tmpDir, { recursive: true, force: true });
++});
++
++describe("createPrimary", () => {
++	test("creates primary intent with correct defaults", () => {
++		const intent = manager.createPrimary("Build the thing");
++		expect(intent.type).toBe("primary");
++		expect(intent.content).toBe("Build the thing");
++		expect(intent.status).toBe("active");
++		expect(intent.confidence).toBe("inferred");
++		expect(intent.source).toBe("user");
++		expect(intent.sessionId).toBe("test-session");
++		expect(intent.id).toMatch(/^intent_/);
++		expect(typeof intent.createdAt).toBe("number");
++	});
++
++	test("respects confidence and source options", () => {
++		const intent = manager.createPrimary("Do X", { confidence: "explicit", source: "plan" });
++		expect(intent.confidence).toBe("explicit");
++		expect(intent.source).toBe("plan");
++	});
++});
++
++describe("createSub", () => {
++	test("creates sub-intent linked to parent", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub = manager.createSub("Step 1", primary.id);
++		expect(sub.type).toBe("sub");
++		expect(sub.parent).toBe(primary.id);
++		expect(sub.sessionId).toBe("test-session");
++	});
++
++	test("active sub-intent becomes current", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub = manager.createSub("Step 1", primary.id, { status: "active" });
++		expect(sub.current).toBe(true);
++		expect(manager.getCurrent()?.id).toBe(sub.id);
++	});
++
++	test("new active sub clears previous current", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++		expect(sub1.current).toBe(true);
++
++		const sub2 = manager.createSub("Step 2", primary.id, { status: "active" });
++		expect(sub2.current).toBe(true);
++		expect(manager.getCurrent()?.id).toBe(sub2.id);
++
++		// sub1 should no longer be current
++		const all = manager.getAll();
++		const updatedSub1 = all.find((i) => i.id === sub1.id);
++		expect(updatedSub1?.current).toBeFalsy();
++	});
++
++	test("pending sub-intent does not become current", () => {
++		const primary = manager.createPrimary("Do X");
++		manager.createSub("Step 1", primary.id, { status: "pending" });
++		expect(manager.getCurrent()).toBeNull();
++	});
++
++	test("default status does not become current", () => {
++		const primary = manager.createPrimary("Do X");
++		manager.createSub("Step 1", primary.id);
++		expect(manager.getCurrent()).toBeNull();
++	});
++});
++
++describe("getPrimary", () => {
++	test("returns null with no primary", () => {
++		expect(manager.getPrimary()).toBeNull();
++	});
++
++	test("returns the primary intent", () => {
++		const primary = manager.createPrimary("Do X");
++		expect(manager.getPrimary()?.id).toBe(primary.id);
++	});
++});
++
++describe("getCurrent", () => {
++	test("returns null when no current", () => {
++		expect(manager.getCurrent()).toBeNull();
++	});
++});
++
++describe("getSubIntents", () => {
++	test("returns empty array for unknown parent", () => {
++		expect(manager.getSubIntents("nonexistent")).toEqual([]);
++	});
++
++	test("returns sub-intents for a parent", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id);
++		const sub2 = manager.createSub("Step 2", primary.id);
++		const subs = manager.getSubIntents(primary.id);
++		expect(subs).toHaveLength(2);
++		expect(subs.map((s) => s.id)).toContain(sub1.id);
++		expect(subs.map((s) => s.id)).toContain(sub2.id);
++	});
++});
++
++describe("complete", () => {
++	test("marks intent as completed", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub = manager.createSub("Step 1", primary.id, { status: "active" });
++		manager.complete(sub.id);
++		const all = manager.getAll();
++		const updated = all.find((i) => i.id === sub.id)!;
++		expect(updated.status).toBe("completed");
++		expect(updated.completedAt).toBeDefined();
++	});
++
++	test("complete current advances to next pending sub-intent", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++		const sub2 = manager.createSub("Step 2", primary.id, { status: "pending" });
++
++		manager.complete(sub1.id);
++
++		expect(manager.getCurrent()?.id).toBe(sub2.id);
++		const all = manager.getAll();
++		const updatedSub2 = all.find((i) => i.id === sub2.id)!;
++		expect(updatedSub2.status).toBe("active");
++		expect(updatedSub2.current).toBe(true);
++	});
++
++	test("complete with no pending clears current", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++
++		manager.complete(sub1.id);
++
++		expect(manager.getCurrent()).toBeNull();
++	});
++
++	test("complete advances to earliest pending by createdAt", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++		const sub2 = manager.createSub("Step 2", primary.id, { status: "pending" });
++		const _sub3 = manager.createSub("Step 3", primary.id, { status: "pending" });
++
++		manager.complete(sub1.id);
++
++		// sub2 was created before sub3, so it should be next
++		expect(manager.getCurrent()?.id).toBe(sub2.id);
++	});
++});
++
++describe("abandon", () => {
++	test("marks intent as abandoned", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub = manager.createSub("Step 1", primary.id, { status: "active" });
++		manager.abandon(sub.id);
++		const all = manager.getAll();
++		const updated = all.find((i) => i.id === sub.id)!;
++		expect(updated.status).toBe("abandoned");
++	});
++
++	test("abandoning current clears current pointer", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub = manager.createSub("Step 1", primary.id, { status: "active" });
++		expect(manager.getCurrent()?.id).toBe(sub.id);
++
++		manager.abandon(sub.id);
++		expect(manager.getCurrent()).toBeNull();
++	});
++
++	test("abandoning non-current does not affect current", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++		const sub2 = manager.createSub("Step 2", primary.id, { status: "pending" });
++
++		manager.abandon(sub2.id);
++		expect(manager.getCurrent()?.id).toBe(sub1.id);
++	});
++});
++
++describe("focus", () => {
++	test("sets current to specified sub-intent", () => {
++		const primary = manager.createPrimary("Do X");
++		const sub1 = manager.createSub("Step 1", primary.id, { status: "active" });
++		const sub2 = manager.createSub("Step 2", primary.id, { status: "pending" });
++
++		manager.focus(sub2.id);
++		expect(manager.getCurrent()?.id).toBe(sub2.id);
++
++		const all = manager.getAll();
++		const updatedSub1 = all.find((i) => i.id === sub1.id)!;
++		expect(updatedSub1.current).toBeFalsy();
++	});
++
++	test("focus throws for unknown id", () => {
++		expect(() => manager.focus("nonexistent")).toThrow();
++	});
++});
++
++describe("getAll and clear", () => {
++	test("getAll returns all stored intents", () => {
++		const primary = manager.createPrimary("Do X");
++		manager.createSub("Step 1", primary.id);
++		expect(manager.getAll()).toHaveLength(2);
++	});
++
++	test("clear removes all intents", async () => {
++		const primary = manager.createPrimary("Do X");
++		manager.createSub("Step 1", primary.id);
++		await manager.clear();
++		expect(manager.getAll()).toHaveLength(0);
++		expect(manager.getPrimary()).toBeNull();
++		expect(manager.getCurrent()).toBeNull();
++	});
++});
++
++describe("persistence", () => {
++	test("load returns empty manager for new session", async () => {
++		const m = await SessionIntentManager.load({ sessionId: "new-session", projectRoot: tmpDir });
++		expect(m.getAll()).toHaveLength(0);
++		expect(m.getPrimary()).toBeNull();
++	});
++
++	test("save creates directory and file", async () => {
++		manager.createPrimary("Save test");
++		await manager.save();
++		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
++		expect(existsSync(filePath)).toBe(true);
++	});
++
++	test("round-trip: create intents, save, load returns same state", async () => {
++		const primary = manager.createPrimary("Round trip");
++		manager.createSub("Sub step", primary.id, { status: "active" });
++		await manager.save();
++
++		const loaded = await SessionIntentManager.load({ sessionId: "test-session", projectRoot: tmpDir });
++		expect(loaded.getAll()).toHaveLength(2);
++		expect(loaded.getPrimary()?.content).toBe("Round trip");
++		expect(loaded.getCurrent()?.content).toBe("Sub step");
++	});
++
++	test("mutations auto-save (file updated after createSub)", async () => {
++		const primary = manager.createPrimary("Auto save test");
++		// wait for fire-and-forget save to complete
++		await new Promise((r) => setTimeout(r, 50));
++		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
++		expect(existsSync(filePath)).toBe(true);
++
++		manager.createSub("Sub", primary.id, { status: "active" });
++		await new Promise((r) => setTimeout(r, 50));
++		const raw = JSON.parse(await readFile(filePath, "utf-8"));
++		expect(Object.keys(raw.intents)).toHaveLength(2);
++	});
++
++	test("handles corrupt JSON gracefully", async () => {
++		const { mkdir, writeFile } = await import("node:fs/promises");
++		const dir = join(tmpDir, ".veil", "session-intents");
++		await mkdir(dir, { recursive: true });
++		await writeFile(join(dir, "corrupt.json"), "not valid json");
++
++		const m = await SessionIntentManager.load({ sessionId: "corrupt", projectRoot: tmpDir });
++		expect(m.getAll()).toHaveLength(0);
++	});
++
++	test("saved file includes sessionId, createdAt, updatedAt", async () => {
++		manager.createPrimary("Check fields");
++		await manager.save();
++
++		const filePath = join(tmpDir, ".veil", "session-intents", "test-session.json");
++		const raw = JSON.parse(await readFile(filePath, "utf-8"));
++		expect(raw.sessionId).toBe("test-session");
++		expect(typeof raw.createdAt).toBe("number");
++		expect(typeof raw.updatedAt).toBe("number");
++	});
++});
+diff --git a/packages/engrammic/src/intent/session-intent.ts b/packages/engrammic/src/intent/session-intent.ts
+new file mode 100644
+index 00000000..cac084f0
+--- /dev/null
++++ b/packages/engrammic/src/intent/session-intent.ts
+@@ -0,0 +1,204 @@
++import { mkdir, readFile, writeFile } from "node:fs/promises";
++import { join } from "node:path";
++import type { IntentNode, SessionIntent } from "./intent-types.ts";
++import { generateIntentId } from "./project-intent.ts";
++
++export interface SessionIntentManagerOptions {
++	sessionId: string;
++	projectRoot: string;
++}
++
++interface PersistedState {
++	sessionId: string;
++	intents: Record<string, SessionIntent>;
++	createdAt: number;
++	updatedAt: number;
++}
++
++export class SessionIntentManager {
++	private intents = new Map<string, SessionIntent>();
++	private sessionId: string;
++	private projectRoot: string;
++	private createdAt: number;
++
++	constructor(options: SessionIntentManagerOptions) {
++		this.sessionId = options.sessionId;
++		this.projectRoot = options.projectRoot;
++		this.createdAt = Date.now();
++	}
++
++	static async load(options: SessionIntentManagerOptions): Promise<SessionIntentManager> {
++		const manager = new SessionIntentManager(options);
++		const filePath = manager.filePath();
++
++		try {
++			const raw = await readFile(filePath, "utf-8");
++			const state: PersistedState = JSON.parse(raw);
++			manager.createdAt = state.createdAt;
++			for (const intent of Object.values(state.intents)) {
++				manager.intents.set(intent.id, intent);
++			}
++		} catch (err: unknown) {
++			const code = (err as NodeJS.ErrnoException).code;
++			if (code !== "ENOENT") {
++				console.warn(`[SessionIntentManager] Could not load ${filePath}:`, (err as Error).message);
++			}
++		}
++
++		return manager;
++	}
++
++	async save(): Promise<void> {
++		const dir = join(this.projectRoot, ".veil", "session-intents");
++		await mkdir(dir, { recursive: true });
++
++		const state: PersistedState = {
++			sessionId: this.sessionId,
++			intents: Object.fromEntries(this.intents.entries()),
++			createdAt: this.createdAt,
++			updatedAt: Date.now(),
++		};
++
++		await writeFile(this.filePath(), JSON.stringify(state, null, 2), "utf-8");
++	}
++
++	createPrimary(
++		content: string,
++		opts?: { confidence?: "explicit" | "inferred"; source?: IntentNode["source"] },
++	): SessionIntent {
++		const intent: SessionIntent = {
++			id: generateIntentId(),
++			type: "primary",
++			content,
++			confidence: opts?.confidence ?? "inferred",
++			source: opts?.source ?? "user",
++			status: "active",
++			createdAt: Date.now(),
++			sessionId: this.sessionId,
++		};
++		this.intents.set(intent.id, intent);
++		void this.save();
++		return intent;
++	}
++
++	createSub(content: string, parentId: string, opts?: { status?: "active" | "pending" }): SessionIntent {
++		const status = opts?.status ?? "pending";
++
++		if (status === "active") {
++			this.clearCurrentPointer();
++		}
++
++		const intent: SessionIntent = {
++			id: generateIntentId(),
++			type: "sub",
++			content,
++			confidence: "inferred",
++			source: "user",
++			status,
++			createdAt: Date.now(),
++			sessionId: this.sessionId,
++			parent: parentId,
++			current: status === "active" ? true : undefined,
++		};
++		this.intents.set(intent.id, intent);
++		void this.save();
++		return intent;
++	}
++
++	getPrimary(): SessionIntent | null {
++		for (const intent of this.intents.values()) {
++			if (intent.type === "primary") return intent;
++		}
++		return null;
++	}
++
++	getCurrent(): SessionIntent | null {
++		for (const intent of this.intents.values()) {
++			if (intent.current === true) return intent;
++		}
++		return null;
++	}
++
++	getSubIntents(parentId: string): SessionIntent[] {
++		const result: SessionIntent[] = [];
++		for (const intent of this.intents.values()) {
++			if (intent.parent === parentId) result.push(intent);
++		}
++		return result;
++	}
++
++	complete(id: string): void {
++		const intent = this.intents.get(id);
++		if (!intent) return;
++
++		const wasCurrent = intent.current === true;
++
++		this.intents.set(id, {
++			...intent,
++			status: "completed",
++			completedAt: Date.now(),
++			current: undefined,
++		});
++
++		if (wasCurrent && intent.parent) {
++			this.advanceCurrentToNextPending(intent.parent);
++		}
++
++		void this.save();
++	}
++
++	abandon(id: string): void {
++		const intent = this.intents.get(id);
++		if (!intent) return;
++
++		this.intents.set(id, {
++			...intent,
++			status: "abandoned",
++			current: undefined,
++		});
++
++		void this.save();
++	}
++
++	focus(id: string): void {
++		if (!this.intents.has(id)) {
++			throw new Error(`Intent not found: ${id}`);
++		}
++		this.clearCurrentPointer();
++		const intent = this.intents.get(id)!;
++		this.intents.set(id, { ...intent, current: true });
++		void this.save();
++	}
++
++	getAll(): SessionIntent[] {
++		return Array.from(this.intents.values());
++	}
++
++	async clear(): Promise<void> {
++		this.intents.clear();
++		await this.save();
++	}
++
++	private filePath(): string {
++		return join(this.projectRoot, ".veil", "session-intents", `${this.sessionId}.json`);
++	}
++
++	private clearCurrentPointer(): void {
++		for (const [id, intent] of this.intents.entries()) {
++			if (intent.current === true) {
++				this.intents.set(id, { ...intent, current: undefined });
++			}
++		}
++	}
++
++	private advanceCurrentToNextPending(parentId: string): void {
++		const pending = Array.from(this.intents.values())
++			.filter((i) => i.parent === parentId && i.status === "pending")
++			.sort((a, b) => a.createdAt - b.createdAt);
++
++		if (pending.length === 0) return;
++
++		const next = pending[0];
++		this.intents.set(next.id, { ...next, status: "active", current: true });
++	}
++}
+diff --git a/packages/engrammic/src/manager.test.ts b/packages/engrammic/src/manager.test.ts
+index 9105e4ec..ccde8ead 100644
+--- a/packages/engrammic/src/manager.test.ts
++++ b/packages/engrammic/src/manager.test.ts
+@@ -120,6 +120,53 @@ describe("ContextManager decay scheduling", () => {
+ 	});
+ });
+ 
++describe("ContextManager intent eviction exclusion", () => {
++	let testDir: string;
++	let manager: ContextManager;
++
++	beforeEach(() => {
++		testDir = join(process.cwd(), `.test-mgr-intent-${Date.now()}`);
++		mkdirSync(testDir, { recursive: true });
++		manager = makeManager(testDir);
++	});
++
++	afterEach(async () => {
++		await manager.close();
++		rmSync(testDir, { recursive: true });
++	});
++
++	test("intent items are not evicted during stage 2 (low score) eviction", async () => {
++		// Load 5 regular items to fill budget
++		for (let i = 0; i < 5; i++) {
++			const item = manager.remember(`regular item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
++			manager.load([item.id]);
++		}
++		// Load 1 intent item
++		const intentItem = manager.remember("intent: finish auth refactor".padEnd(80, "x"), "intent", ["intent"]);
++		manager.load([intentItem.id]);
++
++		const evicted = await manager.checkEviction({ tags: ["t"] });
++
++		const evictedIds = evicted.map((e) => e.item.id);
++		expect(evictedIds).not.toContain(intentItem.id);
++	});
++
++	test("intent items survive stage 3 (force) eviction", async () => {
++		// Load enough items to force stage 3 eviction
++		for (let i = 0; i < 6; i++) {
++			const item = manager.remember(`regular item ${i} `.padEnd(80, "x"), "episodic", ["t"]);
++			manager.load([item.id]);
++		}
++		const intentItem = manager.remember("intent: finish auth refactor".padEnd(80, "x"), "intent", ["intent"]);
++		manager.load([intentItem.id]);
++
++		const evicted = await manager.checkEviction({ tags: ["t"] });
++
++		const evictedIds = evicted.map((e) => e.item.id);
++		expect(evictedIds).not.toContain(intentItem.id);
++	});
++});
++
+ describe("ContextManager worldview enablement", () => {
+ 	let testDir: string;
+ 
+diff --git a/packages/engrammic/src/manager.ts b/packages/engrammic/src/manager.ts
+index dc0cd286..124f5f52 100644
+--- a/packages/engrammic/src/manager.ts
++++ b/packages/engrammic/src/manager.ts
+@@ -331,7 +331,7 @@ export class ContextManager {
+ 
+ 			for (const { item, score } of candidates) {
+ 				if (this.budget.usedTokens <= availableTokens * (threshold - 0.1)) break;
+-				if (item.pinned) continue;
++				if (item.pinned || item.type === "intent") continue;
+ 				if (this.eviction.isOnCooldown(item.id, currentTurn)) continue;
+ 
+ 				this.unload([item.id]);
+@@ -343,7 +343,7 @@ export class ContextManager {
+ 
+ 		// Stage 3: Force evict if still over budget
+ 		while (this.budget.usedTokens > availableTokens) {
+-			const items = Array.from(this.loaded.values()).filter((i) => !i.pinned);
++			const items = Array.from(this.loaded.values()).filter((i) => !i.pinned && i.type !== "intent");
+ 			if (items.length === 0) break;
+ 
+ 			const ranked = rankItems(items, taskCtx, this.config);
+diff --git a/packages/engrammic/src/retrieval.ts b/packages/engrammic/src/retrieval.ts
+index 77f651c5..c17ec3e9 100644
+--- a/packages/engrammic/src/retrieval.ts
++++ b/packages/engrammic/src/retrieval.ts
+@@ -147,6 +147,8 @@ function typeHeading(type: ContextItem["type"]): string {
+ 			return "Facts";
+ 		case "decision":
+ 			return "Decisions";
++		case "intent":
++			return "Intents";
+ 	}
+ }
+ 
+diff --git a/packages/engrammic/src/types.ts b/packages/engrammic/src/types.ts
+index 8c514dad..acc548fc 100644
+--- a/packages/engrammic/src/types.ts
++++ b/packages/engrammic/src/types.ts
+@@ -48,7 +48,7 @@ export interface ContextItem {
+ }
+ 
+ // Type alias extracted from ContextItem for reuse
+-export type ContextItemType = "episodic" | "procedural" | "fact" | "decision";
++export type ContextItemType = "episodic" | "procedural" | "fact" | "decision" | "intent";
+ 
+ // Trigger for pattern matching user messages (anticipatory loading)
+ export interface Trigger {
