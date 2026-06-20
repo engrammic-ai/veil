@@ -699,7 +699,11 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
-			const attribution = theme.fg("dim", "Built on Pi ") + theme.fg("accent", "<3") + theme.fg("dim", " pi.dev");
+
+			// Colored attribution: Veil (bone white on oxide red), Pi (light gray on deep blue)
+			const veilText = chalk.bgRgb(183, 65, 14).rgb(249, 246, 238).bold(" Veil ");
+			const piText = chalk.bgRgb(59, 82, 128).rgb(230, 230, 235).bold(" Pi ");
+			const attribution = `${veilText} ${chalk.red("❤")} ${piText}`;
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -740,6 +744,7 @@ export class InteractiveMode {
 				"dim",
 				`Veil can explain its own features and look up its docs. Ask it how to use or extend Veil.`,
 			);
+
 			this.builtInHeader = new ExpandableText(
 				() => `${logo}  ${attribution}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
 				() => `${logo}  ${attribution}\n${expandedInstructions}\n\n${onboarding}`,

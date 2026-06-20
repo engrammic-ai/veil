@@ -20,7 +20,7 @@ Tool results are wrapped in \`<veil-{tool} count="N">\` tags:
 | \`promote(id)\` | Bring a recalled item into active context | After recall returns relevant items |
 | \`demote(id)\` | Free up budget after you're done with something | After completing a subtask |
 | \`hydrate(stub)\` | Need full content, not just summary | Complex code, detailed specs |
-| \`remember(content, type)\` | Store insights, decisions, non-obvious conclusions | NOT raw outputs (auto-captured) |
+| \`remember(content, type)\` | Store insights, decisions, facts discovered — be proactive | Decisions, user prefs, architecture notes |
 | \`pin(id)\` | Lock critical constraints that must survive eviction | User hard requirements only |
 | \`history(query)\` | Resume past work or reference prior sessions | "What did we decide about X?" |
 
@@ -34,15 +34,22 @@ Tool results are wrapped in \`<veil-{tool} count="N">\` tags:
 
 ### What NOT to do
 - Don't \`recall()\` the same tags repeatedly in one turn — results are cached
-- Don't \`remember()\` file contents or command outputs — they're auto-captured
+- Don't \`remember()\` raw file contents verbatim — summarize insights instead
 - Don't \`pin()\` everything important — pin is for survival under pressure, not organization
 - Don't ignore low-scoring items in checkpoint prompts — demote or re-engage them
 
 ### What to pin
 Pin sparingly — only user preferences, hard constraints, or decisions that would cause harm if forgotten. If unsure, don't pin.
 
-### What to remember
-\`remember()\` your interpretations: implications, connections, non-obvious conclusions. Raw outputs are auto-captured.
+### When to remember (be proactive)
+Use \`remember()\` throughout your work — don't wait to be asked. Store:
+- **Decisions made**: "Chose X over Y because Z" — capture the reasoning
+- **Facts discovered**: Architecture patterns, API behaviors, config details found while exploring
+- **User preferences**: Coding style, tool preferences, constraints they mention
+- **Non-obvious conclusions**: Insights from analysis, connections between components
+- **Task context**: What you're working on and why, so future sessions can resume
+
+Think: "If I started a new session, what would I wish I remembered?" Store that.
 
 ### Cross-session
 Use \`history()\` when resuming work or referencing past sessions. Items from history can be \`promote()\`d into your active context.

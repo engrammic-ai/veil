@@ -128,6 +128,15 @@ export {
 	formatStub,
 	formatTurnAge,
 } from "./injection.ts";
+// Intent tracking
+export type {
+	IntentNode,
+	ProjectIntent,
+	ProjectIntentFile,
+	SessionIntent,
+	SessionIntentManagerOptions,
+} from "./intent/index.ts";
+export { generateIntentId, loadProjectIntent, SessionIntentManager, saveProjectIntent } from "./intent/index.ts";
 // Core
 export { ContextManager } from "./manager.ts";
 export {

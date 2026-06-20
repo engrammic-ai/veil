@@ -37,6 +37,7 @@ General-purpose: coding is the primary use case, but Veil works equally well for
 | Compression pipeline (content-type routing) | Done |
 | Cold tier (local SQLite) | Done |
 | Cold tier (engrammic KG) | Stubbed, optional |
+| Intent tracking (drift prevention) | Done |
 
 ---
 

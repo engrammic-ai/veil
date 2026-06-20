@@ -43,6 +43,7 @@ A standalone harness (forking Pi Agents as base) with:
 
 - [Research Findings](./research-findings.md) - Literature review and existing solutions
 - [Eviction Strategy](./eviction-strategy.md) - Heuristic cascade for context management
+- [Intent Tracking](./SPEC-intent-tracking.md) - Keeping the agent aligned with user goals
 - [Roadmap](./roadmap.md) - Prototype phases and next steps
 
 ## Licensing

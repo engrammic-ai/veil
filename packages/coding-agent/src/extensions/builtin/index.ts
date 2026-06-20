@@ -16,11 +16,15 @@ import todo from "../../../bundled-extensions/todo.ts";
 import tools from "../../../bundled-extensions/tools.ts";
 import type { ExtensionFactory } from "../../core/extensions/types.ts";
 import veilStatusbar from "../veil-statusbar/index.ts";
+import brainstormModeExtension from "./brainstorm-mode.ts";
+import intentTrackingExtension from "./intent-tracking.ts";
 import planModeExtension from "./plan-mode.ts";
 
 /** All builtin extension factories */
 export const builtinExtensions: ExtensionFactory[] = [
 	// Core Veil extensions
+	brainstormModeExtension,
+	intentTrackingExtension,
 	planModeExtension,
 	veilStatusbar,
 	// Bundled extensions

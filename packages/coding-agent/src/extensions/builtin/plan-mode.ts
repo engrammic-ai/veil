@@ -10,16 +10,32 @@
  * - Extracts numbered plan steps from "Plan:" sections
  * - [DONE:n] markers to complete steps during execution
  * - Progress tracking widget during execution
+ * - Persistent plan file in temp directory
+ * - Active clarifying questions before planning
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { Key } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "../../core/extensions/types.ts";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./plan-mode-utils.ts";
 
-// Tools
-const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];
+// Get cross-platform temp directory for plan file
+function getPlanFilePath(sessionId: string): string {
+	const tmpDir = os.tmpdir();
+	const veilPlanDir = path.join(tmpDir, "veil-plans");
+	// Ensure directory exists
+	if (!fs.existsSync(veilPlanDir)) {
+		fs.mkdirSync(veilPlanDir, { recursive: true });
+	}
+	return path.join(veilPlanDir, `plan-${sessionId}.md`);
+}
+
+// Tools - plan mode includes write/edit but they're filtered to only allow plan file
+const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire", "write", "edit"];
 const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
 
 // Type guard for assistant messages
@@ -39,6 +55,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
+	let planFilePath = "";
+	let sessionId = "";
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -79,8 +97,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		todoItems = [];
 
 		if (planModeEnabled) {
+			// Initialize plan file path if not set
+			if (!planFilePath && sessionId) {
+				planFilePath = getPlanFilePath(sessionId);
+			}
 			pi.setActiveTools(PLAN_MODE_TOOLS);
-			ctx.ui.notify(`Plan mode enabled. Tools: ${PLAN_MODE_TOOLS.join(", ")}`);
+			ctx.ui.notify(`Plan mode enabled. Plan file: ${planFilePath}`);
 		} else {
 			pi.setActiveTools(NORMAL_MODE_TOOLS);
 			ctx.ui.notify("Plan mode disabled. Full access restored.");
@@ -101,7 +123,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => togglePlanMode(ctx),
 	});
 
-	pi.registerCommand("todos", {
+	pi.registerCommand("plan-todos", {
 		description: "Show current plan todo list",
 		handler: async (_args, ctx) => {
 			if (todoItems.length === 0) {
@@ -118,9 +140,23 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		handler: async (ctx) => togglePlanMode(ctx),
 	});
 
-	// Block destructive bash commands in plan mode
+	// Block destructive bash commands in plan mode (except plan file writes)
 	pi.on("tool_call", async (event) => {
-		if (!planModeEnabled || event.toolName !== "bash") return;
+		if (!planModeEnabled) return;
+
+		// Allow writes to the plan file
+		if (event.toolName === "write" || event.toolName === "edit") {
+			const filePath = (event.input as { path?: string }).path;
+			if (planFilePath && filePath === planFilePath) {
+				return; // Allow write to plan file
+			}
+			return {
+				block: true,
+				reason: `Plan mode: file modifications blocked. You can only write to the plan file: ${planFilePath}`,
+			};
+		}
+
+		if (event.toolName !== "bash") return;
 
 		const command = event.input.command as string;
 		if (!isSafeCommand(command)) {
@@ -164,15 +200,26 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					content: `[PLAN MODE ACTIVE]
 You are in plan mode - a read-only exploration mode for safe code analysis.
 
-Restrictions:
-- You can only use: read, bash, grep, find, ls, questionnaire
-- You CANNOT use: edit, write (file modifications are disabled)
+**Plan file:** ${planFilePath}
+You can write to this file to persist your plan. Update it as you refine the plan.
+
+**Restrictions:**
+- Read-only tools: read, bash (safe commands), grep, find, ls, questionnaire
+- You can ONLY write to the plan file above - no other file modifications
 - Bash is restricted to an allowlist of read-only commands
 
-Ask clarifying questions using the questionnaire tool.
-Use brave-search skill via bash for web research.
+**IMPORTANT - Ask questions first!**
+Before creating a plan, you MUST ask clarifying questions to understand:
+- What is the goal? What problem are we solving?
+- What are the constraints? (time, tech stack, dependencies)
+- What does success look like?
+- Are there edge cases or special requirements?
 
-Create a detailed numbered plan under a "Plan:" header:
+Ask ONE question at a time. Use the questionnaire tool for multiple-choice questions when possible.
+Don't assume - ASK. Better to ask too many questions than build the wrong thing.
+
+**After gathering requirements:**
+Create a detailed numbered plan under a "Plan:" header in your response AND save it to the plan file:
 
 Plan:
 1. First step description
@@ -289,6 +336,10 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 	// Restore state on session start/resume
 	pi.on("session_start", async (_event, ctx) => {
+		// Get session ID for plan file path
+		sessionId = ctx.sessionManager.getSessionId?.() || `session-${Date.now()}`;
+		planFilePath = getPlanFilePath(sessionId);
+
 		if (pi.getFlag("plan") === true) {
 			planModeEnabled = true;
 		}
