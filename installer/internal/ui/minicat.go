@@ -29,10 +29,10 @@ type MiniCat struct {
 // Only eyes animate, mouth (> ^ <) stays fixed
 var catFrames = map[CatState][][]string{
 	CatIdle: {
-		{"  /\\_/\\  ", " (  o.o  ) ", "  > ^ <  "},
-		{"  /\\_/\\  ", " (  o.o  ) ", "  > ^ <  "},
-		{"  /\\_/\\  ", " (  :3   ) ", "  > ^ <  "}, // happy blink
-		{"  /\\_/\\  ", " (  o.o  ) ", "  > ^ <  "},
+		{"  /\\___/\\  ", " (  o.o  ) ", "  >  ^  <  "},
+		{"  /\\___/\\  ", " (  o.o  ) ", "  >  ^  <  "},
+		{"  /\\___/\\  ", " (  :3   ) ", "  >  ^  <  "}, // happy blink
+		{"  /\\___/\\  ", " (  o.o  ) ", "  >  ^  <  "},
 	},
 	CatWorking: {
 		{"  /\\_/\\  ", " ( o.o ) ", "  > ^ <  "}, // center

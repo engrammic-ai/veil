@@ -250,6 +250,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle force reinstall prompt
+		if m.state == StatePromptForce {
+			switch msg.String() {
+			case "y", "Y":
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+			case "n", "N", "enter":
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+			}
+		}
+
+		// Handle upgrade prompt
+		if m.state == StatePromptUpgrade {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+			case "n", "N":
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+			}
+		}
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -444,16 +464,15 @@ func (m *Model) runStep(s State) tea.Cmd {
 		if m.flagYes {
 			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 		}
-		// For interactive, we'd need key handling - for now auto-approve
-		return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		// Wait for key input (y/n)
+		return nil
 
 	case StatePromptForce:
-		// Already at version - only reinstall if --yes flag is set
 		if m.flagYes {
 			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
 		}
-		// Default: skip reinstall
-		return func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+		// Wait for key input (y/n)
+		return nil
 
 	case StateFetchVersions:
 		return func() tea.Msg {
