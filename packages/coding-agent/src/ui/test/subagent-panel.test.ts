@@ -69,3 +69,75 @@ describe("SubagentPanel", () => {
 		expect(agentLine).toMatch(/2t/); // turn count
 	});
 });
+
+describe("SubagentPanel keyboard", () => {
+	it("navigates with up/down and wraps", () => {
+		const panel = new SubagentPanel("parallel");
+		panel.addAgent("scout-a", "Task A");
+		panel.addAgent("scout-b", "Task B");
+		panel.addAgent("scout-c", "Task C");
+
+		expect(panel.getState().selectedIndex).toBe(0);
+
+		// Down arrow
+		panel.handleInput("\x1b[B");
+		expect(panel.getState().selectedIndex).toBe(1);
+
+		panel.handleInput("\x1b[B");
+		expect(panel.getState().selectedIndex).toBe(2);
+
+		// Wrap to top
+		panel.handleInput("\x1b[B");
+		expect(panel.getState().selectedIndex).toBe(0);
+
+		// Up arrow wraps to bottom
+		panel.handleInput("\x1b[A");
+		expect(panel.getState().selectedIndex).toBe(2);
+	});
+
+	it("toggles expand with Enter", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		expect(panel.getState().expandedAgent).toBeNull();
+
+		panel.handleInput("\r"); // Enter
+		expect(panel.getState().expandedAgent).toBe("scout");
+
+		panel.handleInput("\r"); // Toggle off
+		expect(panel.getState().expandedAgent).toBeNull();
+	});
+
+	it("calls onKill when x pressed", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		let killedTag: string | null = null;
+		panel.onKill = (tag) => {
+			killedTag = tag;
+		};
+
+		panel.handleInput("x");
+		expect(killedTag).toBe("scout");
+	});
+
+	it("calls onPause when p pressed and onResume when r pressed", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		let pausedTag: string | null = null;
+		let resumedTag: string | null = null;
+		panel.onPause = (tag) => {
+			pausedTag = tag;
+		};
+		panel.onResume = (tag) => {
+			resumedTag = tag;
+		};
+
+		panel.handleInput("p");
+		expect(pausedTag).toBe("scout");
+
+		panel.handleInput("r");
+		expect(resumedTag).toBe("scout");
+	});
+});
