@@ -1,6 +1,6 @@
 {
 	"name": "@engrammic/veil-context",
-	"version": "0.1.21",
+	"version": "0.1.23",
 	"description": "Context management for Veil - dynamic loading, heuristic eviction, episodic memory",
 	"type": "module",
 	"main": "./dist/index.js",

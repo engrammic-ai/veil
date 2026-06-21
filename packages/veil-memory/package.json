@@ -1,6 +1,6 @@
 {
   "name": "@veil/memory",
-  "version": "0.1.21",
+  "version": "0.1.23",
   "description": "FSRS-powered memory companion for AI agents",
   "type": "module",
   "main": "dist/index.js",

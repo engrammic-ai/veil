@@ -1,12 +1,12 @@
 {
 	"name": "@engrammic/veil",
-	"version": "0.1.22",
+	"version": "0.1.23",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@engrammic/veil",
-			"version": "0.1.22",
+			"version": "0.1.23",
 			"license": "MIT",
 			"dependencies": {
 				"@earendil-works/pi-agent-core": "^0.79.6",
@@ -521,8 +521,8 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-agent-core": {
-			"version": "0.1.21",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.1.21.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.1.23.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@earendil-works/pi-ai": "^0.79.6",
@@ -535,8 +535,8 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-ai": {
-			"version": "0.1.21",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.1.21.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.1.23.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -559,8 +559,8 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-tui": {
-			"version": "0.1.21",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.1.21.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.1.23.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
@@ -571,8 +571,8 @@
 			}
 		},
 		"node_modules/@engrammic/veil-context": {
-			"version": "0.1.21",
-			"resolved": "https://registry.npmjs.org/@engrammic/veil-context/-/veil-context-0.1.21.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@engrammic/veil-context/-/veil-context-0.1.23.tgz",
 			"dependencies": {
 				"@veil/memory": "*",
 				"better-sqlite3": "11.10.0",
@@ -1248,8 +1248,8 @@
 			}
 		},
 		"node_modules/@veil/embedder": {
-			"version": "0.1.22",
-			"resolved": "https://registry.npmjs.org/@veil/embedder/-/embedder-0.1.22.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@veil/embedder/-/embedder-0.1.23.tgz",
 			"dependencies": {
 				"@xenova/transformers": "2.17.2",
 				"fastify": "5.3.3"
@@ -1262,8 +1262,8 @@
 			}
 		},
 		"node_modules/@veil/memory": {
-			"version": "0.1.21",
-			"resolved": "https://registry.npmjs.org/@veil/memory/-/memory-0.1.21.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@veil/memory/-/memory-0.1.23.tgz",
 			"dependencies": {
 				"@veil/embedder": "*",
 				"better-sqlite3": "11.10.0",
@@ -1283,8 +1283,8 @@
 			}
 		},
 		"node_modules/@veil/subagent": {
-			"version": "0.1.1",
-			"resolved": "https://registry.npmjs.org/@veil/subagent/-/subagent-0.1.1.tgz",
+			"version": "0.1.23",
+			"resolved": "https://registry.npmjs.org/@veil/subagent/-/subagent-0.1.23.tgz",
 			"dependencies": {
 				"@engrammic/veil-context": "*",
 				"better-sqlite3": "11.10.0"
