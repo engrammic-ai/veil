@@ -750,6 +750,12 @@ export async function main(args: string[], options?: MainOptions) {
 			console.error("Continuing without context management.");
 		}
 
+		// Expose VeilHarness via global Symbol for extensions (like pi-subagents pattern)
+		const VEIL_HARNESS_KEY = Symbol.for("veil:harness");
+		if (veilHarness) {
+			(globalThis as any)[VEIL_HARNESS_KEY] = veilHarness;
+		}
+
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
@@ -864,6 +870,8 @@ export async function main(args: string[], options?: MainOptions) {
 			if (harnessCleanedUp || !session.veilHarness) return;
 			harnessCleanedUp = true;
 			await session.veilHarness.close();
+			// Clean up global reference
+			delete (globalThis as any)[Symbol.for("veil:harness")];
 		};
 		process.on("beforeExit", cleanupHarness);
 		process.on("SIGINT", async () => {

@@ -1435,3 +1435,90 @@ describe("VeilHarness.importFromDb", () => {
 		await parentHarness.close();
 	});
 });
+
+describe("VeilHarness fork/merge", () => {
+	let tempDir: string;
+	let parentHarness: VeilHarness;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "veil-fork-test-"));
+		parentHarness = new VeilHarness({
+			dbPath: join(tempDir, "parent.db"),
+			sessionId: "parent-session",
+		});
+	});
+
+	afterEach(async () => {
+		await parentHarness.close();
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("should fork harness for subagent", () => {
+		const result = parentHarness.fork({
+			mode: "fork",
+			tagPrefix: "scout",
+		});
+
+		expect(result.harness).toBeInstanceOf(VeilHarness);
+		expect(result.sessionId).toContain("scout");
+		expect(result.dbPath).toContain(".children");
+	});
+
+	it("should merge child captures back to parent", async () => {
+		// Fork for subagent
+		const { harness: childHarness } = parentHarness.fork({
+			mode: "fork",
+			tagPrefix: "researcher",
+		});
+
+		// Child captures something
+		childHarness.remember("discovered something important", "episodic", ["finding"]);
+
+		// Merge back
+		const result = await parentHarness.merge(childHarness);
+
+		expect(result.imported).toBe(1);
+		expect(result.childSession).toContain("researcher");
+
+		// Cleanup child
+		await childHarness.cleanup();
+	});
+
+	it("should dedupe on merge", async () => {
+		// Parent has an item
+		parentHarness.remember("shared knowledge", "fact", ["common"]);
+
+		// Fork and add same content
+		const { harness: childHarness } = parentHarness.fork({
+			mode: "fork",
+			tagPrefix: "scout",
+		});
+		childHarness.remember("shared knowledge", "fact", ["common"]);
+
+		// Merge - should skip duplicate
+		const result = await parentHarness.merge(childHarness);
+
+		expect(result.skipped).toBe(1);
+		expect(result.imported).toBe(0);
+
+		await childHarness.cleanup();
+	});
+
+	it("should tag merged items with provenance", async () => {
+		const { harness: childHarness } = parentHarness.fork({
+			mode: "fork",
+			tagPrefix: "explorer",
+		});
+
+		childHarness.remember("found this file", "episodic", ["discovery"]);
+
+		await parentHarness.merge(childHarness);
+
+		// Check that imported item has subagent tag
+		const items = parentHarness.getManager().getCache().searchItems("found", 10);
+		expect(items.length).toBe(1);
+		expect(items[0].tags).toContain("veil:subagent=explorer");
+
+		await childHarness.cleanup();
+	});
+});
