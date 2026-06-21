@@ -2,6 +2,7 @@
  * IPC transport for parent-child communication
  */
 
+import * as fs from "node:fs";
 import * as net from "node:net";
 import type { ChildMessage, IpcMessage, ParentMessage } from "./types.ts";
 
@@ -52,6 +53,16 @@ export class IpcServer {
 	}
 
 	async start(): Promise<void> {
+		// Clean up stale socket if it exists
+		if (fs.existsSync(this.socketPath)) {
+			const isStale = await this.checkSocketStale();
+			if (isStale) {
+				fs.unlinkSync(this.socketPath);
+			} else {
+				throw new Error(`Socket already in use: ${this.socketPath}`);
+			}
+		}
+
 		return new Promise((resolve, reject) => {
 			this.server = net.createServer((socket) => {
 				this.client = socket;
@@ -67,6 +78,31 @@ export class IpcServer {
 			this.server.on("error", reject);
 			this.server.listen(this.socketPath, resolve);
 		});
+	}
+
+	private checkSocketStale(): Promise<boolean> {
+		return new Promise((resolve) => {
+			const client = net.createConnection(this.socketPath);
+			const timeout = setTimeout(() => {
+				client.destroy();
+				resolve(true); // Timeout = stale
+			}, 100);
+
+			client.on("connect", () => {
+				clearTimeout(timeout);
+				client.destroy();
+				resolve(false); // Connected = not stale
+			});
+
+			client.on("error", () => {
+				clearTimeout(timeout);
+				resolve(true); // Error = stale
+			});
+		});
+	}
+
+	isListening(): boolean {
+		return this.server?.listening ?? false;
 	}
 
 	private handleData(data: string): void {

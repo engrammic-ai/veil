@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { IpcClient, IpcServer, ipcPath, parseMessage, serializeMessage } from "./ipc.ts";
 import type { ChildMessage, ParentMessage } from "./types.ts";
@@ -77,5 +79,46 @@ describe("IpcServer and IpcClient", () => {
 
 		client.close();
 		await server.close();
+	});
+});
+
+describe("IpcServer stale socket", () => {
+	it("removes stale socket file on start", async () => {
+		const testSocketPath = path.join(os.tmpdir(), `veil-test-stale-${Date.now()}.sock`);
+
+		try {
+			// Create a stale socket file (no server listening)
+			fs.writeFileSync(testSocketPath, "");
+			expect(fs.existsSync(testSocketPath)).toBe(true);
+
+			const server = new IpcServer(testSocketPath);
+			await server.start();
+
+			// Should have started successfully after removing stale socket
+			expect(server.isListening()).toBe(true);
+
+			await server.close();
+		} finally {
+			try {
+				fs.unlinkSync(testSocketPath);
+			} catch {}
+		}
+	});
+
+	it("throws when socket is actively in use", async () => {
+		const testSocketPath = path.join(os.tmpdir(), `veil-test-inuse-${Date.now()}.sock`);
+
+		const server1 = new IpcServer(testSocketPath);
+		await server1.start();
+
+		try {
+			const server2 = new IpcServer(testSocketPath);
+			await expect(server2.start()).rejects.toThrow("Socket already in use");
+		} finally {
+			await server1.close();
+			try {
+				fs.unlinkSync(testSocketPath);
+			} catch {}
+		}
 	});
 });
