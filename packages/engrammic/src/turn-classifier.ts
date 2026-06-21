@@ -28,12 +28,12 @@ export function parseTurnMeta(response: string): TurnMeta | null {
 	}
 
 	const VALID_TYPES = new Set<TurnType>(["decision", "exploration", "action", "correction", "status", "intent"]);
-	const rawType = fields["type"];
+	const rawType = fields.type;
 	if (!rawType || !VALID_TYPES.has(rawType as TurnType)) return null;
 
 	const meta: TurnMeta = { type: rawType as TurnType };
-	if (fields["intent"]) meta.intentId = fields["intent"];
-	if (fields["decision"]) meta.decisionSummary = fields["decision"];
+	if (fields.intent) meta.intentId = fields.intent;
+	if (fields.decision) meta.decisionSummary = fields.decision;
 
 	return meta;
 }

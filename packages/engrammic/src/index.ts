@@ -155,6 +155,13 @@ export {
 } from "./okf-bundle.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
 export {
+	computeReferencePenalty,
+	cosineSimilarity,
+	isProtected,
+	SIMILARITY_THRESHOLD,
+	type TurnWithEmbedding,
+} from "./reference-detector.ts";
+export {
 	computeRelevanceScore,
 	formatSelectedContext,
 	type SelectionResult,
@@ -178,6 +185,15 @@ export {
 	type TriggerType,
 } from "./triggers.ts";
 export { classifyTurn, heuristicClassify, parseTurnMeta, stripTurnMeta } from "./turn-classifier.ts";
+export {
+	calculateEvictionScore,
+	isNeverEvict,
+	PROTECTED_WINDOW,
+	rankForEviction,
+	type ScoredTurn,
+	selectForEviction,
+	TYPE_WEIGHTS,
+} from "./turn-eviction.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,
