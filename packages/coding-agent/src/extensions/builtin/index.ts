@@ -27,7 +27,7 @@ export const builtinExtensions: ExtensionFactory[] = [
 	brainstormModeExtension,
 	intentTrackingExtension,
 	planModeExtension,
-	subagentHooksExtension, // Hooks for @tintinweb/pi-subagents integration
+	subagentHooksExtension, // Hooks for @engrammic/veil-subagents integration
 	veilStatusbar,
 	// Bundled extensions
 	confirmDestructive,

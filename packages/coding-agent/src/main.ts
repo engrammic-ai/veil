@@ -48,6 +48,15 @@ import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
+
+// Suppress noisy font parsing warnings from native deps (canvas/fontkit)
+const originalWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+	const msg = String(args[0] ?? "");
+	if (msg.includes("hstem") || msg.includes("vstem")) return;
+	originalWarn(...args);
+};
+
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
