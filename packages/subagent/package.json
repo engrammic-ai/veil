@@ -1,0 +1,31 @@
+{
+	"name": "@veil/subagent",
+	"version": "0.1.0",
+	"description": "Subagent orchestration with Veil context propagation",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": ["dist", "src"],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc",
+		"test": "vitest --run"
+	},
+	"dependencies": {
+		"@engrammic/veil-context": "*",
+		"better-sqlite3": "11.10.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "7.6.13",
+		"shx": "0.4.0",
+		"typescript": "5.9.3",
+		"vitest": "3.2.4"
+	}
+}
