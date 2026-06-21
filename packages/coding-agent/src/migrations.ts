@@ -326,6 +326,57 @@ function migratePiToVeil(): boolean {
 }
 
 /**
+ * Copy bundled Veil-aware agent profiles to user's agents directory.
+ * Only copies agents that don't already exist (won't overwrite user customizations).
+ */
+function copyBundledAgents(): void {
+	const agentDir = getAgentDir();
+	const userAgentsDir = join(agentDir, "agents");
+
+	// Find bundled agents relative to this module
+	// In dist: dist/bundled-agents/*.md
+	// We need to find the package root
+	const packageDir = join(dirname(import.meta.url.replace("file://", "")), "..");
+	const bundledDir = join(packageDir, "bundled-agents");
+
+	if (!existsSync(bundledDir)) {
+		return;
+	}
+
+	try {
+		const agents = readdirSync(bundledDir).filter((f) => f.endsWith(".md"));
+		if (agents.length === 0) return;
+
+		// Create user agents dir if needed
+		if (!existsSync(userAgentsDir)) {
+			mkdirSync(userAgentsDir, { recursive: true });
+		}
+
+		let copiedAny = false;
+		for (const agent of agents) {
+			const src = join(bundledDir, agent);
+			const dest = join(userAgentsDir, agent);
+
+			// Only copy if user doesn't have their own version
+			if (!existsSync(dest)) {
+				try {
+					cpSync(src, dest);
+					copiedAny = true;
+				} catch {
+					// Ignore copy errors
+				}
+			}
+		}
+
+		if (copiedAny) {
+			console.log(chalk.green("Installed Veil-aware agent profiles to ~/.veil/agents/"));
+		}
+	} catch {
+		// Ignore errors reading bundled dir
+	}
+}
+
+/**
  * Run all migrations. Called once on startup.
  *
  * @returns Object with migration results and deprecation warnings
@@ -339,6 +390,7 @@ export function runMigrations(cwd: string): {
 	migrateSessionsFromAgentRoot();
 	migrateToolsToBin();
 	migrateKeybindingsConfigFile();
+	copyBundledAgents();
 	const deprecationWarnings = migrateExtensionSystem(cwd);
 	return { migratedAuthProviders, deprecationWarnings };
 }
