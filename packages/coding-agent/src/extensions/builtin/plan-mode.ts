@@ -57,6 +57,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let todoItems: TodoItem[] = [];
 	let planFilePath = "";
 	let sessionId = "";
+	let awaitingApproval = false;
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -115,6 +116,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			enabled: planModeEnabled,
 			todos: todoItems,
 			executing: executionMode,
+			awaitingApproval: awaitingApproval,
 		});
 	}
 
@@ -263,21 +265,21 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		persistState();
 	});
 
-	// Handle plan completion and plan mode UI
+	// Handle plan completion and plan mode UI with approval gate
 	pi.on("agent_end", async (event, ctx) => {
 		// Check if execution is complete
 		if (executionMode && todoItems.length > 0) {
 			if (todoItems.every((t) => t.completed)) {
 				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
 				pi.sendMessage(
-					{ customType: "plan-complete", content: `**Plan Complete!** ✓\n\n${completedList}`, display: true },
+					{ customType: "plan-complete", content: `**Plan Complete!**\n\n${completedList}`, display: true },
 					{ triggerTurn: false },
 				);
 				executionMode = false;
 				todoItems = [];
 				pi.setActiveTools(NORMAL_MODE_TOOLS);
 				updateStatus(ctx);
-				persistState(); // Save cleared state so resume doesn't restore old execution mode
+				persistState();
 			}
 			return;
 		}
@@ -293,43 +295,87 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			}
 		}
 
-		// Show plan steps and prompt for next action
-		if (todoItems.length > 0) {
-			const todoListText = todoItems.map((t, i) => `${i + 1}. ☐ ${t.text}`).join("\n");
+		// No plan to review
+		if (todoItems.length === 0) {
+			const choice = await ctx.ui.select("Plan mode - what next?", ["Stay in plan mode", "Exit plan mode"]);
+			if (choice === "Exit plan mode") {
+				togglePlanMode(ctx);
+			}
+			return;
+		}
+
+		// Approval gate loop - recurse until user approves or rejects
+		awaitingApproval = true;
+		persistState();
+
+		while (awaitingApproval) {
+			const todoListText = todoItems.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+
+			// Display plan for review
 			pi.sendMessage(
 				{
-					customType: "plan-todo-list",
-					content: `**Plan Steps (${todoItems.length}):**\n\n${todoListText}`,
+					customType: "plan-review",
+					content: `## Plan Review\n\n${todoListText}\n\n---\nReview the ${todoItems.length} steps above.`,
 					display: true,
 				},
 				{ triggerTurn: false },
 			);
-		}
 
-		const choice = await ctx.ui.select("Plan mode - what next?", [
-			todoItems.length > 0 ? "Execute the plan (track progress)" : "Execute the plan",
-			"Stay in plan mode",
-			"Refine the plan",
-		]);
+			const choice = await ctx.ui.select("Review plan:", [
+				"Approve and execute",
+				"Edit plan",
+				"Reject (keep planning)",
+			]);
 
-		if (choice?.startsWith("Execute")) {
-			planModeEnabled = false;
-			executionMode = todoItems.length > 0;
-			pi.setActiveTools(NORMAL_MODE_TOOLS);
-			updateStatus(ctx);
+			if (choice === "Approve and execute") {
+				awaitingApproval = false;
+				planModeEnabled = false;
+				executionMode = true;
+				pi.setActiveTools(NORMAL_MODE_TOOLS);
+				updateStatus(ctx);
+				persistState();
 
-			const execMessage =
-				todoItems.length > 0
-					? `Execute the plan. Start with: ${todoItems[0].text}`
-					: "Execute the plan you just created.";
-			pi.sendMessage(
-				{ customType: "plan-mode-execute", content: execMessage, display: true },
-				{ triggerTurn: true },
-			);
-		} else if (choice === "Refine the plan") {
-			const refinement = await ctx.ui.editor("Refine the plan:", "");
-			if (refinement?.trim()) {
-				pi.sendUserMessage(refinement.trim());
+				pi.sendMessage(
+					{
+						customType: "plan-mode-execute",
+						content: `Execute the plan. Start with: ${todoItems[0].text}`,
+						display: true,
+					},
+					{ triggerTurn: true },
+				);
+				return;
+			} else if (choice === "Edit plan") {
+				// Open plan in editor with current todos
+				const currentPlanText = todoItems.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+				const edited = await ctx.ui.editor("Edit plan (numbered list):", currentPlanText);
+
+				if (edited?.trim()) {
+					// Re-extract todos from edited text
+					const newTodos = extractTodoItems(edited);
+					if (newTodos.length > 0) {
+						todoItems = newTodos;
+						// Also save to plan file if it exists
+						if (planFilePath) {
+							fs.writeFileSync(planFilePath, edited);
+						}
+						ctx.ui.notify(`Plan updated: ${newTodos.length} steps`, "info");
+					} else {
+						ctx.ui.notify("Could not parse plan steps. Keep numbered list format.", "warning");
+					}
+				}
+				// Loop continues - show updated plan for review
+			} else {
+				// Reject - stay in plan mode for iteration
+				awaitingApproval = false;
+				persistState();
+				ctx.ui.notify("Plan rejected. Continue refining in plan mode.", "info");
+
+				// Prompt for refinement
+				const refinement = await ctx.ui.editor("How should the plan be refined?", "");
+				if (refinement?.trim()) {
+					pi.sendUserMessage(refinement.trim());
+				}
+				return;
 			}
 		}
 	});
@@ -349,13 +395,19 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		// Restore persisted state
 		const planModeEntry = entries
 			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
-			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
+			.pop() as
+			| { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean; awaitingApproval?: boolean } }
+			| undefined;
 
 		if (planModeEntry?.data) {
 			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
 			todoItems = planModeEntry.data.todos ?? todoItems;
 			executionMode = planModeEntry.data.executing ?? executionMode;
+			awaitingApproval = planModeEntry.data.awaitingApproval ?? false;
 		}
+
+		// If we were awaiting approval on resume, trigger the approval flow
+		// This happens after the handler returns, via the normal agent_end path
 
 		// On resume: re-scan messages to rebuild completion state
 		// Only scan messages AFTER the last "plan-mode-execute" to avoid picking up [DONE:n] from previous plans
