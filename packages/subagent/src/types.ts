@@ -86,7 +86,7 @@ export interface AgentConfig {
 	tools?: string[];
 	model?: string;
 	systemPrompt: string;
-	source: "user" | "project";
+	source: "user" | "project" | "builtin";
 	filePath: string;
 	veil?: AgentVeilConfig;
 }

@@ -9,6 +9,120 @@ import type { AgentConfig, AgentDiscoveryResult, AgentScope, AgentVeilConfig } f
 
 const CONFIG_DIR_NAME = ".veil";
 
+// Built-in agents shipped with Veil
+const BUILTIN_AGENTS: AgentConfig[] = [
+	{
+		name: "scout",
+		description: "Fast codebase reconnaissance - finds files, patterns, and structure",
+		tools: ["Read", "Bash", "Glob", "Grep"],
+		model: "claude-haiku-4-5",
+		systemPrompt: `You are a fast reconnaissance agent. Your job is to quickly locate information in the codebase and return concise, compressed context.
+
+Focus on:
+- File locations and paths
+- Key patterns and symbols
+- Structure overview
+- Relevant code snippets
+
+Return findings in a compact format. Be fast and focused - don't explore tangents.
+If you find what was asked for, stop and report. Don't over-research.`,
+		source: "builtin",
+		filePath: "<builtin>",
+	},
+	{
+		name: "reviewer",
+		description: "Code review agent - analyzes code for bugs, issues, and improvements",
+		tools: ["Read", "Bash", "Glob", "Grep"],
+		model: "claude-sonnet-4-5",
+		systemPrompt: `You are a code review agent. Analyze code for:
+
+1. **Bugs**: Logic errors, edge cases, null checks, off-by-ones
+2. **Security**: Injection, auth issues, data exposure
+3. **Performance**: N+1 queries, unnecessary allocations, blocking calls
+4. **Maintainability**: Complexity, naming, structure
+
+For each finding, report:
+- File and line
+- Severity (critical/high/medium/low)
+- What's wrong
+- Suggested fix
+
+Be thorough but prioritize. Critical bugs first.`,
+		source: "builtin",
+		filePath: "<builtin>",
+	},
+	{
+		name: "researcher",
+		description: "Deep research agent - explores topics with web search and documentation",
+		tools: ["Read", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"],
+		model: "claude-sonnet-4-5",
+		systemPrompt: `You are a research agent. Gather comprehensive information on the given topic.
+
+Process:
+1. Search for authoritative sources
+2. Read and synthesize information
+3. Cross-reference multiple sources
+4. Identify consensus and disagreements
+
+Return a structured summary with:
+- Key findings
+- Sources cited
+- Open questions
+- Recommendations
+
+Be thorough. Cite sources. Note confidence levels.`,
+		source: "builtin",
+		filePath: "<builtin>",
+	},
+	{
+		name: "implementer",
+		description: "Implementation agent - writes code, runs tests, makes changes",
+		tools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+		model: "claude-sonnet-4-5",
+		systemPrompt: `You are an implementation agent. Execute the given task precisely.
+
+Process:
+1. Understand requirements fully before coding
+2. Check existing patterns in the codebase
+3. Implement incrementally with tests
+4. Verify changes work
+
+Guidelines:
+- Follow existing code style
+- Write minimal, focused changes
+- Test your changes
+- Don't over-engineer
+
+Report what you changed and test results.`,
+		source: "builtin",
+		filePath: "<builtin>",
+	},
+	{
+		name: "planner",
+		description: "Planning agent - breaks down tasks into steps and dependencies",
+		tools: ["Read", "Bash", "Glob", "Grep"],
+		model: "claude-sonnet-4-5",
+		systemPrompt: `You are a planning agent. Break down complex tasks into actionable steps.
+
+For each task:
+1. Identify the goal and constraints
+2. List required changes (files, APIs, data)
+3. Order by dependencies
+4. Estimate complexity
+5. Flag risks and blockers
+
+Output a numbered plan with:
+- Clear, atomic steps
+- File paths involved
+- Dependencies between steps
+- Potential issues
+
+Be specific. No vague steps like "implement the feature".`,
+		source: "builtin",
+		filePath: "<builtin>",
+	},
+];
+
 function getVeilDir(): string {
 	return path.join(os.homedir(), ".veil");
 }
@@ -134,6 +248,17 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 	}
 }
 
+/**
+ * Get built-in agents shipped with Veil
+ */
+export function getBuiltinAgents(): AgentConfig[] {
+	return [...BUILTIN_AGENTS];
+}
+
+/**
+ * Discover agents from all sources.
+ * Precedence (highest wins): project > user > builtin
+ */
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
 	const userDir = path.join(getVeilDir(), "agents");
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
@@ -141,15 +266,26 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user");
 	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
 
+	// Build map with precedence: builtin < user < project
 	const agentMap = new Map<string, AgentConfig>();
 
-	if (scope === "both") {
-		for (const agent of userAgents) agentMap.set(agent.name, agent);
-		for (const agent of projectAgents) agentMap.set(agent.name, agent);
-	} else if (scope === "user") {
-		for (const agent of userAgents) agentMap.set(agent.name, agent);
-	} else {
-		for (const agent of projectAgents) agentMap.set(agent.name, agent);
+	// Start with built-ins (lowest precedence)
+	for (const agent of BUILTIN_AGENTS) {
+		agentMap.set(agent.name, agent);
+	}
+
+	// User agents override built-ins
+	if (scope !== "project") {
+		for (const agent of userAgents) {
+			agentMap.set(agent.name, agent);
+		}
+	}
+
+	// Project agents override user and built-ins
+	if (scope !== "user") {
+		for (const agent of projectAgents) {
+			agentMap.set(agent.name, agent);
+		}
 	}
 
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
