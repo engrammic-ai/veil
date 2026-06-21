@@ -314,7 +314,7 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 
 			// Discover available agents
 			const discovery = discoverAgents(cwd, "both");
-			const agentMap = new Map(discovery.agents.map((a) => [a.name, a]));
+			const agentMap = new Map<string, AgentConfig>(discovery.agents.map((a) => [a.name, a]));
 
 			if (agentMap.size === 0) {
 				return {

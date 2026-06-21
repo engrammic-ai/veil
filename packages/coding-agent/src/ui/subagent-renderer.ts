@@ -1,4 +1,4 @@
-import type { IpcServer } from "@veil/subagent";
+import type { ChildMessage, IpcServer } from "@veil/subagent";
 import { SubagentPanel } from "./subagent-panel.ts";
 import type { SubagentState } from "./subagent-state.ts";
 
@@ -21,7 +21,7 @@ export function createSubagentRenderer(
 	const { tag } = context;
 
 	// Wire up IPC events (IpcServer.onMessage passes only msg, tag comes from closure)
-	context.ipcServer.onMessage((msg) => {
+	context.ipcServer.onMessage((msg: ChildMessage) => {
 		switch (msg.type) {
 			case "checkpoint":
 				panel.onCheckpoint(tag, msg.turn, msg.tokens, msg.lastTool);
