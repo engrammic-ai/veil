@@ -57,21 +57,24 @@ export class SubagentPanel implements Component {
 
 	render(width: number): string[] {
 		const lines: string[] = [];
-		const innerWidth = Math.max(10, width - 4); // content width between "| " and " |"
+		// Content width: total width minus "|  " (3) and "  |" (3) = 6 chars border
+		const innerWidth = Math.max(10, width - 6);
 
-		// Helper to create a bordered line with proper padding
+		// Helper to create a bordered line - truncate content first, then pad
 		const borderedLine = (content: string): string => {
-			const contentWidth = visibleWidth(content);
+			// First truncate content to fit
+			const truncated = truncateToWidth(content, innerWidth, "...");
+			const contentWidth = visibleWidth(truncated);
 			const padding = Math.max(0, innerWidth - contentWidth);
-			return truncateToWidth(this.theme.border(`|  ${content}${" ".repeat(padding)}  |`), width, "");
+			return `|  ${truncated}${" ".repeat(padding)}  |`;
 		};
 
-		// Header
-		const header = this.renderHeader(innerWidth - 6);
+		// Header: "+-- {header} {dashes}+" → 4 + header + 1 + dashes + 1 = width
+		const header = this.renderHeader(innerWidth);
 		const headerWidth = visibleWidth(header);
-		const headerDashes = Math.max(0, innerWidth - headerWidth - 5);
-		lines.push(truncateToWidth(this.theme.border(`+-- ${header} ${"─".repeat(headerDashes)}+`), width, ""));
-		lines.push(truncateToWidth(this.theme.border(`|${" ".repeat(width - 2)}|`), width, ""));
+		const headerDashes = Math.max(0, width - 6 - headerWidth);
+		lines.push(`+-- ${header} ${"─".repeat(headerDashes)}+`);
+		lines.push(`|${" ".repeat(width - 2)}|`);
 
 		// Kill confirmation dialog
 		if (this.state.showKillConfirm) {
@@ -84,7 +87,7 @@ export class SubagentPanel implements Component {
 			lines.push(borderedLine(""));
 			lines.push(borderedLine("[y] Yes, kill  [n] No, cancel"));
 			lines.push(borderedLine(""));
-			lines.push(truncateToWidth(this.theme.border(`+${"─".repeat(width - 2)}+`), width, ""));
+			lines.push(`+${"─".repeat(width - 2)}+`);
 			return lines;
 		}
 
@@ -103,8 +106,8 @@ export class SubagentPanel implements Component {
 			}
 		}
 
-		lines.push(truncateToWidth(this.theme.border(`|${" ".repeat(width - 2)}|`), width, ""));
-		lines.push(truncateToWidth(this.theme.border(`+${"─".repeat(width - 2)}+`), width, ""));
+		lines.push(`|${" ".repeat(width - 2)}|`);
+		lines.push(`+${"─".repeat(width - 2)}+`);
 
 		return lines;
 	}
