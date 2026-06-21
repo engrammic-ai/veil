@@ -9,8 +9,8 @@ import { ContextManager } from "./manager.ts";
 import { executeVeilTool, TOOL_SCHEMAS } from "./tools.ts";
 
 describe("TOOL_SCHEMAS", () => {
-	test("has 9 tools defined", () => {
-		expect(TOOL_SCHEMAS).toHaveLength(9);
+	test("has 10 tools defined", () => {
+		expect(TOOL_SCHEMAS).toHaveLength(10);
 	});
 
 	test("all tools have veil_ prefix", () => {
