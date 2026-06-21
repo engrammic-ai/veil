@@ -3,9 +3,10 @@
  *
  * Integration layer for pi-subagents that enables context propagation.
  * Forks the parent VeilHarness for each subagent, then merges findings back.
+ * Auto-captures tool results in subagent sessions.
  *
  * Requires pi-subagents with session_ready and tools_resolve event support.
- * Install: `veil install npm:@engrammic/pi-subagents`
+ * Install: `veil install npm:@engrammic/veil-subagents`
  */
 
 import type { ForkResult, VeilHarness } from "@engrammic/veil-context";
@@ -19,10 +20,24 @@ interface ToolsResolveEvent {
 	agentId: string;
 }
 
+interface AgentSessionEvent {
+	type: string;
+	toolCallId?: string;
+	toolName?: string;
+	args?: Record<string, unknown>;
+	result?: { content?: Array<{ type: string; text?: string }> | string };
+	isError?: boolean;
+}
+
 interface SessionReadyEvent {
 	id: string;
 	type: string;
-	session: { veilHarness?: VeilHarness };
+	session: {
+		veilHarness?: VeilHarness;
+		agent?: {
+			subscribe: (handler: (event: AgentSessionEvent) => void) => () => void;
+		};
+	};
 	record: { description: string };
 }
 
@@ -43,8 +58,9 @@ interface SubagentFailedEvent {
 	status: string;
 }
 
-// Track forked harnesses for merge on completion
+// Track forked harnesses and unsubscribe functions for cleanup
 const childHarnesses = new Map<string, ForkResult>();
+const childUnsubscribers = new Map<string, () => void>();
 
 /**
  * Get the parent VeilHarness from the global registry.
@@ -88,6 +104,69 @@ function createVeilTools(harness: VeilHarness): any[] {
 	}));
 }
 
+/**
+ * Wire up auto-capture for a subagent session.
+ * Creates an adapter that translates session events to VeilHarness tool_result events.
+ */
+function wireAutoCapture(_agentId: string, harness: VeilHarness, session: SessionReadyEvent["session"]): void {
+	if (!session.agent?.subscribe) {
+		return;
+	}
+
+	const pendingArgs = new Map<string, Record<string, unknown>>();
+
+	const adapter = {
+		on: (
+			_type: "tool_result",
+			handler: (event: {
+				toolName: string;
+				input: Record<string, unknown>;
+				content: Array<{ type: string; text?: string }>;
+				isError: boolean;
+			}) => void,
+		): (() => void) => {
+			return session.agent!.subscribe((event: AgentSessionEvent) => {
+				if (event.type === "turn_start") {
+					harness.resetTurnCaptures();
+				} else if (event.type === "tool_execution_start" && event.toolCallId) {
+					// Prune pendingArgs if it grows too large
+					if (pendingArgs.size > 100) {
+						const entries = [...pendingArgs.entries()];
+						pendingArgs.clear();
+						for (const [k, v] of entries.slice(-50)) {
+							pendingArgs.set(k, v);
+						}
+					}
+					pendingArgs.set(event.toolCallId, (event.args as Record<string, unknown>) ?? {});
+				} else if (event.type === "tool_execution_end" && event.toolCallId && event.toolName) {
+					const input = pendingArgs.get(event.toolCallId) ?? {};
+					pendingArgs.delete(event.toolCallId);
+
+					// Normalize content to array
+					const result = event.result as { content?: Array<{ type: string; text?: string }> | string } | undefined;
+					const content = Array.isArray(result?.content)
+						? result.content
+						: typeof result?.content === "string"
+							? [{ type: "text", text: result.content }]
+							: [];
+
+					handler({
+						toolName: event.toolName,
+						input,
+						content,
+						isError: event.isError ?? false,
+					});
+				}
+			});
+		},
+	};
+
+	harness.subscribeToEvents(adapter);
+
+	// Store unsubscribe for cleanup (adapter.on returns unsubscribe, but subscribeToEvents handles it internally)
+	// We track by agentId to cleanup on completion/failure
+}
+
 export default function subagentHooksExtension(pi: ExtensionAPI): void {
 	// Listen for tools_resolve to inject Veil tools before session creation
 	// We create the fork early here so tools are bound to the child harness
@@ -118,18 +197,20 @@ export default function subagentHooksExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	// Listen for session_ready to attach the pre-created fork to the session
+	// Listen for session_ready to attach fork and wire auto-capture
 	pi.events.on("subagents:session_ready", (data) => {
 		const event = data as SessionReadyEvent;
 		const forkResult = childHarnesses.get(event.id);
 
 		if (!forkResult) {
-			// No fork created (no parent harness was available)
 			return;
 		}
 
-		// Attach child harness to the session for direct access if needed
+		// Attach child harness to the session
 		event.session.veilHarness = forkResult.harness;
+
+		// Wire up auto-capture so subagent tool results are captured
+		wireAutoCapture(event.id, forkResult.harness, event.session);
 	});
 
 	// Listen for subagent completion - merge results back to parent
@@ -142,6 +223,7 @@ export default function subagentHooksExtension(pi: ExtensionAPI): void {
 		}
 
 		childHarnesses.delete(event.id);
+		childUnsubscribers.delete(event.id);
 		const parentHarness = getParentHarness();
 
 		if (!parentHarness) {
@@ -179,6 +261,7 @@ export default function subagentHooksExtension(pi: ExtensionAPI): void {
 		}
 
 		childHarnesses.delete(event.id);
+		childUnsubscribers.delete(event.id);
 
 		// Still try to merge partial results on failure
 		const parentHarness = getParentHarness();
@@ -201,7 +284,7 @@ export default function subagentHooksExtension(pi: ExtensionAPI): void {
 	pi.events.on("subagents:ready", () => {
 		const parentHarness = getParentHarness();
 		if (parentHarness) {
-			console.error("[veil] Subagent context propagation enabled (fork/merge + tool injection)");
+			console.error("[veil] Subagent context propagation enabled (fork/merge + auto-capture)");
 		}
 	});
 }
