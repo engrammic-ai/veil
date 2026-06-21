@@ -19,6 +19,7 @@ import veilStatusbar from "../veil-statusbar/index.ts";
 import brainstormModeExtension from "./brainstorm-mode.ts";
 import intentTrackingExtension from "./intent-tracking.ts";
 import planModeExtension from "./plan-mode.ts";
+import subagentExtension from "./subagent.ts";
 
 /** All builtin extension factories */
 export const builtinExtensions: ExtensionFactory[] = [
@@ -26,6 +27,7 @@ export const builtinExtensions: ExtensionFactory[] = [
 	brainstormModeExtension,
 	intentTrackingExtension,
 	planModeExtension,
+	subagentExtension,
 	veilStatusbar,
 	// Bundled extensions
 	confirmDestructive,
