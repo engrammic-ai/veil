@@ -19,7 +19,18 @@ import {
 import { Type } from "typebox";
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { SubagentPanel } from "../../ui/subagent-panel.ts";
-import { statusIcon } from "../../ui/subagent-renderer.ts";
+
+// ANSI colors for status
+const COLORS = {
+	green: (t: string) => `\x1b[32m${t}\x1b[0m`,
+	yellow: (t: string) => `\x1b[33m${t}\x1b[0m`,
+	red: (t: string) => `\x1b[31m${t}\x1b[0m`,
+	cyan: (t: string) => `\x1b[36m${t}\x1b[0m`,
+	dim: (t: string) => `\x1b[2m${t}\x1b[0m`,
+};
+
+// Track active panel for /subagents command
+let activePanel: SubagentPanel | null = null;
 
 // Agent discovery paths
 const USER_AGENT_DIR = path.join(os.homedir(), ".veil", "agents");
@@ -94,24 +105,50 @@ function getDbPath(cwd: string): string {
 	return path.join(cwd, ".veil", "context.db");
 }
 
+function coloredIcon(status: string): string {
+	switch (status) {
+		case "complete":
+			return COLORS.green("*");
+		case "running":
+			return COLORS.yellow("o");
+		case "error":
+			return COLORS.red("X");
+		case "paused":
+			return COLORS.cyan("=");
+		case "escalating":
+			return COLORS.yellow("!");
+		default:
+			return COLORS.dim("?");
+	}
+}
+
 function getCompactStatus(panel: SubagentPanel): string {
 	const state = panel.getState();
 	const agents = Array.from(state.agents.values());
 	if (agents.length === 0) return "";
 
-	// Format: "scout [3t] o | reviewer [1t] ?"
-	const parts = agents.slice(0, 3).map((a) => {
-		const icon = statusIcon(a.status);
-		const name = a.tag.replace(/-\d+$/, ""); // Remove suffix like "-0"
-		const turn = a.turn > 0 ? ` [${a.turn}t]` : "";
-		return `${name}${turn} ${icon}`;
-	});
+	// Count by status
+	const running = agents.filter((a) => a.status === "running").length;
+	const done = agents.filter((a) => a.status === "complete").length;
+	const errors = agents.filter((a) => a.status === "error").length;
 
-	if (agents.length > 3) {
-		parts.push(`+${agents.length - 3}`);
+	// Format: "agents: 2/5 done | scout [3t] o | reviewer [1t] *"
+	const summary = `${done}/${agents.length}`;
+	const parts = [errors > 0 ? `${COLORS.red(summary)}` : done === agents.length ? COLORS.green(summary) : summary];
+
+	// Show up to 2 active agents with colored icons
+	const active = agents.filter((a) => a.status !== "complete").slice(0, 2);
+	for (const a of active) {
+		const name = a.tag.replace(/-\d+$/, "").replace(/-step\d+$/, "");
+		const turn = a.turn > 0 ? `[${a.turn}t]` : "";
+		parts.push(`${COLORS.dim(name)} ${turn}${coloredIcon(a.status)}`);
 	}
 
-	return parts.join(" | ");
+	if (running > 2) {
+		parts.push(COLORS.dim(`+${running - 2}`));
+	}
+
+	return parts.join(" ");
 }
 
 async function executeSingleAgentWithPanel(
@@ -318,6 +355,21 @@ async function executeChainWithPanel(
 }
 
 export default function subagentExtension(pi: ExtensionAPI): void {
+	// Register /subagents command for on-demand panel view
+	pi.registerCommand("subagents", {
+		description: "Show subagent status panel",
+		handler: async (_args, ctx) => {
+			if (!activePanel) {
+				ctx.ui.notify("No active subagents", "info");
+				return;
+			}
+			// Show panel as widget temporarily - wrap panel in factory
+			const panel = activePanel;
+			ctx.ui.setWidget("subagent-panel", () => panel, { placement: "aboveEditor" });
+			ctx.ui.notify("Subagent panel shown (Esc to dismiss)", "info");
+		},
+	});
+
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
@@ -352,6 +404,7 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 			// Determine mode and create panel
 			const mode = input.chain?.length ? "chain" : input.tasks?.length ? "parallel" : "single";
 			const panel = new SubagentPanel(mode);
+			activePanel = panel;
 			const runningAgents = new Map<string, RunningAgent>();
 
 			// Wire panel callbacks to control running agents
@@ -510,6 +563,7 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 				if (ctx.hasUI) {
 					ctx.ui.setStatus("subagents", undefined);
 				}
+				activePanel = null;
 			}
 		},
 	});
