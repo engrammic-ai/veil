@@ -109,7 +109,11 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 		parameters: {
 			type: "object",
 			properties: {
-				stub: { type: "string", description: 'Stub to hydrate, e.g., "[EPISODE:abc123]"' },
+				stub: {
+					type: "string",
+					description:
+						'Full stub to hydrate, e.g., "[EPISODE:abc123:summary]" - copy the entire stub including summary',
+				},
 			},
 			required: ["stub"],
 		},

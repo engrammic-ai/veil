@@ -386,7 +386,15 @@ export class ContextManager {
 		this.cache.markEvicting(item.id);
 		this.cache.logEviction(item.id, item.contentHash, this.turnCount);
 
-		const pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
+		let pointer: string | null;
+		try {
+			pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
+		} catch (e) {
+			// Circuit breaker threw - unmark to prevent stuck evicting state
+			this.cache.unmarkEvicting(item.id);
+			this.cache.clearEvictionForHash(item.contentHash);
+			throw e;
+		}
 
 		if (pointer !== null) {
 			item.kgPointer = pointer;
@@ -644,6 +652,7 @@ export class ContextManager {
 	/**
 	 * Flush all warm cache items to cold storage.
 	 * Call before session end to persist captured data.
+	 * Clears loaded map and resets budget to prevent stale state.
 	 */
 	async flush(): Promise<number> {
 		const items = this.cache.getAll();
@@ -657,6 +666,11 @@ export class ContextManager {
 				// Circuit breaker may trip; continue with remaining items
 			}
 		}
+
+		// Clear loaded map and reset budget to prevent stale state after flush
+		this.loaded.clear();
+		this.budget.usedTokens = 0;
+
 		return flushed;
 	}
 

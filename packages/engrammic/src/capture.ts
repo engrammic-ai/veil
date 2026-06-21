@@ -30,6 +30,8 @@ export function getCaptureRule(toolName: string, args: unknown): EnhancedCapture
 				extractor: "read",
 				maxTokens: 300,
 				priority: "normal",
+				dedupeKey: "read",
+				debounceWindowMs: 10000,
 			};
 
 		case "edit":

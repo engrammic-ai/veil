@@ -271,6 +271,12 @@ export class VeilHarness {
 		// Update task context based on tool being called
 		this.updateTaskContext(context.toolCall.name, context.args);
 
+		// Check triggers for auto-recall before tool execution
+		const triggerResult = this.checkTriggers(context.toolCall.name, context.args);
+		if (triggerResult && triggerResult.items.length > 0) {
+			this.emitMemoryEvent("recalled", `trigger:${triggerResult.reason}`);
+		}
+
 		// Check if eviction needed (pass overall context usage for pressure-based eviction)
 		const evicted = await this.manager.checkEviction(this.currentTaskContext, this.contextUsagePercent);
 
