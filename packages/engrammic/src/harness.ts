@@ -165,6 +165,9 @@ export class VeilHarness {
 	private memoryEventListeners: Array<(event: MemoryEvent) => void> = [];
 	private tokenBudget = { used: 0, softWarningEmitted: false };
 
+	// Overall context window usage (0-100%), updated by agent-session
+	private contextUsagePercent: number = 0;
+
 	// Cat widget
 	private catWidget: CatWidget;
 	private catEnabled: boolean = true;
@@ -268,8 +271,8 @@ export class VeilHarness {
 		// Update task context based on tool being called
 		this.updateTaskContext(context.toolCall.name, context.args);
 
-		// Check if eviction needed
-		const evicted = await this.manager.checkEviction(this.currentTaskContext);
+		// Check if eviction needed (pass overall context usage for pressure-based eviction)
+		const evicted = await this.manager.checkEviction(this.currentTaskContext, this.contextUsagePercent);
 
 		if (evicted.length > 0) {
 			// Track evicted tool call IDs for faded history
@@ -975,8 +978,18 @@ export class VeilHarness {
 
 	/**
 	 * Forget an item entirely.
+	 * Also decrements capture budget if item was auto-captured.
 	 */
 	async forget(id: string) {
+		// Decrement capture budget if this was an auto-captured item
+		if (this.autoCapturedIds.has(id)) {
+			const item = this.manager.getWindow().items.find((i) => i.id === id);
+			if (item) {
+				const freed = this.estimateTokens(item.content);
+				this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
+			}
+			this.autoCapturedIds.delete(id);
+		}
 		return this.manager.forget(id);
 	}
 
@@ -988,14 +1001,31 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Update the overall context window usage (0-100%).
+	 * Called by agent-session to inform eviction decisions.
+	 */
+	setContextUsage(percent: number): void {
+		this.contextUsagePercent = Math.max(0, Math.min(100, percent));
+	}
+
+	/**
+	 * Get the current context usage percentage.
+	 */
+	getContextUsage(): number {
+		return this.contextUsagePercent;
+	}
+
+	/**
 	 * Force eviction sweep. Demotes low-score items to cold storage.
 	 * Called by /compact command for manual context reduction.
+	 * Always passes 100% context usage to trigger aggressive eviction.
 	 */
 	async forceEviction(): Promise<EvictionCandidate[]> {
 		const taskCtx: TaskContext = {
 			tags: [],
 		};
-		return this.manager.checkEviction(taskCtx);
+		// Force eviction by simulating 100% context pressure
+		return this.manager.checkEviction(taskCtx, 100);
 	}
 
 	/**

@@ -98,7 +98,7 @@ export interface ContextBudget {
 export interface EvictionCandidate {
 	item: ContextItem;
 	score: number;
-	reason: "age" | "low_score" | "budget" | "manual";
+	reason: "age" | "low_score" | "budget" | "manual" | "context_pressure";
 }
 
 export interface EvictionNotifyConfig {

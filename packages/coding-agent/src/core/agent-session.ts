@@ -455,6 +455,11 @@ export class AgentSession {
 
 			// Veil hook second (eviction check)
 			if (this._veilHarness) {
+				// Update context usage for pressure-based eviction
+				const usage = this.getContextUsage();
+				if (usage?.percent !== null && usage?.percent !== undefined) {
+					this._veilHarness.setContextUsage(usage.percent);
+				}
 				await this._veilHarness.beforeToolCall({ toolCall: { name: toolCall.name }, args }, signal);
 			}
 
