@@ -1,13 +1,13 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { getKeybindings, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { formatCost, formatTokens, statusIcon } from "./subagent-renderer.ts";
 import {
+	createAgentState,
+	createInitialState,
 	type SubagentPanelState,
 	type SubagentState,
-	createInitialState,
-	createAgentState,
 	updateAgentState,
 } from "./subagent-state.ts";
-import { statusIcon, formatTokens, formatCost, renderToolHistory } from "./subagent-renderer.ts";
 
 export interface SubagentPanelTheme {
 	border: (text: string) => string;
@@ -60,10 +60,12 @@ export class SubagentPanel implements Component {
 		// Header
 		const header = this.renderHeader(innerWidth);
 		lines.push(this.theme.border(`+-- ${header} ${"─".repeat(Math.max(0, innerWidth - header.length - 5))}+`));
-		lines.push(this.theme.border("|" + " ".repeat(width - 2) + "|"));
+		lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
 
 		if (this.state.agents.size === 0) {
-			lines.push(this.theme.border("|  " + this.theme.dim("No subagents") + " ".repeat(Math.max(0, innerWidth - 14)) + "  |"));
+			lines.push(
+				this.theme.border(`|  ${this.theme.dim("No subagents")}${" ".repeat(Math.max(0, innerWidth - 14))}  |`),
+			);
 		} else {
 			const agentTags = Array.from(this.state.agents.keys());
 			for (let i = 0; i < agentTags.length; i++) {
@@ -72,18 +74,20 @@ export class SubagentPanel implements Component {
 				const isSelected = i === this.state.selectedIndex;
 				const agentLines = this.renderAgent(agent, isSelected, innerWidth);
 				for (const line of agentLines) {
-					lines.push(this.theme.border("|  " + line + " ".repeat(Math.max(0, innerWidth - visibleWidth(line))) + "  |"));
+					lines.push(
+						this.theme.border(`|  ${line}${" ".repeat(Math.max(0, innerWidth - visibleWidth(line)))}  |`),
+					);
 				}
 			}
 		}
 
-		lines.push(this.theme.border("|" + " ".repeat(width - 2) + "|"));
-		lines.push(this.theme.border("+" + "─".repeat(width - 2) + "+"));
+		lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
+		lines.push(this.theme.border(`+${"─".repeat(width - 2)}+`));
 
 		return lines;
 	}
 
-	private renderHeader(width: number): string {
+	private renderHeader(_width: number): string {
 		const { mode, agents } = this.state;
 		if (mode === "parallel") {
 			const done = Array.from(agents.values()).filter((a) => a.status === "complete").length;

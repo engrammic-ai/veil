@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { SubagentPanel } from "../subagent-panel.ts";
 import { formatCost, formatTokens, statusIcon } from "../subagent-renderer.ts";
 import { createAgentState, createInitialState, updateAgentState } from "../subagent-state.ts";
-import { SubagentPanel } from "../subagent-panel.ts";
 
 describe("subagent-state", () => {
 	it("creates empty initial state", () => {
