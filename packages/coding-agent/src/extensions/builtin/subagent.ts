@@ -28,11 +28,13 @@ const MAX_CONCURRENT = 4;
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
+	model: Type.Optional(Type.String({ description: "Model override (e.g., 'fast', 'claude-haiku-4-5')" })),
 });
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
+	model: Type.Optional(Type.String({ description: "Model override for this step" })),
 });
 
 const SubagentParams = Type.Object({
@@ -46,9 +48,15 @@ const SubagentParams = Type.Object({
 			description: "Task description for the agent",
 		}),
 	),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Model override. Use 'fast' for quick tasks, or a specific model ID. Omit to inherit from agent definition or parent session.",
+		}),
+	),
 	tasks: Type.Optional(
 		Type.Array(TaskItem, {
-			description: "For parallel mode: array of {agent, task} to run concurrently",
+			description: "For parallel mode: array of {agent, task, model?} to run concurrently",
 		}),
 	),
 	chain: Type.Optional(
@@ -61,8 +69,9 @@ const SubagentParams = Type.Object({
 type SubagentInput = {
 	agent?: string;
 	task?: string;
-	tasks?: Array<{ agent: string; task: string }>;
-	chain?: Array<{ agent: string; task: string }>;
+	model?: string;
+	tasks?: Array<{ agent: string; task: string; model?: string }>;
+	chain?: Array<{ agent: string; task: string; model?: string }>;
 };
 
 interface ExecutionResult {
@@ -82,9 +91,13 @@ async function executeSingleAgent(
 	cwd: string,
 	sessionId: string,
 	signal?: AbortSignal,
+	modelOverride?: string,
 ): Promise<ExecutionResult> {
 	const dbPath = getDbPath(cwd);
 	const subCtx = createSubagentContext(dbPath, sessionId, { tag: agentConfig.name });
+
+	// Apply model override if provided
+	const effectiveConfig: AgentConfig = modelOverride ? { ...agentConfig, model: modelOverride } : agentConfig;
 
 	const ipcServer = new IpcServer(subCtx.ipcPath);
 	await ipcServer.start();
@@ -107,7 +120,7 @@ async function executeSingleAgent(
 	});
 
 	try {
-		const result = await spawnSubagent(subCtx, agentConfig, {
+		const result = await spawnSubagent(subCtx, effectiveConfig, {
 			cwd,
 			task,
 			signal,
@@ -143,7 +156,7 @@ async function executeSingleAgent(
 
 async function executeParallel(
 	agents: Map<string, AgentConfig>,
-	tasks: Array<{ agent: string; task: string }>,
+	tasks: Array<{ agent: string; task: string; model?: string }>,
 	cwd: string,
 	sessionId: string,
 	signal?: AbortSignal,
@@ -162,7 +175,7 @@ async function executeParallel(
 					error: `Agent not found: ${t.agent}`,
 				};
 			}
-			return executeSingleAgent(agentConfig, t.task, cwd, sessionId, signal);
+			return executeSingleAgent(agentConfig, t.task, cwd, sessionId, signal, t.model);
 		});
 
 		const batchResults = await Promise.all(batchPromises);
@@ -174,7 +187,7 @@ async function executeParallel(
 
 async function executeChain(
 	agents: Map<string, AgentConfig>,
-	chain: Array<{ agent: string; task: string }>,
+	chain: Array<{ agent: string; task: string; model?: string }>,
 	cwd: string,
 	sessionId: string,
 	signal?: AbortSignal,
@@ -193,7 +206,7 @@ async function executeChain(
 
 		// Replace {previous} placeholder with prior output
 		const task = step.task.replace(/\{previous\}/g, previous);
-		const result = await executeSingleAgent(agentConfig, task, cwd, sessionId, signal);
+		const result = await executeSingleAgent(agentConfig, task, cwd, sessionId, signal, step.model);
 
 		if (!result.success) {
 			return result;
@@ -294,7 +307,7 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 					};
 				}
 
-				const result = await executeSingleAgent(agentConfig, input.task, cwd, sessionId, signal);
+				const result = await executeSingleAgent(agentConfig, input.task, cwd, sessionId, signal, input.model);
 				return {
 					content: [
 						{
