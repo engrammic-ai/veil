@@ -83,6 +83,13 @@ export interface ContextManifest {
 	items: ManifestItem[]; // Max 10
 }
 
+export interface TurnMeta {
+	type: "decision" | "exploration" | "action" | "correction" | "status" | "intent";
+	intentId?: string;
+	decisionSummary?: string;
+	turnNumber?: number; // filled in by harness
+}
+
 export interface TaskContext {
 	tags: string[];
 	currentFile?: string;

@@ -131,6 +131,29 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 			required: ["query"],
 		},
 	},
+	{
+		name: "veil_turn_meta",
+		description: "REQUIRED: Call at the end of every response to classify your turn for context management.",
+		parameters: {
+			type: "object",
+			properties: {
+				type: {
+					type: "string",
+					enum: ["decision", "exploration", "action", "correction", "status", "intent"],
+					description: "What kind of turn this is",
+				},
+				intent_id: {
+					type: "string",
+					description: "Which intent this advances (id or 'none')",
+				},
+				decision_summary: {
+					type: "string",
+					description: "If type=decision, brief summary of what was decided",
+				},
+			},
+			required: ["type"],
+		},
+	},
 ];
 
 // Tool implementations
@@ -166,6 +189,8 @@ export async function executeVeilTool(
 			return await executeHydrate(params as { stub: string }, ctx);
 		case "veil_history":
 			return await executeVeilHistory(params as { query: string; days?: number }, ctx);
+		case "veil_turn_meta":
+			return executeTurnMeta(params as { type: string; intent_id?: string; decision_summary?: string });
 		default:
 			return { success: false, error: `Unknown tool: ${name}` };
 	}
@@ -291,6 +316,11 @@ async function executeVeilHistory(params: { query: string; days?: number }, ctx:
 	const formatted = wrapToolResult("history", results.length, itemList);
 
 	return { success: true, data: { formatted, items: results } };
+}
+
+function executeTurnMeta(_params: { type: string; intent_id?: string; decision_summary?: string }): ToolResult {
+	// Storage will be wired up in Phase 8b; for now just acknowledge receipt
+	return { success: true };
 }
 
 // Wrap tool results in explicit tags for better model interpretation
