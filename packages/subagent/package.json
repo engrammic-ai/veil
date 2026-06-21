@@ -1,6 +1,6 @@
 {
 	"name": "@veil/subagent",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Subagent orchestration with Veil context propagation",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -12,7 +12,10 @@
 		},
 		"./package.json": "./package.json"
 	},
-	"files": ["dist", "src"],
+	"files": [
+		"dist",
+		"src"
+	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsc",
