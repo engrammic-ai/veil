@@ -1,0 +1,147 @@
+/**
+ * Process spawning for subagents
+ */
+
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { AgentConfig, SubagentContext } from "./types.ts";
+
+/**
+ * Build CLI arguments for spawning a veil child process
+ */
+export function getVeilInvocation(ctx: SubagentContext, agent: AgentConfig): string[] {
+	const args = [
+		"veil",
+		"--veil-parent-db",
+		ctx.parentDbPath,
+		"--veil-session-id",
+		ctx.sessionId,
+		"--veil-tag",
+		ctx.tag,
+		"--veil-ipc",
+		ctx.ipcPath,
+		"--mode",
+		"json",
+		"--no-session",
+	];
+
+	if (agent.model) {
+		args.push("--model", agent.model);
+	}
+
+	if (agent.tools && agent.tools.length > 0) {
+		args.push("--tools", agent.tools.join(","));
+	}
+
+	if (agent.veil?.enableVeilTools === false) {
+		args.push("--veil-tools", "false");
+	}
+
+	return args;
+}
+
+/**
+ * Get the veil binary invocation
+ */
+function getVeilBinary(): { command: string; args: string[] } {
+	const currentScript = process.argv[1];
+	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
+
+	if (currentScript && !isBunVirtualScript && fs.existsSync(currentScript)) {
+		return { command: process.execPath, args: [currentScript] };
+	}
+
+	const execName = path.basename(process.execPath).toLowerCase();
+	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
+
+	if (!isGenericRuntime) {
+		return { command: process.execPath, args: [] };
+	}
+
+	return { command: "veil", args: [] };
+}
+
+export interface SpawnOptions {
+	cwd: string;
+	task: string;
+	onStdout?: (line: string) => void;
+	onStderr?: (data: string) => void;
+	signal?: AbortSignal;
+}
+
+export interface SpawnResult {
+	exitCode: number;
+	stdout: string[];
+	stderr: string;
+}
+
+/**
+ * Spawn a subagent process
+ */
+export async function spawnSubagent(
+	ctx: SubagentContext,
+	agent: AgentConfig,
+	options: SpawnOptions,
+): Promise<SpawnResult> {
+	const invocation = getVeilBinary();
+	const cliArgs = getVeilInvocation(ctx, agent);
+
+	// Remove 'veil' from cliArgs (first element) since we handle binary separately
+	const args = [...invocation.args, ...cliArgs.slice(1), `Task: ${options.task}`];
+
+	return new Promise((resolve) => {
+		const proc = spawn(invocation.command, args, {
+			cwd: options.cwd,
+			shell: false,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		const stdout: string[] = [];
+		let stderr = "";
+		let buffer = "";
+
+		proc.stdout.on("data", (data) => {
+			buffer += data.toString();
+			const lines = buffer.split("\n");
+			buffer = lines.pop() || "";
+
+			for (const line of lines) {
+				stdout.push(line);
+				options.onStdout?.(line);
+			}
+		});
+
+		proc.stderr.on("data", (data) => {
+			stderr += data.toString();
+			options.onStderr?.(data.toString());
+		});
+
+		proc.on("close", (code) => {
+			if (buffer.trim()) {
+				stdout.push(buffer);
+				options.onStdout?.(buffer);
+			}
+			resolve({ exitCode: code ?? 0, stdout, stderr });
+		});
+
+		proc.on("error", () => {
+			resolve({ exitCode: 1, stdout, stderr });
+		});
+
+		if (options.signal) {
+			const killProc = () => {
+				proc.kill("SIGTERM");
+				setTimeout(() => {
+					if (!proc.killed) proc.kill("SIGKILL");
+				}, 5000);
+			};
+
+			if (options.signal.aborted) {
+				killProc();
+			} else {
+				options.signal.addEventListener("abort", killProc, { once: true });
+			}
+		}
+	});
+}

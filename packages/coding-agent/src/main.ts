@@ -720,14 +720,31 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 
 		// Create VeilHarness with graceful degradation
+		// Detect child (subagent) mode from CLI flags
 		const contextBudget = Math.floor((sessionOptions.model?.contextWindow ?? 128000) * 0.7);
+		const isChildMode = parsed.veilParentDb !== undefined;
 		let veilHarness: VeilHarness | undefined;
 		try {
-			veilHarness = new VeilHarness({
-				dbPath: join(veilDir, "context.db"),
-				maxTokens: contextBudget,
-				sessionId: sessionManager.getSessionId(),
-			});
+			if (isChildMode) {
+				// Child mode: connect to parent's IPC, apply tag prefix
+				veilHarness = new VeilHarness({
+					dbPath: join(veilDir, "context.db"),
+					maxTokens: contextBudget,
+					sessionId: sessionManager.getSessionId(),
+					parentDbPath: parsed.veilParentDb,
+					parentSessionId: parsed.veilSessionId,
+					tagPrefix: parsed.veilTag,
+					ipcPath: parsed.veilIpc,
+					enableVeilTools: parsed.veilTools ?? true,
+				});
+			} else {
+				// Normal mode
+				veilHarness = new VeilHarness({
+					dbPath: join(veilDir, "context.db"),
+					maxTokens: contextBudget,
+					sessionId: sessionManager.getSessionId(),
+				});
+			}
 		} catch (err) {
 			console.error(`Failed to initialize context management: ${err instanceof Error ? err.message : String(err)}`);
 			console.error("Continuing without context management.");

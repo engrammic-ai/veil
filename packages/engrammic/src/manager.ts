@@ -102,6 +102,7 @@ export class ContextManager {
 
 	/**
 	 * Store a new context item.
+	 * Also adds to loaded set so it's visible to eviction.
 	 */
 	remember(
 		content: string,
@@ -112,6 +113,9 @@ export class ContextManager {
 	): ContextItem {
 		const item = createItem(content, type, tags, toolCallId);
 		this.cache.put(item);
+
+		// Also add to loaded so eviction can see it
+		this.loaded.set(item.id, item);
 
 		// Track in budget (auto-captured items should count toward eviction threshold)
 		this.budget.usedTokens += estimateTokens(item.content);
@@ -302,8 +306,11 @@ export class ContextManager {
 	 * Call this before each LLM call.
 	 *
 	 * Items are demoted to cold storage, not deleted.
+	 *
+	 * @param taskCtx Current task context for scoring
+	 * @param contextUsagePercent Overall context window usage (0-100). When high, triggers more aggressive eviction.
 	 */
-	async checkEviction(taskCtx: TaskContext): Promise<EvictionCandidate[]> {
+	async checkEviction(taskCtx: TaskContext, contextUsagePercent: number = 0): Promise<EvictionCandidate[]> {
 		const availableTokens = this.budget.maxTokens - this.budget.reserveTokens;
 		const evicted: EvictionCandidate[] = [];
 		const currentTurn = this.turnCount;
@@ -316,27 +323,41 @@ export class ContextManager {
 		const staleMs = 2 * 60 * 60 * 1000;
 		const stale = this.cache.getStale(staleMs, 1);
 		for (const item of stale) {
-			if (this.loaded.has(item.id)) {
+			const wasLoaded = this.loaded.has(item.id);
+			if (wasLoaded) {
 				this.unload([item.id]);
+			}
+			await this.demoteToCold(item);
+			// Only count as "evicted" if it was loaded (freeing budget)
+			// Cache-only items are archival, not eviction
+			if (wasLoaded) {
 				evicted.push({ item, score: 0, reason: "age" });
 				this.eviction.recordEviction();
 			}
-			await this.demoteToCold(item);
 		}
 
-		// Stage 2: Soft evict low-score items if over threshold
+		// Determine if we need aggressive eviction based on overall context window
+		// When context is >70% full, start evicting even if internal budget is fine
+		const contextPressure = contextUsagePercent > 70;
+
+		// Stage 2: Soft evict low-score items if over threshold OR context under pressure
 		const threshold = this.eviction.getThreshold();
-		if (this.budget.usedTokens > availableTokens * threshold) {
+		const shouldSoftEvict = this.budget.usedTokens > availableTokens * threshold || contextPressure;
+
+		if (shouldSoftEvict) {
 			const candidates = findEvictionCandidates(Array.from(this.loaded.values()), taskCtx, this.config);
 
+			// Target: reduce to 60% of budget when context is under pressure
+			const targetPercent = contextPressure ? 0.6 : threshold - 0.1;
+
 			for (const { item, score } of candidates) {
-				if (this.budget.usedTokens <= availableTokens * (threshold - 0.1)) break;
+				if (this.budget.usedTokens <= availableTokens * targetPercent) break;
 				if (item.pinned || item.type === "intent") continue;
 				if (this.eviction.isOnCooldown(item.id, currentTurn)) continue;
 
 				this.unload([item.id]);
 				await this.demoteToCold(item);
-				evicted.push({ item, score, reason: "low_score" });
+				evicted.push({ item, score, reason: contextPressure ? "context_pressure" : "low_score" });
 				this.eviction.recordEviction();
 			}
 		}
@@ -365,7 +386,15 @@ export class ContextManager {
 		this.cache.markEvicting(item.id);
 		this.cache.logEviction(item.id, item.contentHash, this.turnCount);
 
-		const pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
+		let pointer: string | null;
+		try {
+			pointer = await this.circuitBreaker.execute(() => this.cold.demote(item));
+		} catch (e) {
+			// Circuit breaker threw - unmark to prevent stuck evicting state
+			this.cache.unmarkEvicting(item.id);
+			this.cache.clearEvictionForHash(item.contentHash);
+			throw e;
+		}
 
 		if (pointer !== null) {
 			item.kgPointer = pointer;
@@ -623,6 +652,7 @@ export class ContextManager {
 	/**
 	 * Flush all warm cache items to cold storage.
 	 * Call before session end to persist captured data.
+	 * Clears loaded map and resets budget to prevent stale state.
 	 */
 	async flush(): Promise<number> {
 		const items = this.cache.getAll();
@@ -636,6 +666,11 @@ export class ContextManager {
 				// Circuit breaker may trip; continue with remaining items
 			}
 		}
+
+		// Clear loaded map and reset budget to prevent stale state after flush
+		this.loaded.clear();
+		this.budget.usedTokens = 0;
+
 		return flushed;
 	}
 

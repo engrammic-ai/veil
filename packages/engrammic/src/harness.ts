@@ -9,6 +9,7 @@
  *   }
  */
 
+import { existsSync } from "node:fs";
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
@@ -24,6 +25,8 @@ import {
 	type ConvergenceThresholds,
 	type EscalationResult,
 } from "./convergence.ts";
+import { type ArchivedTurn, ConversationArchive } from "./conversation-archive.ts";
+import { createEvictionFeedbackTracker, detectRerequest, type EvictionFeedbackTracker } from "./eviction-feedback.ts";
 import { getExtractor } from "./extractors/index.ts";
 import type { EnhancedCaptureRule, ExtractorResult } from "./extractors/types.ts";
 import { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
@@ -36,13 +39,19 @@ import {
 } from "./goal-inference.ts";
 import { detectStubs, formatHydratedBlock, hydrateStub } from "./hydration.ts";
 import { buildContextSection, buildFailureSection, formatStub } from "./injection.ts";
+import { IpcClient } from "./ipc-client.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
 import { buildCheckpointPrompt, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
+import { computeReferencePenalty } from "./reference-detector.ts";
 import { type SelectionResult, selectForTurn, type TurnContext } from "./retrieval.ts";
 import { rankItems } from "./scorer.ts";
+import Database from "./sqlite.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
 import { handleTrigger, isDangerousCommand, type TriggerResult } from "./triggers.ts";
+import { classifyTurn, stripTurnMeta } from "./turn-classifier.ts";
+import { rankForEviction, selectForEviction } from "./turn-eviction.ts";
+import { generateStub } from "./turn-stub.ts";
 import type {
 	CaptureConfig,
 	ContextItem,
@@ -100,6 +109,29 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	convergenceThresholds?: Partial<ConvergenceThresholds>;
 	onConvergenceWarning?: (state: ConvergenceState, result: EscalationResult) => void;
 	onConvergenceHalt?: (state: ConvergenceState, result: EscalationResult) => void;
+	// Subagent child mode options
+	parentDbPath?: string; // Parent's warm cache DB path (presence indicates child mode)
+	parentSessionId?: string; // Parent session ID for provenance tracking
+	tagPrefix?: string; // Memory namespace prefix, e.g. "scout"
+	ipcPath?: string; // IPC socket path for parent-child communication
+	enableVeilTools?: boolean; // Whether to enable veil_* tools (default: true)
+	archivePath?: string; // Path to conversation archive DB (enables turn archiving when provided)
+}
+
+export interface ImportOptions {
+	/** Tag prefix for imported items (default: from child context) */
+	tag?: string;
+	/** Transfer cognitive weights from child (default: true) */
+	transferWeights?: boolean;
+	/** Child session ID for provenance */
+	sessionId?: string;
+}
+
+export interface ImportResult {
+	/** Number of items imported */
+	imported: number;
+	/** Number of items skipped (duplicates) */
+	skipped: number;
 }
 
 export interface BeforeToolCallContext {
@@ -165,6 +197,9 @@ export class VeilHarness {
 	private memoryEventListeners: Array<(event: MemoryEvent) => void> = [];
 	private tokenBudget = { used: 0, softWarningEmitted: false };
 
+	// Overall context window usage (0-100%), updated by agent-session
+	private contextUsagePercent: number = 0;
+
 	// Cat widget
 	private catWidget: CatWidget;
 	private catEnabled: boolean = true;
@@ -185,6 +220,12 @@ export class VeilHarness {
 	// Feedback loop
 	private feedbackTracker: FeedbackTracker = new FeedbackTracker();
 
+	// Conversation eviction
+	private conversationArchive?: ConversationArchive;
+	private turnCounter: number = 0;
+	private evictionFeedbackTracker: EvictionFeedbackTracker = createEvictionFeedbackTracker();
+	private evictionStubs: string[] = [];
+
 	private pendingCaptures: Map<
 		string,
 		{
@@ -198,6 +239,12 @@ export class VeilHarness {
 		}
 	> = new Map();
 	private autoCapturedIds: Set<string> = new Set();
+
+	// Subagent child mode
+	private isChildMode: boolean = false;
+	private tagPrefix: string | undefined;
+	private parentSessionId: string | undefined;
+	private ipcClient: IpcClient | null = null;
 
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
@@ -215,6 +262,107 @@ export class VeilHarness {
 		this.attemptStore = new AttemptStore(this.manager.getCache().getDb());
 		this.goalState = createGoalInferenceState();
 		this.convergenceMonitor = new ConvergenceMonitor(config.convergenceThresholds);
+
+		// Child mode initialization
+		this.isChildMode = config.parentDbPath !== undefined;
+		this.tagPrefix = config.tagPrefix;
+		this.parentSessionId = config.parentSessionId;
+
+		if (this.isChildMode && config.ipcPath) {
+			this.initIpcClient(config.ipcPath);
+		}
+
+		if (config.archivePath) {
+			this.conversationArchive = new ConversationArchive(config.archivePath);
+			// Initialize async — errors are non-fatal
+			this.conversationArchive.init().catch((err) => {
+				console.error("[veil] ConversationArchive init failed:", err);
+				this.conversationArchive = undefined;
+			});
+		}
+	}
+
+	/**
+	 * Initialize IPC client connection to parent process.
+	 * Sends "ready" message on successful connection.
+	 */
+	private initIpcClient(socketPath: string): void {
+		this.ipcClient = new IpcClient(socketPath);
+		this.ipcClient
+			.connect()
+			.then(() => {
+				// Send ready message
+				this.ipcClient?.send({ version: 1, type: "ready" });
+
+				// Listen for parent messages
+				this.ipcClient?.onMessage((msg) => {
+					if (msg.type === "ping") {
+						this.ipcClient?.send({ version: 1, type: "pong" });
+					}
+					// Additional handlers can be added here for interrupt, redirect, etc.
+				});
+			})
+			.catch((err) => {
+				console.error(`[veil] IPC connection failed: ${err}`);
+				this.ipcClient = null;
+			});
+	}
+
+	/**
+	 * Send a checkpoint message to parent via IPC.
+	 * Called on turn completion when in child mode.
+	 */
+	sendCheckpoint(lastTool?: string): void {
+		if (!this.ipcClient?.connected) return;
+
+		this.ipcClient.send({
+			version: 1,
+			type: "checkpoint",
+			turn: this.getTurnCount(),
+			tokens: this.getBudget().usedTokens,
+			timestamp: Date.now(),
+			lastTool,
+		});
+	}
+
+	/**
+	 * Send completion message to parent via IPC.
+	 */
+	sendComplete(result: string): void {
+		if (!this.ipcClient?.connected) return;
+
+		this.ipcClient.send({
+			version: 1,
+			type: "complete",
+			result,
+		});
+	}
+
+	/**
+	 * Send error message to parent via IPC.
+	 */
+	sendError(message: string): void {
+		if (!this.ipcClient?.connected) return;
+
+		this.ipcClient.send({
+			version: 1,
+			type: "error",
+			message,
+		});
+	}
+
+	/**
+	 * Check if this harness is running in child (subagent) mode.
+	 */
+	getIsChildMode(): boolean {
+		return this.isChildMode;
+	}
+
+	/**
+	 * Get the tag prefix for child mode captures.
+	 */
+	getTagPrefix(): string | undefined {
+		return this.tagPrefix;
 	}
 
 	/**
@@ -262,14 +410,30 @@ export class VeilHarness {
 		context: BeforeToolCallContext,
 		_signal?: AbortSignal,
 	): Promise<BeforeToolCallResult | undefined> {
+		// Extract veil_turn_meta metadata when the model calls it
+		if (context.toolCall.name === "veil_turn_meta") {
+			const params = context.args as { type?: string; intent_id?: string; decision_summary?: string };
+			if (this.conversationArchive && params.type) {
+				// Archive the meta annotation as a pseudo-assistant turn
+				const metaContent = `[turn-meta: type=${params.type}${params.intent_id ? ` intent=${params.intent_id}` : ""}${params.decision_summary ? ` decision=${params.decision_summary}` : ""}]`;
+				await this.archiveTurn("assistant", metaContent);
+			}
+		}
+
 		// Emit watching event when tool starts
 		this.emitMemoryEvent("watching", context.toolCall.name);
 
 		// Update task context based on tool being called
 		this.updateTaskContext(context.toolCall.name, context.args);
 
-		// Check if eviction needed
-		const evicted = await this.manager.checkEviction(this.currentTaskContext);
+		// Check triggers for auto-recall before tool execution
+		const triggerResult = this.checkTriggers(context.toolCall.name, context.args);
+		if (triggerResult && triggerResult.items.length > 0) {
+			this.emitMemoryEvent("recalled", `trigger:${triggerResult.reason}`);
+		}
+
+		// Check if eviction needed (pass overall context usage for pressure-based eviction)
+		const evicted = await this.manager.checkEviction(this.currentTaskContext, this.contextUsagePercent);
 
 		if (evicted.length > 0) {
 			// Track evicted tool call IDs for faded history
@@ -354,6 +518,12 @@ export class VeilHarness {
 	 * Updates cognitive weights based on success/failure.
 	 */
 	async afterToolCall(context: AfterToolCallContext, _signal?: AbortSignal): Promise<AfterToolCallResult | undefined> {
+		// Archive tool result as a turn
+		if (this.conversationArchive && context.toolCall.name !== "veil_turn_meta") {
+			const toolSummary = `[tool:${context.toolCall.name}${context.result.isError ? " error" : " ok"}]`;
+			await this.archiveTurn("tool", toolSummary);
+		}
+
 		// Record outcome for cognitive weight tracking
 		const success = !context.result.isError;
 		this.manager.recordOutcome(success);
@@ -698,6 +868,105 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Archive a conversation turn. Classifies it and persists to the conversation archive.
+	 * No-op when no archivePath was configured.
+	 */
+	async archiveTurn(role: "user" | "assistant" | "tool", content: string): Promise<void> {
+		if (!this.conversationArchive) return;
+
+		this.turnCounter++;
+		const meta = role !== "tool" ? classifyTurn(content, role) : { type: "action" as const };
+		const cleanContent = role === "assistant" ? stripTurnMeta(content) : content;
+
+		const turn: ArchivedTurn = {
+			turnId: `${this.sessionId ?? "session"}-${this.turnCounter}`,
+			sessionId: this.sessionId ?? "unknown",
+			turnNumber: this.turnCounter,
+			role,
+			content: cleanContent,
+			metaType: meta.type,
+			intentId: meta.intentId,
+			decisionSummary: meta.decisionSummary,
+		};
+
+		await this.conversationArchive.archiveTurn(turn);
+
+		// Check for rerequest feedback in user messages
+		if (role === "user") {
+			const feedback = detectRerequest(content, this.turnCounter);
+			if (feedback) {
+				this.evictionFeedbackTracker.record(feedback);
+			}
+		}
+	}
+
+	/**
+	 * Evict conversation turns to reclaim approximately targetTokens of context space.
+	 * Returns the turn IDs that were evicted.
+	 */
+	async evictConversationTurns(targetTokens: number): Promise<string[]> {
+		if (!this.conversationArchive) return [];
+
+		const allTurns = await this.conversationArchive.getTurnRange(this.sessionId ?? "unknown", 1, this.turnCounter);
+
+		if (allTurns.length === 0) return [];
+
+		// Build scored candidates with reference penalty (1.0 when no embeddings)
+		const candidates = allTurns.map((t) => {
+			const referencePenalty = t.embedding
+				? computeReferencePenalty(
+						{ turnId: t.turnId, turnNumber: t.turnNumber, embedding: t.embedding },
+						allTurns
+							.filter((r) => r.embedding && r.turnNumber > t.turnNumber)
+							.slice(-5)
+							.map((r) => ({ turnId: r.turnId, turnNumber: r.turnNumber, embedding: r.embedding! })),
+					)
+				: 1.0;
+			return { turnId: t.turnId, turnNumber: t.turnNumber, type: t.metaType ?? "action", referencePenalty };
+		});
+
+		const ranked = rankForEviction(candidates, this.turnCounter);
+
+		const tokenCounts = new Map<string, number>(allTurns.map((t) => [t.turnId, estimateTokens(t.content)]));
+
+		const toEvict = selectForEviction(ranked, tokenCounts, targetTokens);
+		if (toEvict.length === 0) return [];
+
+		// Generate stubs for evicted turns grouped together
+		const evictedTurns = allTurns.filter((t) => toEvict.includes(t.turnId));
+		const stub = generateStub({ turns: evictedTurns });
+		this.evictionStubs.push(stub);
+
+		// Mark evicted in archive
+		for (const turnId of toEvict) {
+			await this.conversationArchive.markEvicted(turnId, stub);
+		}
+
+		return toEvict;
+	}
+
+	/**
+	 * Get stub text for evicted conversation turns (for context injection).
+	 */
+	getEvictionStubs(): string[] {
+		return [...this.evictionStubs];
+	}
+
+	/**
+	 * Get the eviction feedback tracker for threshold tuning.
+	 */
+	getEvictionFeedbackTracker(): EvictionFeedbackTracker {
+		return this.evictionFeedbackTracker;
+	}
+
+	/**
+	 * Get the conversation archive instance (may be undefined if not configured).
+	 */
+	getConversationArchive(): ConversationArchive | undefined {
+		return this.conversationArchive;
+	}
+
+	/**
 	 * Update task context based on tool usage.
 	 */
 	private updateTaskContext(toolName: string, args: unknown): void {
@@ -975,8 +1244,18 @@ export class VeilHarness {
 
 	/**
 	 * Forget an item entirely.
+	 * Also decrements capture budget if item was auto-captured.
 	 */
 	async forget(id: string) {
+		// Decrement capture budget if this was an auto-captured item
+		if (this.autoCapturedIds.has(id)) {
+			const item = this.manager.getWindow().items.find((i) => i.id === id);
+			if (item) {
+				const freed = this.estimateTokens(item.content);
+				this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
+			}
+			this.autoCapturedIds.delete(id);
+		}
 		return this.manager.forget(id);
 	}
 
@@ -988,14 +1267,31 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Update the overall context window usage (0-100%).
+	 * Called by agent-session to inform eviction decisions.
+	 */
+	setContextUsage(percent: number): void {
+		this.contextUsagePercent = Math.max(0, Math.min(100, percent));
+	}
+
+	/**
+	 * Get the current context usage percentage.
+	 */
+	getContextUsage(): number {
+		return this.contextUsagePercent;
+	}
+
+	/**
 	 * Force eviction sweep. Demotes low-score items to cold storage.
 	 * Called by /compact command for manual context reduction.
+	 * Always passes 100% context usage to trigger aggressive eviction.
 	 */
 	async forceEviction(): Promise<EvictionCandidate[]> {
 		const taskCtx: TaskContext = {
 			tags: [],
 		};
-		return this.manager.checkEviction(taskCtx);
+		// Force eviction by simulating 100% context pressure
+		return this.manager.checkEviction(taskCtx, 100);
 	}
 
 	/**
@@ -1270,11 +1566,137 @@ export class VeilHarness {
 	}
 
 	/**
+	 * Import context items from a child subagent's database.
+	 * Opens the child DB read-only, deduplicates by content_hash, and imports
+	 * items with provenance tags.
+	 *
+	 * @param childDbPath Path to the child's warm cache DB
+	 * @param options Import options (tag, transferWeights, sessionId)
+	 * @returns Import result with counts
+	 */
+	async importFromDb(childDbPath: string, options: ImportOptions = {}): Promise<ImportResult> {
+		if (!existsSync(childDbPath)) {
+			return { imported: 0, skipped: 0 };
+		}
+
+		const { tag, transferWeights = true, sessionId } = options;
+		const parentCache = this.manager.getCache();
+
+		// Open child DB (not read-only to ensure WAL data is accessible)
+		// We use a separate connection so we don't interfere with any active connections
+		let childDb: InstanceType<typeof Database>;
+		try {
+			childDb = new Database(childDbPath);
+			// Checkpoint WAL to ensure all data is visible
+			childDb.pragma("wal_checkpoint(TRUNCATE)");
+		} catch (err) {
+			console.error(`[veil] Failed to open child DB: ${err}`);
+			return { imported: 0, skipped: 0 };
+		}
+
+		let imported = 0;
+		let skipped = 0;
+
+		try {
+			// Check if items table exists
+			const tableCheck = childDb
+				.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='items'")
+				.get() as { name: string } | undefined;
+			if (!tableCheck) {
+				return { imported: 0, skipped: 0 };
+			}
+
+			// Read all items from child DB
+			const rows = childDb.prepare("SELECT * FROM items").all() as Array<{
+				id: string;
+				content: string;
+				content_hash: string;
+				created_at: number;
+				last_access: number;
+				access_count: number;
+				decay_score: number;
+				cognitive_weight: number;
+				stability: number;
+				difficulty: number;
+				type: string;
+				tags: string;
+				pinned: number;
+				kg_pointer: string | null;
+				depends_on: string | null;
+				valid_from: number | null;
+				valid_until: number | null;
+				source: string;
+				source_tool_call_id: string | null;
+			}>;
+
+			for (const row of rows) {
+				// Check if parent already has this item by content_hash
+				const existing = parentCache.getByHash(row.content_hash);
+				if (existing) {
+					// Optionally transfer cognitive weight from child
+					if (transferWeights && row.cognitive_weight !== 0) {
+						parentCache.updateCognitiveWeight(existing.id, row.cognitive_weight * 0.5);
+					}
+					skipped++;
+					continue;
+				}
+
+				// Parse and augment tags with provenance
+				let tags: string[] = [];
+				try {
+					tags = JSON.parse(row.tags);
+				} catch {
+					tags = [];
+				}
+
+				// Add provenance tags
+				if (tag) {
+					tags.push(`veil:subagent=${tag}`);
+				}
+				if (sessionId) {
+					tags.push(`veil:child-session=${sessionId}`);
+				}
+
+				// Create item for parent cache
+				const item: ContextItem = {
+					id: `imported_${row.content_hash}_${Date.now()}`,
+					content: row.content,
+					contentHash: row.content_hash,
+					createdAt: row.created_at,
+					lastAccess: Date.now(),
+					accessCount: 1,
+					usedCount: 0,
+					ignoredCount: 0,
+					decayScore: row.decay_score,
+					cognitiveWeight: transferWeights ? row.cognitive_weight : 0,
+					stability: row.stability ?? 0.5,
+					difficulty: row.difficulty ?? 0.5,
+					type: row.type as ContextItem["type"],
+					tags,
+					pinned: false,
+					source: "auto",
+					kgPointer: row.kg_pointer ?? undefined,
+					dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
+				};
+
+				parentCache.put(item);
+				imported++;
+			}
+		} finally {
+			childDb.close();
+		}
+
+		return { imported, skipped };
+	}
+
+	/**
 	 * Close all connections and clean up event subscriptions.
 	 */
 	async close() {
 		this.flushPendingCaptures();
 		this.unsubscribe?.();
+		this.ipcClient?.close();
+		this.conversationArchive?.close();
 		return this.manager.close();
 	}
 }

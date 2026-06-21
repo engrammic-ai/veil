@@ -49,6 +49,12 @@ export {
 	renderContextSearch,
 	type SearchResult,
 } from "./commands/context.ts";
+export {
+	executeHistoryCommand,
+	formatHistoryResults,
+	type HistoryCommandOptions,
+	type HistoryResult,
+} from "./commands/history.ts";
 // Compression pipeline
 export {
 	type CodeCompressOptions,
@@ -76,7 +82,16 @@ export {
 	type EscalationResult,
 	isProgress,
 } from "./convergence.ts";
+export { type ArchivedTurn, ConversationArchive } from "./conversation-archive.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
+export {
+	createEvictionFeedbackTracker,
+	detectRerequest,
+	type EvictionFeedback,
+	type EvictionFeedbackTracker,
+	type EvictionFeedbackType,
+	REREQUEST_PATTERNS,
+} from "./eviction-feedback.ts";
 export { createVeilExtension } from "./extension.ts";
 export { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
 export { DEFAULT_FSRS_CONFIG, defaultFSRS, type FSRSConfig, FSRSEngine } from "./fsrs.ts";
@@ -104,6 +119,8 @@ export {
 	type AfterToolCallResult,
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
+	type ImportOptions as SubagentImportOptions,
+	type ImportResult as SubagentImportResult,
 	type MemoryEvent,
 	type MemoryEventType,
 	type ToolResultEvent,
@@ -137,6 +154,8 @@ export type {
 	SessionIntentManagerOptions,
 } from "./intent/index.ts";
 export { generateIntentId, loadProjectIntent, SessionIntentManager, saveProjectIntent } from "./intent/index.ts";
+// IPC client for child mode
+export { type ChildMessage, IpcClient, type ParentMessage } from "./ipc-client.ts";
 // Core
 export { ContextManager } from "./manager.ts";
 export {
@@ -149,6 +168,13 @@ export {
 	parseMemoryFile,
 } from "./okf-bundle.ts";
 export { buildCheckpointPrompt, type CheckpointPromptOptions, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
+export {
+	computeReferencePenalty,
+	cosineSimilarity,
+	isProtected,
+	SIMILARITY_THRESHOLD,
+	type TurnWithEmbedding,
+} from "./reference-detector.ts";
 export {
 	computeRelevanceScore,
 	formatSelectedContext,
@@ -172,6 +198,17 @@ export {
 	type TriggerResult,
 	type TriggerType,
 } from "./triggers.ts";
+export { classifyTurn, heuristicClassify, parseTurnMeta, stripTurnMeta } from "./turn-classifier.ts";
+export {
+	calculateEvictionScore,
+	isNeverEvict,
+	PROTECTED_WINDOW,
+	rankForEviction,
+	type ScoredTurn,
+	selectForEviction,
+	TYPE_WEIGHTS,
+} from "./turn-eviction.ts";
+export { generateStub, groupConsecutiveTurns, type StubOptions, summarizeAction } from "./turn-stub.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,

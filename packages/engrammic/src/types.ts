@@ -83,6 +83,13 @@ export interface ContextManifest {
 	items: ManifestItem[]; // Max 10
 }
 
+export interface TurnMeta {
+	type: "decision" | "exploration" | "action" | "correction" | "status" | "intent";
+	intentId?: string;
+	decisionSummary?: string;
+	turnNumber?: number; // filled in by harness
+}
+
 export interface TaskContext {
 	tags: string[];
 	currentFile?: string;
@@ -98,7 +105,7 @@ export interface ContextBudget {
 export interface EvictionCandidate {
 	item: ContextItem;
 	score: number;
-	reason: "age" | "low_score" | "budget" | "manual";
+	reason: "age" | "low_score" | "budget" | "manual" | "context_pressure";
 }
 
 export interface EvictionNotifyConfig {
