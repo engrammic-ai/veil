@@ -1,5 +1,0 @@
- packages/engrammic/src/intent/index.ts          |   2 +
- packages/engrammic/src/intent/intent-types.ts   |  40 +++++++++
- packages/engrammic/src/intent/intent.test.ts    | 106 ++++++++++++++++++++++++
- packages/engrammic/src/intent/project-intent.ts |  38 +++++++++
- 4 files changed, 186 insertions(+)
