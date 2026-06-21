@@ -34,6 +34,8 @@ export class SubagentPanel implements Component {
 	public onKill?: (tag: string) => void;
 	public onPause?: (tag: string) => void;
 	public onResume?: (tag: string) => void;
+	public onRetry?: (tag: string) => void;
+	public onSkip?: (tag: string) => void;
 	public onEscalationAnswer?: (tag: string, requestId: string, answer: string) => void;
 
 	constructor(mode: "single" | "parallel" | "chain", theme?: SubagentPanelTheme) {
@@ -145,6 +147,14 @@ export class SubagentPanel implements Component {
 			lines.push(this.theme.dim(`     -> ${agent.lastTool}`));
 		}
 
+		// Error state with options
+		if (agent.status === "error") {
+			if (agent.error) {
+				lines.push(`    ${this.theme.error(`Error: ${agent.error}`)}`);
+			}
+			lines.push(this.theme.dim("    [r] Retry  [s] Skip  [d] Details"));
+		}
+
 		// Escalation display (always show when escalating, even if not expanded)
 		if (agent.status === "escalating" && agent.escalation) {
 			lines.push("");
@@ -210,6 +220,18 @@ export class SubagentPanel implements Component {
 			}
 			if (keyData === "n" || keyData === "N") {
 				this.answerEscalation(selectedTag!, selectedAgent.escalation.requestId, "no");
+				return;
+			}
+		}
+
+		// Handle error state keys
+		if (selectedAgent?.status === "error") {
+			if (keyData === "r" || keyData === "R") {
+				if (this.onRetry) this.onRetry(selectedTag!);
+				return;
+			}
+			if (keyData === "s" || keyData === "S") {
+				if (this.onSkip) this.onSkip(selectedTag!);
 				return;
 			}
 		}

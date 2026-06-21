@@ -346,3 +346,59 @@ describe("SubagentPanel keyboard", () => {
 		expect(lines.some((l) => l.includes("grep"))).toBe(true);
 	});
 });
+
+describe("SubagentPanel error state", () => {
+	it("shows error state with retry/skip options", () => {
+		const panel = new SubagentPanel("parallel");
+		panel.addAgent("scout", "Find files");
+		panel.onError("scout", "Rate limit exceeded");
+
+		const lines = panel.render(70);
+		expect(lines.some((l) => l.includes("X"))).toBe(true); // error icon
+		expect(lines.some((l) => l.includes("Rate limit"))).toBe(true);
+		expect(lines.some((l) => l.includes("[r] Retry"))).toBe(true);
+		expect(lines.some((l) => l.includes("[s] Skip"))).toBe(true);
+	});
+
+	it("calls onRetry when r pressed on error", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.onError("scout", "Rate limit");
+
+		let retriedTag: string | null = null;
+		panel.onRetry = (tag) => {
+			retriedTag = tag;
+		};
+
+		panel.handleInput("r");
+		expect(retriedTag).toBe("scout");
+	});
+
+	it("calls onSkip when s pressed on error", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.onError("scout", "Rate limit");
+
+		let skippedTag: string | null = null;
+		panel.onSkip = (tag) => {
+			skippedTag = tag;
+		};
+
+		panel.handleInput("s");
+		expect(skippedTag).toBe("scout");
+	});
+
+	it("r does not call onRetry when agent is not in error state", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		// agent is 'pending' by default
+
+		let retriedTag: string | null = null;
+		panel.onRetry = (tag) => {
+			retriedTag = tag;
+		};
+
+		panel.handleInput("r");
+		expect(retriedTag).toBeNull(); // onRetry not called for non-error agents
+	});
+});
