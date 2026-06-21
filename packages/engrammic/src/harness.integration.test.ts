@@ -256,3 +256,106 @@ describe("UX integration", () => {
 		await harness.close();
 	});
 });
+
+describe("conversation eviction integration", () => {
+	let tmpDir: string;
+	let harness: VeilHarness;
+
+	beforeEach(async () => {
+		tmpDir = mkdtempSync(join(tmpdir(), "harness-conv-"));
+		harness = new VeilHarness({
+			dbPath: join(tmpDir, "context.db"),
+			archivePath: join(tmpDir, "archive.db"),
+			sessionId: "conv-test",
+		});
+		// Allow async init to settle
+		await new Promise((r) => setTimeout(r, 20));
+	});
+
+	afterEach(async () => {
+		await harness.close();
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	it("archiveTurn stores user and assistant turns", async () => {
+		await harness.archiveTurn("user", "I want to refactor the auth module");
+		await harness.archiveTurn("assistant", "I'll start by reading the current implementation");
+
+		const archive = harness.getConversationArchive();
+		expect(archive).toBeDefined();
+
+		const turns = await archive!.getTurnRange("conv-test", 1, 10);
+		expect(turns).toHaveLength(2);
+		expect(turns[0]!.role).toBe("user");
+		expect(turns[0]!.metaType).toBe("intent");
+		expect(turns[1]!.role).toBe("assistant");
+		expect(turns[1]!.metaType).toBe("action");
+	});
+
+	it("archiveTurn classifies turn types correctly", async () => {
+		await harness.archiveTurn("user", "No, that's wrong — instead use the factory pattern");
+		await harness.archiveTurn("assistant", "Done with the refactor, all tests pass");
+
+		const archive = harness.getConversationArchive();
+		const turns = await archive!.getTurnRange("conv-test", 1, 10);
+		expect(turns[0]!.metaType).toBe("correction");
+		expect(turns[1]!.metaType).toBe("status");
+	});
+
+	it("evictConversationTurns returns evicted turn IDs and produces stubs", async () => {
+		// Archive enough turns to get past the protected window (12)
+		for (let i = 0; i < 15; i++) {
+			await harness.archiveTurn("assistant", `Completed step ${i} of the migration process`);
+		}
+
+		const evicted = await harness.evictConversationTurns(500);
+		expect(evicted.length).toBeGreaterThan(0);
+
+		const stubs = harness.getEvictionStubs();
+		expect(stubs.length).toBeGreaterThan(0);
+		expect(stubs[0]).toContain("summarized");
+	});
+
+	it("evictConversationTurns protects recent turns", async () => {
+		// Archive only turns within the protected window
+		for (let i = 0; i < 5; i++) {
+			await harness.archiveTurn("assistant", `Recent action ${i}`);
+		}
+
+		const evicted = await harness.evictConversationTurns(1000);
+		// All turns are within protected window — nothing should be evicted
+		expect(evicted).toHaveLength(0);
+	});
+
+	it("detects rerequest feedback from user messages", async () => {
+		await harness.archiveTurn("user", "What did we decide about the auth approach?");
+
+		const tracker = harness.getEvictionFeedbackTracker();
+		const recent = tracker.getRecentFeedback(5);
+		expect(recent).toHaveLength(1);
+		expect(recent[0]!.type).toBe("rerequest");
+	});
+
+	it("afterToolCall archives tool results when archive is configured", async () => {
+		await harness.afterToolCall({ toolCall: { name: "Read" }, result: { isError: false } });
+
+		const archive = harness.getConversationArchive();
+		const turns = await archive!.getTurnRange("conv-test", 1, 10);
+		expect(turns.some((t) => t.role === "tool" && t.content.includes("Read"))).toBe(true);
+	});
+
+	it("veil_turn_meta in beforeToolCall archives a meta turn", async () => {
+		await harness.beforeToolCall({
+			toolCall: { name: "veil_turn_meta" },
+			args: { type: "decision", decision_summary: "Use SQLite for storage" },
+		});
+
+		const archive = harness.getConversationArchive();
+		const turns = await archive!.getTurnRange("conv-test", 1, 10);
+		expect(turns.some((t) => t.content.includes("type=decision"))).toBe(true);
+	});
+
+	it("getEvictionStubs returns empty when no evictions occurred", () => {
+		expect(harness.getEvictionStubs()).toHaveLength(0);
+	});
+});

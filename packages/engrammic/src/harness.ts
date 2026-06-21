@@ -25,6 +25,8 @@ import {
 	type ConvergenceThresholds,
 	type EscalationResult,
 } from "./convergence.ts";
+import { type ArchivedTurn, ConversationArchive } from "./conversation-archive.ts";
+import { createEvictionFeedbackTracker, detectRerequest, type EvictionFeedbackTracker } from "./eviction-feedback.ts";
 import { getExtractor } from "./extractors/index.ts";
 import type { EnhancedCaptureRule, ExtractorResult } from "./extractors/types.ts";
 import { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
@@ -41,11 +43,15 @@ import { IpcClient } from "./ipc-client.ts";
 import { analyzePatterns, patternToTrigger } from "./learning.ts";
 import { ContextManager } from "./manager.ts";
 import { buildCheckpointPrompt, CONTEXT_MANAGEMENT_PROMPT } from "./prompts.ts";
+import { computeReferencePenalty } from "./reference-detector.ts";
 import { type SelectionResult, selectForTurn, type TurnContext } from "./retrieval.ts";
 import { rankItems } from "./scorer.ts";
 import Database from "./sqlite.ts";
 import { executeVeilTool, TOOL_SCHEMAS, type ToolDefinition, type ToolResult } from "./tools.ts";
 import { handleTrigger, isDangerousCommand, type TriggerResult } from "./triggers.ts";
+import { classifyTurn, stripTurnMeta } from "./turn-classifier.ts";
+import { rankForEviction, selectForEviction } from "./turn-eviction.ts";
+import { generateStub } from "./turn-stub.ts";
 import type {
 	CaptureConfig,
 	ContextItem,
@@ -109,6 +115,7 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	tagPrefix?: string; // Memory namespace prefix, e.g. "scout"
 	ipcPath?: string; // IPC socket path for parent-child communication
 	enableVeilTools?: boolean; // Whether to enable veil_* tools (default: true)
+	archivePath?: string; // Path to conversation archive DB (enables turn archiving when provided)
 }
 
 export interface ImportOptions {
@@ -213,6 +220,12 @@ export class VeilHarness {
 	// Feedback loop
 	private feedbackTracker: FeedbackTracker = new FeedbackTracker();
 
+	// Conversation eviction
+	private conversationArchive?: ConversationArchive;
+	private turnCounter: number = 0;
+	private evictionFeedbackTracker: EvictionFeedbackTracker = createEvictionFeedbackTracker();
+	private evictionStubs: string[] = [];
+
 	private pendingCaptures: Map<
 		string,
 		{
@@ -257,6 +270,15 @@ export class VeilHarness {
 
 		if (this.isChildMode && config.ipcPath) {
 			this.initIpcClient(config.ipcPath);
+		}
+
+		if (config.archivePath) {
+			this.conversationArchive = new ConversationArchive(config.archivePath);
+			// Initialize async — errors are non-fatal
+			this.conversationArchive.init().catch((err) => {
+				console.error("[veil] ConversationArchive init failed:", err);
+				this.conversationArchive = undefined;
+			});
 		}
 	}
 
@@ -388,6 +410,16 @@ export class VeilHarness {
 		context: BeforeToolCallContext,
 		_signal?: AbortSignal,
 	): Promise<BeforeToolCallResult | undefined> {
+		// Extract veil_turn_meta metadata when the model calls it
+		if (context.toolCall.name === "veil_turn_meta") {
+			const params = context.args as { type?: string; intent_id?: string; decision_summary?: string };
+			if (this.conversationArchive && params.type) {
+				// Archive the meta annotation as a pseudo-assistant turn
+				const metaContent = `[turn-meta: type=${params.type}${params.intent_id ? ` intent=${params.intent_id}` : ""}${params.decision_summary ? ` decision=${params.decision_summary}` : ""}]`;
+				await this.archiveTurn("assistant", metaContent);
+			}
+		}
+
 		// Emit watching event when tool starts
 		this.emitMemoryEvent("watching", context.toolCall.name);
 
@@ -486,6 +518,12 @@ export class VeilHarness {
 	 * Updates cognitive weights based on success/failure.
 	 */
 	async afterToolCall(context: AfterToolCallContext, _signal?: AbortSignal): Promise<AfterToolCallResult | undefined> {
+		// Archive tool result as a turn
+		if (this.conversationArchive && context.toolCall.name !== "veil_turn_meta") {
+			const toolSummary = `[tool:${context.toolCall.name}${context.result.isError ? " error" : " ok"}]`;
+			await this.archiveTurn("tool", toolSummary);
+		}
+
 		// Record outcome for cognitive weight tracking
 		const success = !context.result.isError;
 		this.manager.recordOutcome(success);
@@ -827,6 +865,105 @@ export class VeilHarness {
 	 */
 	getConvergenceMonitor(): ConvergenceMonitor {
 		return this.convergenceMonitor;
+	}
+
+	/**
+	 * Archive a conversation turn. Classifies it and persists to the conversation archive.
+	 * No-op when no archivePath was configured.
+	 */
+	async archiveTurn(role: "user" | "assistant" | "tool", content: string): Promise<void> {
+		if (!this.conversationArchive) return;
+
+		this.turnCounter++;
+		const meta = role !== "tool" ? classifyTurn(content, role) : { type: "action" as const };
+		const cleanContent = role === "assistant" ? stripTurnMeta(content) : content;
+
+		const turn: ArchivedTurn = {
+			turnId: `${this.sessionId ?? "session"}-${this.turnCounter}`,
+			sessionId: this.sessionId ?? "unknown",
+			turnNumber: this.turnCounter,
+			role,
+			content: cleanContent,
+			metaType: meta.type,
+			intentId: meta.intentId,
+			decisionSummary: meta.decisionSummary,
+		};
+
+		await this.conversationArchive.archiveTurn(turn);
+
+		// Check for rerequest feedback in user messages
+		if (role === "user") {
+			const feedback = detectRerequest(content, this.turnCounter);
+			if (feedback) {
+				this.evictionFeedbackTracker.record(feedback);
+			}
+		}
+	}
+
+	/**
+	 * Evict conversation turns to reclaim approximately targetTokens of context space.
+	 * Returns the turn IDs that were evicted.
+	 */
+	async evictConversationTurns(targetTokens: number): Promise<string[]> {
+		if (!this.conversationArchive) return [];
+
+		const allTurns = await this.conversationArchive.getTurnRange(this.sessionId ?? "unknown", 1, this.turnCounter);
+
+		if (allTurns.length === 0) return [];
+
+		// Build scored candidates with reference penalty (1.0 when no embeddings)
+		const candidates = allTurns.map((t) => {
+			const referencePenalty = t.embedding
+				? computeReferencePenalty(
+						{ turnId: t.turnId, turnNumber: t.turnNumber, embedding: t.embedding },
+						allTurns
+							.filter((r) => r.embedding && r.turnNumber > t.turnNumber)
+							.slice(-5)
+							.map((r) => ({ turnId: r.turnId, turnNumber: r.turnNumber, embedding: r.embedding! })),
+					)
+				: 1.0;
+			return { turnId: t.turnId, turnNumber: t.turnNumber, type: t.metaType ?? "action", referencePenalty };
+		});
+
+		const ranked = rankForEviction(candidates, this.turnCounter);
+
+		const tokenCounts = new Map<string, number>(allTurns.map((t) => [t.turnId, estimateTokens(t.content)]));
+
+		const toEvict = selectForEviction(ranked, tokenCounts, targetTokens);
+		if (toEvict.length === 0) return [];
+
+		// Generate stubs for evicted turns grouped together
+		const evictedTurns = allTurns.filter((t) => toEvict.includes(t.turnId));
+		const stub = generateStub({ turns: evictedTurns });
+		this.evictionStubs.push(stub);
+
+		// Mark evicted in archive
+		for (const turnId of toEvict) {
+			await this.conversationArchive.markEvicted(turnId, stub);
+		}
+
+		return toEvict;
+	}
+
+	/**
+	 * Get stub text for evicted conversation turns (for context injection).
+	 */
+	getEvictionStubs(): string[] {
+		return [...this.evictionStubs];
+	}
+
+	/**
+	 * Get the eviction feedback tracker for threshold tuning.
+	 */
+	getEvictionFeedbackTracker(): EvictionFeedbackTracker {
+		return this.evictionFeedbackTracker;
+	}
+
+	/**
+	 * Get the conversation archive instance (may be undefined if not configured).
+	 */
+	getConversationArchive(): ConversationArchive | undefined {
+		return this.conversationArchive;
 	}
 
 	/**
@@ -1559,6 +1696,7 @@ export class VeilHarness {
 		this.flushPendingCaptures();
 		this.unsubscribe?.();
 		this.ipcClient?.close();
+		this.conversationArchive?.close();
 		return this.manager.close();
 	}
 }
