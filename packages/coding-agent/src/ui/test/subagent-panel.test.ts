@@ -140,4 +140,27 @@ describe("SubagentPanel keyboard", () => {
 		panel.handleInput("r");
 		expect(resumedTag).toBe("scout");
 	});
+
+	it("shows expanded view with tool history", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find all controller files");
+		panel.updateAgent("scout", {
+			status: "running",
+			turn: 3,
+			tokens: { input: 500, output: 300, cacheRead: 200 },
+			cost: 0.008,
+			toolHistory: [
+				{ name: "grep", args: "/controller/" },
+				{ name: "read", args: "src/api/userController.ts" },
+			],
+		});
+
+		// Expand
+		panel.handleInput("\r");
+
+		const lines = panel.render(70);
+		expect(lines.some((l) => l.includes("Find all controller files"))).toBe(true);
+		expect(lines.some((l) => l.includes("up500"))).toBe(true);
+		expect(lines.some((l) => l.includes("grep"))).toBe(true);
+	});
 });

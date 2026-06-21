@@ -1,6 +1,6 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { getKeybindings, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { formatCost, formatTokens, statusIcon } from "./subagent-renderer.ts";
+import { formatCost, formatTokens, renderToolHistory, statusIcon } from "./subagent-renderer.ts";
 import {
 	createAgentState,
 	createInitialState,
@@ -104,7 +104,8 @@ export class SubagentPanel implements Component {
 	private renderAgent(agent: SubagentState, isSelected: boolean, width: number): string[] {
 		const lines: string[] = [];
 		const icon = statusIcon(agent.status);
-		const tokens = formatTokens(agent.tokens, this.state.expandedAgent === agent.tag);
+		const isExpanded = this.state.expandedAgent === agent.tag;
+		const tokens = formatTokens(agent.tokens, isExpanded);
 		const cost = formatCost(agent.cost);
 
 		const prefix = isSelected ? "> " : "  ";
@@ -122,9 +123,33 @@ export class SubagentPanel implements Component {
 			lines.push(truncateToWidth(line, width, ""));
 		}
 
-		// Show last tool if running
-		if (agent.status === "running" && agent.lastTool) {
+		// Show last tool if running (collapsed view only)
+		if (!isExpanded && agent.status === "running" && agent.lastTool) {
 			lines.push(this.theme.dim(`     -> ${agent.lastTool}`));
+		}
+
+		// Expanded view
+		if (isExpanded) {
+			lines.push("");
+			lines.push(`  Task: ${truncateToWidth(agent.task, width - 8, "...")}`);
+			lines.push(`  Status: ${agent.status} [${agent.turn} turns, ${tokens}, ${cost || "$0.000"}]`);
+			lines.push("");
+
+			if (agent.toolHistory.length > 0) {
+				lines.push("  Live output:");
+				const toolLines = renderToolHistory(agent.toolHistory, 5);
+				for (const tl of toolLines) {
+					lines.push(`    ${this.theme.dim(tl)}`);
+				}
+			}
+
+			if (agent.output) {
+				lines.push("");
+				lines.push(`  ${agent.output.split("\n")[0]}`);
+			}
+
+			lines.push("");
+			lines.push(this.theme.dim("  [x] Kill  [p] Pause  [Esc] Back"));
 		}
 
 		return lines;
