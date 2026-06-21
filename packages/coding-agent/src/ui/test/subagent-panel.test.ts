@@ -108,7 +108,7 @@ describe("SubagentPanel keyboard", () => {
 		expect(panel.getState().expandedAgent).toBeNull();
 	});
 
-	it("calls onKill when x pressed", () => {
+	it("does not immediately kill on x pressed (requires confirmation)", () => {
 		const panel = new SubagentPanel("single");
 		panel.addAgent("scout", "Find files");
 
@@ -118,7 +118,8 @@ describe("SubagentPanel keyboard", () => {
 		};
 
 		panel.handleInput("x");
-		expect(killedTag).toBe("scout");
+		expect(killedTag).toBeNull();
+		expect(panel.getState().showKillConfirm).toBe("scout");
 	});
 
 	it("calls onPause when p pressed and onResume when r pressed", () => {
@@ -139,6 +140,18 @@ describe("SubagentPanel keyboard", () => {
 
 		panel.handleInput("r");
 		expect(resumedTag).toBe("scout");
+	});
+
+	it("renders kill confirmation dialog when showKillConfirm is set", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		panel.handleInput("x"); // triggers showKillConfirm = 'scout'
+
+		const lines = panel.render(70);
+		expect(lines.some((l) => l.includes("Kill scout?"))).toBe(true);
+		expect(lines.some((l) => l.includes("[y] Yes"))).toBe(true);
+		expect(lines.some((l) => l.includes("[n] No"))).toBe(true);
 	});
 
 	it("shows escalation question", () => {
@@ -231,6 +244,73 @@ describe("SubagentPanel keyboard", () => {
 
 		const agent = panel.getState().agents.get("scout");
 		expect(agent?.output).toBe("Scanning directories...");
+	});
+
+	it("kills on y confirmation after x", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		let killedTag: string | null = null;
+		panel.onKill = (tag) => {
+			killedTag = tag;
+		};
+
+		panel.handleInput("x"); // Show confirmation
+		panel.handleInput("y"); // Confirm
+
+		expect(killedTag).toBe("scout");
+		expect(panel.getState().showKillConfirm).toBeNull();
+	});
+
+	it("cancels kill on n after x", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		let killedTag: string | null = null;
+		panel.onKill = (tag) => {
+			killedTag = tag;
+		};
+
+		panel.handleInput("x"); // Show confirmation
+		panel.handleInput("n"); // Cancel
+
+		expect(killedTag).toBeNull();
+		expect(panel.getState().showKillConfirm).toBeNull();
+	});
+
+	it("cancels kill on Escape after x", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		let killedTag: string | null = null;
+		panel.onKill = (tag) => {
+			killedTag = tag;
+		};
+
+		panel.handleInput("x"); // Show confirmation
+		panel.handleInput("\x1b"); // Escape
+
+		expect(killedTag).toBeNull();
+		expect(panel.getState().showKillConfirm).toBeNull();
+	});
+
+	it("ignores other keys during kill confirmation", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.addAgent("worker", "Do work");
+
+		let killedTag: string | null = null;
+		panel.onKill = (tag) => {
+			killedTag = tag;
+		};
+
+		panel.handleInput("x"); // Show confirmation for scout
+		expect(panel.getState().showKillConfirm).toBe("scout");
+
+		panel.handleInput("\x1b[B"); // Down arrow - should be ignored
+		expect(panel.getState().selectedIndex).toBe(0); // Still on scout
+		expect(panel.getState().showKillConfirm).toBe("scout"); // Still showing confirm
+		expect(killedTag).toBeNull();
 	});
 
 	it("no-ops on unknown tag", () => {

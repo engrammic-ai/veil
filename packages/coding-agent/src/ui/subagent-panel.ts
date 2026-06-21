@@ -62,6 +62,23 @@ export class SubagentPanel implements Component {
 		lines.push(this.theme.border(`+-- ${header} ${"─".repeat(Math.max(0, innerWidth - header.length - 5))}+`));
 		lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
 
+		// Kill confirmation dialog
+		if (this.state.showKillConfirm) {
+			const tag = this.state.showKillConfirm;
+			const killLabel = `Kill ${tag}?`;
+			const killLine = `  ${this.theme.warning(killLabel)}`;
+			lines.push(this.theme.border(`|${killLine}${" ".repeat(Math.max(0, width - 2 - visibleWidth(killLine)))}|`));
+			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
+			lines.push(this.theme.border(`|  This will:${" ".repeat(Math.max(0, width - 15))}|`));
+			lines.push(this.theme.border(`|    - Send SIGTERM to the process${" ".repeat(Math.max(0, width - 37))}|`));
+			lines.push(this.theme.border(`|    - Merge partial captures${" ".repeat(Math.max(0, width - 32))}|`));
+			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
+			lines.push(this.theme.border(`|  [y] Yes, kill  [n] No, cancel${" ".repeat(Math.max(0, width - 35))}|`));
+			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
+			lines.push(this.theme.border(`+${"─".repeat(width - 2)}+`));
+			return lines;
+		}
+
 		if (this.state.agents.size === 0) {
 			lines.push(
 				this.theme.border(`|  ${this.theme.dim("No subagents")}${" ".repeat(Math.max(0, innerWidth - 14))}  |`),
@@ -168,7 +185,24 @@ export class SubagentPanel implements Component {
 		const selectedTag = this.getSelectedTag();
 		const selectedAgent = selectedTag ? this.state.agents.get(selectedTag) : null;
 
-		// Handle escalation answers first
+		// Handle kill confirmation dialog first
+		if (this.state.showKillConfirm) {
+			if (keyData === "y" || keyData === "Y") {
+				if (this.onKill) {
+					this.onKill(this.state.showKillConfirm);
+				}
+				this.state.showKillConfirm = null;
+				return;
+			}
+			if (keyData === "n" || keyData === "N" || keyData === "\x1b") {
+				this.state.showKillConfirm = null;
+				return;
+			}
+			// Ignore other keys while confirmation is showing
+			return;
+		}
+
+		// Handle escalation answers
 		if (selectedAgent?.status === "escalating" && selectedAgent.escalation) {
 			if (keyData === "y" || keyData === "Y") {
 				this.answerEscalation(selectedTag!, selectedAgent.escalation.requestId, "yes");
@@ -187,7 +221,10 @@ export class SubagentPanel implements Component {
 		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			this.toggleExpand();
 		} else if (keyData === "x" || keyData === "X") {
-			this.killSelected();
+			const tag = this.getSelectedTag();
+			if (tag) {
+				this.state.showKillConfirm = tag;
+			}
 		} else if (keyData === "p" || keyData === "P") {
 			this.pauseSelected();
 		} else if (keyData === "r" || keyData === "R") {
@@ -213,13 +250,6 @@ export class SubagentPanel implements Component {
 		const tag = this.getSelectedTag();
 		if (tag) {
 			this.state.expandedAgent = this.state.expandedAgent === tag ? null : tag;
-		}
-	}
-
-	private killSelected(): void {
-		const tag = this.getSelectedTag();
-		if (tag && this.onKill) {
-			this.onKill(tag);
 		}
 	}
 

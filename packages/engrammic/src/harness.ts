@@ -9,7 +9,8 @@
  *   }
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
@@ -177,6 +178,30 @@ interface ManifestContext {
 	timestamp: number;
 }
 
+/** Remove child DBs older than maxAgeMs from a parent DB's .children directory. */
+function cleanupOrphanedChildDbs(parentDbPath: string, maxAgeMs = 24 * 60 * 60 * 1000): number {
+	const childrenDir = `${parentDbPath}.children`;
+	if (!existsSync(childrenDir)) return 0;
+	let removed = 0;
+	const now = Date.now();
+	for (const file of readdirSync(childrenDir)) {
+		if (!file.endsWith(".db")) continue;
+		const filePath = join(childrenDir, file);
+		try {
+			const stat = statSync(filePath);
+			if (now - stat.mtimeMs > maxAgeMs) {
+				rmSync(filePath, { force: true });
+				rmSync(`${filePath}-shm`, { force: true });
+				rmSync(`${filePath}-wal`, { force: true });
+				removed++;
+			}
+		} catch {
+			// Ignore errors for individual files
+		}
+	}
+	return removed;
+}
+
 export class VeilHarness {
 	private manager: ContextManager;
 	private config: VeilHarnessConfig;
@@ -279,6 +304,18 @@ export class VeilHarness {
 				console.error("[veil] ConversationArchive init failed:", err);
 				this.conversationArchive = undefined;
 			});
+		}
+
+		// Clean up orphaned child DBs from crashed sessions (parent mode only)
+		if (config.dbPath && !this.isChildMode) {
+			try {
+				const removed = cleanupOrphanedChildDbs(config.dbPath);
+				if (removed > 0 && config.onMemoryEvent) {
+					config.onMemoryEvent({ type: "sleeping", detail: `Cleaned ${removed} orphaned child DB(s)` });
+				}
+			} catch {
+				// Non-fatal, continue
+			}
 		}
 	}
 
