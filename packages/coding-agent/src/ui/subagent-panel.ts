@@ -57,34 +57,39 @@ export class SubagentPanel implements Component {
 
 	render(width: number): string[] {
 		const lines: string[] = [];
-		const innerWidth = width - 4;
+		const innerWidth = Math.max(10, width - 4); // content width between "| " and " |"
+
+		// Helper to create a bordered line with proper padding
+		const borderedLine = (content: string): string => {
+			const contentWidth = visibleWidth(content);
+			const padding = Math.max(0, innerWidth - contentWidth);
+			return truncateToWidth(this.theme.border(`|  ${content}${" ".repeat(padding)}  |`), width, "");
+		};
 
 		// Header
-		const header = this.renderHeader(innerWidth);
-		lines.push(this.theme.border(`+-- ${header} ${"─".repeat(Math.max(0, innerWidth - header.length - 5))}+`));
-		lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
+		const header = this.renderHeader(innerWidth - 6);
+		const headerWidth = visibleWidth(header);
+		const headerDashes = Math.max(0, innerWidth - headerWidth - 5);
+		lines.push(truncateToWidth(this.theme.border(`+-- ${header} ${"─".repeat(headerDashes)}+`), width, ""));
+		lines.push(truncateToWidth(this.theme.border(`|${" ".repeat(width - 2)}|`), width, ""));
 
 		// Kill confirmation dialog
 		if (this.state.showKillConfirm) {
 			const tag = this.state.showKillConfirm;
-			const killLabel = `Kill ${tag}?`;
-			const killLine = `  ${this.theme.warning(killLabel)}`;
-			lines.push(this.theme.border(`|${killLine}${" ".repeat(Math.max(0, width - 2 - visibleWidth(killLine)))}|`));
-			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
-			lines.push(this.theme.border(`|  This will:${" ".repeat(Math.max(0, width - 15))}|`));
-			lines.push(this.theme.border(`|    - Send SIGTERM to the process${" ".repeat(Math.max(0, width - 37))}|`));
-			lines.push(this.theme.border(`|    - Merge partial captures${" ".repeat(Math.max(0, width - 32))}|`));
-			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
-			lines.push(this.theme.border(`|  [y] Yes, kill  [n] No, cancel${" ".repeat(Math.max(0, width - 35))}|`));
-			lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
-			lines.push(this.theme.border(`+${"─".repeat(width - 2)}+`));
+			lines.push(borderedLine(this.theme.warning(`Kill ${tag}?`)));
+			lines.push(borderedLine(""));
+			lines.push(borderedLine("This will:"));
+			lines.push(borderedLine("  - Send SIGTERM to the process"));
+			lines.push(borderedLine("  - Merge partial captures"));
+			lines.push(borderedLine(""));
+			lines.push(borderedLine("[y] Yes, kill  [n] No, cancel"));
+			lines.push(borderedLine(""));
+			lines.push(truncateToWidth(this.theme.border(`+${"─".repeat(width - 2)}+`), width, ""));
 			return lines;
 		}
 
 		if (this.state.agents.size === 0) {
-			lines.push(
-				this.theme.border(`|  ${this.theme.dim("No subagents")}${" ".repeat(Math.max(0, innerWidth - 14))}  |`),
-			);
+			lines.push(borderedLine(this.theme.dim("No subagents")));
 		} else {
 			const agentTags = Array.from(this.state.agents.keys());
 			for (let i = 0; i < agentTags.length; i++) {
@@ -93,15 +98,13 @@ export class SubagentPanel implements Component {
 				const isSelected = i === this.state.selectedIndex;
 				const agentLines = this.renderAgent(agent, isSelected, innerWidth);
 				for (const line of agentLines) {
-					lines.push(
-						this.theme.border(`|  ${line}${" ".repeat(Math.max(0, innerWidth - visibleWidth(line)))}  |`),
-					);
+					lines.push(borderedLine(line));
 				}
 			}
 		}
 
-		lines.push(this.theme.border(`|${" ".repeat(width - 2)}|`));
-		lines.push(this.theme.border(`+${"─".repeat(width - 2)}+`));
+		lines.push(truncateToWidth(this.theme.border(`|${" ".repeat(width - 2)}|`), width, ""));
+		lines.push(truncateToWidth(this.theme.border(`+${"─".repeat(width - 2)}+`), width, ""));
 
 		return lines;
 	}
