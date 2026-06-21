@@ -128,6 +128,14 @@ export class SubagentPanel implements Component {
 			lines.push(this.theme.dim(`     -> ${agent.lastTool}`));
 		}
 
+		// Escalation display (always show when escalating, even if not expanded)
+		if (agent.status === "escalating" && agent.escalation) {
+			lines.push("");
+			lines.push(this.theme.warning(`  "${agent.escalation.question}"`));
+			lines.push("");
+			lines.push("  [y] Yes  [n] No  [o] Other...");
+		}
+
 		// Expanded view
 		if (isExpanded) {
 			lines.push("");
@@ -157,6 +165,20 @@ export class SubagentPanel implements Component {
 
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
+		const selectedTag = this.getSelectedTag();
+		const selectedAgent = selectedTag ? this.state.agents.get(selectedTag) : null;
+
+		// Handle escalation answers first
+		if (selectedAgent?.status === "escalating" && selectedAgent.escalation) {
+			if (keyData === "y" || keyData === "Y") {
+				this.answerEscalation(selectedTag!, selectedAgent.escalation.requestId, "yes");
+				return;
+			}
+			if (keyData === "n" || keyData === "N") {
+				this.answerEscalation(selectedTag!, selectedAgent.escalation.requestId, "no");
+				return;
+			}
+		}
 
 		if (kb.matches(keyData, "tui.select.up")) {
 			this.selectPrev();
@@ -213,6 +235,13 @@ export class SubagentPanel implements Component {
 		if (tag && this.onResume) {
 			this.onResume(tag);
 		}
+	}
+
+	private answerEscalation(tag: string, requestId: string, answer: string): void {
+		if (this.onEscalationAnswer) {
+			this.onEscalationAnswer(tag, requestId, answer);
+		}
+		this.updateAgent(tag, { status: "running", escalation: undefined });
 	}
 
 	private getSelectedTag(): string | null {

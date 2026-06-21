@@ -141,6 +141,40 @@ describe("SubagentPanel keyboard", () => {
 		expect(resumedTag).toBe("scout");
 	});
 
+	it("shows escalation question", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.updateAgent("scout", {
+			status: "escalating",
+			escalation: {
+				requestId: "e1",
+				question: "Should I include deprecated auth methods?",
+			},
+		});
+
+		const lines = panel.render(70);
+		expect(lines.some((l) => l.includes("!"))).toBe(true); // escalating icon
+		expect(lines.some((l) => l.includes("deprecated auth"))).toBe(true);
+	});
+
+	it("calls onEscalationAnswer when y/n pressed", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.updateAgent("scout", {
+			status: "escalating",
+			escalation: { requestId: "e1", question: "Include deprecated?" },
+		});
+
+		let answered: { tag: string; id: string; answer: string } | null = null;
+		panel.onEscalationAnswer = (tag, id, answer) => {
+			answered = { tag, id, answer };
+		};
+
+		panel.handleInput("y");
+		expect(answered).toEqual({ tag: "scout", id: "e1", answer: "yes" });
+		expect(panel.getState().agents.get("scout")?.status).toBe("running");
+	});
+
 	it("shows expanded view with tool history", () => {
 		const panel = new SubagentPanel("single");
 		panel.addAgent("scout", "Find all controller files");
