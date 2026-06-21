@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formatCost, formatTokens, statusIcon } from "../subagent-renderer.ts";
 import { createAgentState, createInitialState, updateAgentState } from "../subagent-state.ts";
+import { SubagentPanel } from "../subagent-panel.ts";
 
 describe("subagent-state", () => {
 	it("creates empty initial state", () => {
@@ -45,5 +46,26 @@ describe("subagent-renderer", () => {
 		expect(formatCost(0.005)).toBe("");
 		expect(formatCost(0.01)).toBe("$0.010");
 		expect(formatCost(1.5)).toBe("$1.500");
+	});
+});
+
+describe("SubagentPanel", () => {
+	it("renders empty state", () => {
+		const panel = new SubagentPanel("single");
+		const lines = panel.render(60);
+		expect(lines.length).toBeGreaterThan(0);
+		expect(lines.some((l) => l.includes("Subagents"))).toBe(true);
+	});
+
+	it("renders agents with status icons", () => {
+		const panel = new SubagentPanel("parallel");
+		panel.addAgent("scout", "Find files");
+		panel.updateAgent("scout", { status: "running", turn: 2, tokens: { input: 500, output: 300, cacheRead: 0 } });
+
+		const lines = panel.render(60);
+		const agentLine = lines.find((l) => l.includes("scout"));
+		expect(agentLine).toBeDefined();
+		expect(agentLine).toMatch(/o\s+scout/); // 'o' is running icon
+		expect(agentLine).toMatch(/2t/); // turn count
 	});
 });

@@ -30,7 +30,24 @@ A standalone harness (forking Pi Agents as base) with:
 │  - Bi-temporal facts, codebase map      │
 │  - Episodic summaries with decay scores │
 └─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│  Conversation Archive - SQLite          │
+│  - Evicted turns with classification    │
+│  - Decisions/corrections preserved      │
+│  - Searchable via /history command      │
+└─────────────────────────────────────────┘
 ```
+
+### Conversation Eviction
+
+Separate from memory eviction, the harness also manages conversation history:
+
+- **Turn classification**: Each turn tagged as decision/exploration/action/correction/status
+- **Protected window**: Last 12 turns never evicted
+- **Reference detection**: Embedding similarity prevents evicting referenced content
+- **Stub replacement**: Evicted turns replaced with summaries pointing to archive
+- **Feedback learning**: Detects when eviction removed something important
 
 ## Key Design Decisions
 
@@ -42,8 +59,8 @@ A standalone harness (forking Pi Agents as base) with:
 ## Docs
 
 - [Research Findings](./research-findings.md) - Literature review and existing solutions
-- [Eviction Strategy](./eviction-strategy.md) - Heuristic cascade for context management
-- [Intent Tracking](./SPEC-intent-tracking.md) - Keeping the agent aligned with user goals
+- [Eviction Strategy](./eviction-strategy.md) - Heuristic cascade for memory management
+- [Intent Tracking](./SPEC-intent-tracking.md) - Goal alignment + conversation eviction
 - [Roadmap](./roadmap.md) - Prototype phases and next steps
 
 ## Licensing

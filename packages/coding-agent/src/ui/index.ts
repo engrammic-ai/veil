@@ -11,3 +11,7 @@ export {
 	type SubagentState,
 	updateAgentState,
 } from "./subagent-state.ts";
+export {
+	SubagentPanel,
+	type SubagentPanelTheme,
+} from "./subagent-panel.ts";
