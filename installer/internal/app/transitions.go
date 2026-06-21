@@ -110,6 +110,15 @@ func nextState(current State, result Result) State {
 		return StateStartEmbedder
 
 	case StateStartEmbedder:
+		return StatePromptExtensions
+
+	case StatePromptExtensions:
+		if result == ResultSkip {
+			return StateSuccess
+		}
+		return StateInstallExtensions
+
+	case StateInstallExtensions:
 		return StateSuccess
 	}
 

@@ -45,6 +45,28 @@ export function getVeilInvocation(ctx: SubagentContext, agent: AgentConfig): str
  * Get the veil binary invocation
  */
 function getVeilBinary(): { command: string; args: string[] } {
+	// Check for tsx (running from sources via veil-test.sh)
+	// Look for tsx in the argv or if we're running a .ts file directly
+	const scriptArg = process.argv[1] || "";
+	const isRunningTs = scriptArg.endsWith(".ts") || process.argv.some((a) => a.includes("tsx"));
+
+	if (isRunningTs) {
+		// Find cli.ts by walking up from the script location
+		const scriptDir = path.dirname(scriptArg);
+		// Try common locations
+		const candidates = [
+			path.resolve(scriptDir, "cli.ts"), // Same dir
+			path.resolve(scriptDir, "../cli.ts"), // Up one
+			path.resolve(scriptDir, "../../coding-agent/src/cli.ts"), // From subagent
+		];
+		for (const cliPath of candidates) {
+			if (fs.existsSync(cliPath)) {
+				// Use npx tsx to run the TypeScript file
+				return { command: "npx", args: ["tsx", cliPath] };
+			}
+		}
+	}
+
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
 
@@ -90,18 +112,31 @@ export async function spawnSubagent(
 	// Remove 'veil' from cliArgs (first element) since we handle binary separately
 	const args = [...invocation.args, ...cliArgs.slice(1), `Task: ${options.task}`];
 
+	// Debug: log what we're spawning
+	const cmdLine = `${invocation.command} ${args.join(" ")}`;
+	options.onStderr?.(`[subagent] Spawning: ${cmdLine.slice(0, 200)}\n`);
+
 	return new Promise((resolve) => {
-		const proc = spawn(invocation.command, args, {
-			cwd: options.cwd,
-			shell: false,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		let proc: ReturnType<typeof spawn>;
+		try {
+			proc = spawn(invocation.command, args, {
+				cwd: options.cwd,
+				shell: false,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			options.onStderr?.(`[subagent] Spawn failed: ${msg}\n`);
+			resolve({ exitCode: 1, stdout: [], stderr: `Spawn failed: ${msg}` });
+			return;
+		}
 
 		const stdout: string[] = [];
 		let stderr = "";
 		let buffer = "";
 
-		proc.stdout.on("data", (data) => {
+		// stdio is ["ignore", "pipe", "pipe"] so stdout/stderr are guaranteed
+		proc.stdout!.on("data", (data) => {
 			buffer += data.toString();
 			const lines = buffer.split("\n");
 			buffer = lines.pop() || "";
@@ -112,7 +147,7 @@ export async function spawnSubagent(
 			}
 		});
 
-		proc.stderr.on("data", (data) => {
+		proc.stderr!.on("data", (data) => {
 			stderr += data.toString();
 			options.onStderr?.(data.toString());
 		});
@@ -125,8 +160,10 @@ export async function spawnSubagent(
 			resolve({ exitCode: code ?? 0, stdout, stderr });
 		});
 
-		proc.on("error", () => {
-			resolve({ exitCode: 1, stdout, stderr });
+		proc.on("error", (err) => {
+			const msg = `Spawn error: ${err.message}`;
+			options.onStderr?.(`[subagent] ${msg}\n`);
+			resolve({ exitCode: 1, stdout, stderr: stderr + msg });
 		});
 
 		if (options.signal) {

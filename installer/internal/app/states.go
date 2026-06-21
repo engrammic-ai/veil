@@ -20,6 +20,8 @@ const (
 	StatePromptEmbedder
 	StateConfigureEmbedder
 	StateStartEmbedder
+	StatePromptExtensions
+	StateInstallExtensions
 	StateSuccess
 
 	// Terminal failure states.
@@ -63,6 +65,10 @@ func (s State) String() string {
 		return "ConfigureEmbedder"
 	case StateStartEmbedder:
 		return "StartEmbedder"
+	case StatePromptExtensions:
+		return "PromptExtensions"
+	case StateInstallExtensions:
+		return "InstallExtensions"
 	case StateSuccess:
 		return "Success"
 	case StateFailPlatform:

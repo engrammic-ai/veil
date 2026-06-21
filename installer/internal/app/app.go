@@ -107,9 +107,10 @@ type Model struct {
 	state         State
 	platform      platform.Platform
 	version       string       // selected or flagged version
-	embedderTier    EmbedderTier // selected embedder model tier
-	embedderIndex   int          // current selection in embedder menu (0-5)
-	startEmbedder   bool         // whether to start embedder server after install
+	embedderTier      EmbedderTier // selected embedder model tier
+	embedderIndex     int          // current selection in embedder menu (0-5)
+	startEmbedder     bool         // whether to start embedder server after install
+	installExtensions bool         // whether to install recommended extensions
 	spinner       spinner.Model
 	progress      progress.Model
 	miniCat       *ui.MiniCat
@@ -246,6 +247,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.startEmbedderServer()
 			case "n", "N":
 				m.startEmbedder = false
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
+			}
+		}
+
+		// Handle extensions prompt
+		if m.state == StatePromptExtensions {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				m.installExtensions = true
+				return m, func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+			case "n", "N":
+				m.installExtensions = false
 				return m, func() tea.Msg { return stepDoneMsg{result: ResultSkip} }
 			}
 		}
@@ -402,6 +415,10 @@ func (m *Model) View() string {
 		body = m.miniCat.ViewWithStatus("Configuring semantic memory...", m.spinner.View())
 	case StateStartEmbedder:
 		body = m.miniCat.View() + "\n\nStart embedding server now? [Y/n]"
+	case StatePromptExtensions:
+		body = m.miniCat.View() + "\n\n" + m.renderExtensionsPrompt()
+	case StateInstallExtensions:
+		body = m.miniCat.ViewWithStatus("Installing recommended extensions...", m.spinner.View())
 	case StateSuccess:
 		version := "unknown"
 		if m.release != nil {
@@ -690,6 +707,18 @@ func (m *Model) runStep(s State) tea.Cmd {
 		}
 		// Interactive: wait for user input (handled in Update)
 		return nil
+
+	case StatePromptExtensions:
+		// Auto-install in non-interactive mode
+		if m.flagYes {
+			m.installExtensions = true
+			return func() tea.Msg { return stepDoneMsg{result: ResultOK} }
+		}
+		// Interactive: wait for user input (handled in Update)
+		return nil
+
+	case StateInstallExtensions:
+		return m.installRecommendedExtensions()
 	}
 
 	return nil
@@ -817,6 +846,55 @@ func (m *Model) renderEmbedderMenu() string {
 	lines = append(lines, "Use ↑/↓ to select, Enter to confirm.")
 
 	return strings.Join(lines, "\n")
+}
+
+func (m *Model) renderExtensionsPrompt() string {
+	var lines []string
+	lines = append(lines, "Recommended Extensions:")
+	lines = append(lines, "")
+	lines = append(lines, "  • pi-web-access - Web search, content fetching, video understanding")
+	lines = append(lines, "    Works zero-config via Exa MCP, or add API keys for more providers.")
+	lines = append(lines, "")
+	lines = append(lines, "  • @tintinweb/pi-subagents - Parallel subagent orchestration")
+	lines = append(lines, "    Spawn and coordinate multiple agents for complex tasks.")
+	lines = append(lines, "")
+	lines = append(lines, "Install recommended extensions? [Y/n]")
+	return strings.Join(lines, "\n")
+}
+
+func (m *Model) installRecommendedExtensions() tea.Cmd {
+	return func() tea.Msg {
+		if !m.installExtensions {
+			return stepDoneMsg{result: ResultSkip}
+		}
+
+		veilBin := m.installPath
+		if _, err := os.Stat(veilBin); os.IsNotExist(err) {
+			m.addDebug("veil binary not found, skipping extension install")
+			return stepDoneMsg{result: ResultOK}
+		}
+
+		extensions := []string{
+			"npm:pi-web-access",
+			"npm:@tintinweb/pi-subagents",
+		}
+
+		for _, ext := range extensions {
+			m.addDebug(fmt.Sprintf("installing %s", ext))
+
+			cmd := exec.Command(veilBin, "install", ext)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				m.addDebug(fmt.Sprintf("install %s failed: %v", ext, err))
+				m.addDebug(string(output))
+				// Don't fail the whole install, continue with next
+				continue
+			}
+		}
+
+		m.addDebug("extensions installed")
+		return stepDoneMsg{result: ResultOK}
+	}
 }
 
 // downloadCmd returns a command that downloads with progress reporting.

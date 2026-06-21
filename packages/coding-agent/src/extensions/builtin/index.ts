@@ -19,7 +19,7 @@ import veilStatusbar from "../veil-statusbar/index.ts";
 import brainstormModeExtension from "./brainstorm-mode.ts";
 import intentTrackingExtension from "./intent-tracking.ts";
 import planModeExtension from "./plan-mode.ts";
-import subagentExtension from "./subagent.ts";
+import subagentHooksExtension from "./subagent-hooks.ts";
 
 /** All builtin extension factories */
 export const builtinExtensions: ExtensionFactory[] = [
@@ -27,7 +27,7 @@ export const builtinExtensions: ExtensionFactory[] = [
 	brainstormModeExtension,
 	intentTrackingExtension,
 	planModeExtension,
-	subagentExtension,
+	subagentHooksExtension, // Hooks for @tintinweb/pi-subagents integration
 	veilStatusbar,
 	// Bundled extensions
 	confirmDestructive,
