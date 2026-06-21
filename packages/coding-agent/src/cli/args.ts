@@ -53,6 +53,17 @@ export interface Args {
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
 	unknownFlags: Map<string, boolean | string>;
 	diagnostics: Array<{ type: "warning" | "error"; message: string }>;
+	// Veil subagent (child mode) flags
+	/** Parent's warm cache DB path — presence indicates child mode */
+	veilParentDb?: string;
+	/** Parent session ID for provenance tracking */
+	veilSessionId?: string;
+	/** Subagent tag prefix for memory namespacing */
+	veilTag?: string;
+	/** IPC socket path for parent–child communication */
+	veilIpc?: string;
+	/** Enable veil_* tools (default: true) */
+	veilTools?: boolean;
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -186,6 +197,17 @@ export function parseArgs(args: string[]): Args {
 			result.projectTrustOverride = false;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if (arg === "--veil-parent-db" && i + 1 < args.length) {
+			result.veilParentDb = args[++i];
+		} else if (arg === "--veil-session-id" && i + 1 < args.length) {
+			result.veilSessionId = args[++i];
+		} else if (arg === "--veil-tag" && i + 1 < args.length) {
+			result.veilTag = args[++i];
+		} else if (arg === "--veil-ipc" && i + 1 < args.length) {
+			result.veilIpc = args[++i];
+		} else if (arg === "--veil-tools" && i + 1 < args.length) {
+			const val = args[++i].toLowerCase();
+			result.veilTools = val !== "false" && val !== "0" && val !== "no";
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -280,6 +302,13 @@ ${chalk.bold("Options:")}
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
+
+${chalk.bold("Veil Subagent (Child Mode) Flags:")}
+  --veil-parent-db <path>        Parent's warm cache DB path (enables child mode)
+  --veil-session-id <id>         Parent session ID for provenance tracking
+  --veil-tag <tag>               Subagent tag prefix for memory namespacing
+  --veil-ipc <path>              IPC socket path for parent-child communication
+  --veil-tools <bool>            Enable veil_* tools: true (default) or false
 
 Extensions can register additional flags (e.g., --plan from plan-mode extension).${extensionFlagsText}
 

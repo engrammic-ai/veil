@@ -719,6 +719,26 @@ export async function main(args: string[], options?: MainOptions) {
 			mkdirSync(veilDir, { recursive: true });
 		}
 
+		// Detect child (subagent) mode from CLI flags.
+		// TODO(subagent-wiring): When VeilHarness gains child-mode support, pass these
+		// options to the constructor so it can attach to the parent's warm cache DB,
+		// register provenance via veilSessionId, apply the tag prefix, and connect to
+		// the IPC socket for result reporting back to the parent process.
+		//
+		//   const isChildMode = parsed.veilParentDb !== undefined;
+		//   if (isChildMode) {
+		//     veilHarness = new VeilHarness({
+		//       dbPath: join(veilDir, "context.db"),
+		//       maxTokens: contextBudget,
+		//       sessionId: sessionManager.getSessionId(),
+		//       parentDb: parsed.veilParentDb,
+		//       parentSessionId: parsed.veilSessionId,
+		//       tagPrefix: parsed.veilTag,
+		//       ipcPath: parsed.veilIpc,
+		//       enableVeilTools: parsed.veilTools ?? true,
+		//     });
+		//   }
+
 		// Create VeilHarness with graceful degradation
 		const contextBudget = Math.floor((sessionOptions.model?.contextWindow ?? 128000) * 0.7);
 		let veilHarness: VeilHarness | undefined;
