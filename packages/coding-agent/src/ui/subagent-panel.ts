@@ -249,6 +249,42 @@ export class SubagentPanel implements Component {
 		return tags[this.state.selectedIndex] ?? null;
 	}
 
+	// IPC event handlers
+	onCheckpoint(tag: string, turn: number, tokens: number, lastTool?: string): void {
+		const agent = this.state.agents.get(tag);
+		if (!agent) return;
+
+		const updatedTokens = { ...agent.tokens, output: tokens };
+		const toolHistory = lastTool ? [...agent.toolHistory, { name: lastTool }] : agent.toolHistory;
+
+		this.updateAgent(tag, {
+			status: "running",
+			turn,
+			tokens: updatedTokens,
+			lastTool,
+			toolHistory,
+		});
+	}
+
+	onProgress(tag: string, message: string, _percent?: number): void {
+		this.updateAgent(tag, { output: message });
+	}
+
+	onComplete(tag: string, result: string): void {
+		this.updateAgent(tag, { status: "complete", output: result });
+	}
+
+	onError(tag: string, message: string): void {
+		this.updateAgent(tag, { status: "error", error: message });
+	}
+
+	onEscalate(tag: string, requestId: string, question: string): void {
+		this.updateAgent(tag, {
+			status: "escalating",
+			escalation: { requestId, question },
+		});
+	}
+
 	getState(): SubagentPanelState {
 		return this.state;
 	}

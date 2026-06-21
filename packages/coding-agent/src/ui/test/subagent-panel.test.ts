@@ -175,6 +175,74 @@ describe("SubagentPanel keyboard", () => {
 		expect(panel.getState().agents.get("scout")?.status).toBe("running");
 	});
 
+	it("updates state on checkpoint", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		panel.onCheckpoint("scout", 2, 500, "grep");
+
+		const agent = panel.getState().agents.get("scout");
+		expect(agent?.turn).toBe(2);
+		expect(agent?.lastTool).toBe("grep");
+		expect(agent?.status).toBe("running");
+		expect(agent?.toolHistory).toContainEqual({ name: "grep" });
+	});
+
+	it("updates state on complete", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+		panel.updateAgent("scout", { status: "running" });
+
+		panel.onComplete("scout", "Found 5 files");
+
+		const agent = panel.getState().agents.get("scout");
+		expect(agent?.status).toBe("complete");
+		expect(agent?.output).toBe("Found 5 files");
+	});
+
+	it("updates state on error", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		panel.onError("scout", "Rate limit exceeded");
+
+		const agent = panel.getState().agents.get("scout");
+		expect(agent?.status).toBe("error");
+		expect(agent?.error).toBe("Rate limit exceeded");
+	});
+
+	it("updates state on escalate", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		panel.onEscalate("scout", "req123", "Should I continue?");
+
+		const agent = panel.getState().agents.get("scout");
+		expect(agent?.status).toBe("escalating");
+		expect(agent?.escalation?.requestId).toBe("req123");
+		expect(agent?.escalation?.question).toBe("Should I continue?");
+	});
+
+	it("updates state on progress", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("scout", "Find files");
+
+		panel.onProgress("scout", "Scanning directories...", 50);
+
+		const agent = panel.getState().agents.get("scout");
+		expect(agent?.output).toBe("Scanning directories...");
+	});
+
+	it("no-ops on unknown tag", () => {
+		const panel = new SubagentPanel("single");
+		// Should not throw
+		panel.onCheckpoint("unknown", 1, 100, "grep");
+		panel.onProgress("unknown", "msg");
+		panel.onComplete("unknown", "result");
+		panel.onError("unknown", "err");
+		panel.onEscalate("unknown", "req1", "question?");
+	});
+
 	it("shows expanded view with tool history", () => {
 		const panel = new SubagentPanel("single");
 		panel.addAgent("scout", "Find all controller files");
