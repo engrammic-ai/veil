@@ -76,6 +76,7 @@ export {
 	type EscalationResult,
 	isProgress,
 } from "./convergence.ts";
+export { type ArchivedTurn, ConversationArchive } from "./conversation-archive.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
 export { createVeilExtension } from "./extension.ts";
 export { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
@@ -176,6 +177,7 @@ export {
 	type TriggerResult,
 	type TriggerType,
 } from "./triggers.ts";
+export { classifyTurn, heuristicClassify, parseTurnMeta, stripTurnMeta } from "./turn-classifier.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,
