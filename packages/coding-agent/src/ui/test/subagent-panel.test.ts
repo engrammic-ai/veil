@@ -347,6 +347,38 @@ describe("SubagentPanel keyboard", () => {
 	});
 });
 
+describe("SubagentPanel cost rollup", () => {
+	it("shows total cost in header", () => {
+		const panel = new SubagentPanel("parallel");
+		panel.addAgent("a", "Task A");
+		panel.addAgent("b", "Task B");
+		panel.updateAgent("a", { cost: 0.015 });
+		panel.updateAgent("b", { cost: 0.025 });
+
+		const lines = panel.render(70);
+		expect(lines.some((l) => l.includes("$0.040"))).toBe(true);
+	});
+
+	it("does not show cost if total is zero", () => {
+		const panel = new SubagentPanel("parallel");
+		panel.addAgent("a", "Task A");
+
+		const lines = panel.render(70);
+		const headerLine = lines[0];
+		expect(headerLine?.includes("$0.00")).toBe(false);
+	});
+
+	it("getTotalCost sums all agent costs", () => {
+		const panel = new SubagentPanel("single");
+		panel.addAgent("a", "Task A");
+		panel.addAgent("b", "Task B");
+		panel.updateAgent("a", { cost: 0.01 });
+		panel.updateAgent("b", { cost: 0.02 });
+
+		expect(panel.getTotalCost()).toBeCloseTo(0.03);
+	});
+});
+
 describe("SubagentPanel error state", () => {
 	it("shows error state with retry/skip options", () => {
 		const panel = new SubagentPanel("parallel");

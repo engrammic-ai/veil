@@ -106,18 +106,24 @@ export class SubagentPanel implements Component {
 		return lines;
 	}
 
+	getTotalCost(): number {
+		return Array.from(this.state.agents.values()).reduce((sum, agent) => sum + agent.cost, 0);
+	}
+
 	private renderHeader(_width: number): string {
 		const { mode, agents } = this.state;
+		const totalCost = this.getTotalCost();
+		const costStr = totalCost >= 0.01 ? ` $${totalCost.toFixed(3)}` : "";
 		if (mode === "parallel") {
 			const done = Array.from(agents.values()).filter((a) => a.status === "complete").length;
 			const running = Array.from(agents.values()).filter((a) => a.status === "running").length;
-			return `Parallel: ${done}/${agents.size} done, ${running} running`;
+			return `Parallel: ${done}/${agents.size} done, ${running} running${costStr}`;
 		}
 		if (mode === "chain") {
 			const currentStep = Array.from(agents.values()).findIndex((a) => a.status === "running") + 1;
-			return `Chain: Step ${currentStep || 1}/${agents.size}`;
+			return `Chain: Step ${currentStep || 1}/${agents.size}${costStr}`;
 		}
-		return "Subagents";
+		return `Subagents${costStr}`;
 	}
 
 	private renderAgent(agent: SubagentState, isSelected: boolean, width: number): string[] {
