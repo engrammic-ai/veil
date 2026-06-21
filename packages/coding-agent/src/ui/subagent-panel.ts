@@ -140,7 +140,8 @@ export class SubagentPanel implements Component {
 		if (cost) line += `, ${cost}`;
 		if (agent.turn > 0) line += "]";
 		if (agent.status === "complete") line += " Done";
-		if (agent.status === "error" && agent.error) line += ` ${this.theme.error(agent.error)}`;
+		if (agent.status === "error" && agent.error)
+			line += ` ${this.theme.error(truncateToWidth(agent.error, width - 20, "..."))}`;
 
 		if (isSelected) {
 			lines.push(this.theme.selected(truncateToWidth(line, width, "")));
@@ -150,47 +151,53 @@ export class SubagentPanel implements Component {
 
 		// Show last tool if running (collapsed view only)
 		if (!isExpanded && agent.status === "running" && agent.lastTool) {
-			lines.push(this.theme.dim(`     -> ${agent.lastTool}`));
+			lines.push(truncateToWidth(this.theme.dim(`     -> ${agent.lastTool}`), width, ""));
 		}
 
 		// Error state with options
 		if (agent.status === "error") {
 			if (agent.error) {
-				lines.push(`    ${this.theme.error(`Error: ${agent.error}`)}`);
+				lines.push(truncateToWidth(`    ${this.theme.error(`Error: ${agent.error}`)}`, width, ""));
 			}
-			lines.push(this.theme.dim("    [r] Retry  [s] Skip  [d] Details"));
+			lines.push(truncateToWidth(this.theme.dim("    [r] Retry  [s] Skip  [d] Details"), width, ""));
 		}
 
 		// Escalation display (always show when escalating, even if not expanded)
 		if (agent.status === "escalating" && agent.escalation) {
 			lines.push("");
-			lines.push(this.theme.warning(`  "${agent.escalation.question}"`));
+			lines.push(truncateToWidth(this.theme.warning(`  "${agent.escalation.question}"`), width, ""));
 			lines.push("");
-			lines.push("  [y] Yes  [n] No  [o] Other...");
+			lines.push(truncateToWidth("  [y] Yes  [n] No  [o] Other...", width, ""));
 		}
 
 		// Expanded view
 		if (isExpanded) {
 			lines.push("");
-			lines.push(`  Task: ${truncateToWidth(agent.task, width - 8, "...")}`);
-			lines.push(`  Status: ${agent.status} [${agent.turn} turns, ${tokens}, ${cost || "$0.000"}]`);
+			lines.push(truncateToWidth(`  Task: ${agent.task}`, width, "..."));
+			lines.push(
+				truncateToWidth(
+					`  Status: ${agent.status} [${agent.turn} turns, ${tokens}, ${cost || "$0.000"}]`,
+					width,
+					"",
+				),
+			);
 			lines.push("");
 
 			if (agent.toolHistory.length > 0) {
 				lines.push("  Live output:");
 				const toolLines = renderToolHistory(agent.toolHistory, 5);
 				for (const tl of toolLines) {
-					lines.push(`    ${this.theme.dim(tl)}`);
+					lines.push(truncateToWidth(`    ${this.theme.dim(tl)}`, width, ""));
 				}
 			}
 
 			if (agent.output) {
 				lines.push("");
-				lines.push(`  ${agent.output.split("\n")[0]}`);
+				lines.push(truncateToWidth(`  ${agent.output.split("\n")[0]}`, width, "..."));
 			}
 
 			lines.push("");
-			lines.push(this.theme.dim("  [x] Kill  [p] Pause  [Esc] Back"));
+			lines.push(truncateToWidth(this.theme.dim("  [x] Kill  [p] Pause  [Esc] Back"), width, ""));
 		}
 
 		return lines;

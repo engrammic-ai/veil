@@ -19,6 +19,7 @@ import {
 import { Type } from "typebox";
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { SubagentPanel } from "../../ui/subagent-panel.ts";
+import { statusIcon } from "../../ui/subagent-renderer.ts";
 
 // Agent discovery paths
 const USER_AGENT_DIR = path.join(os.homedir(), ".veil", "agents");
@@ -91,6 +92,26 @@ interface RunningAgent {
 
 function getDbPath(cwd: string): string {
 	return path.join(cwd, ".veil", "context.db");
+}
+
+function getCompactStatus(panel: SubagentPanel): string {
+	const state = panel.getState();
+	const agents = Array.from(state.agents.values());
+	if (agents.length === 0) return "";
+
+	// Format: "scout [3t] o | reviewer [1t] ?"
+	const parts = agents.slice(0, 3).map((a) => {
+		const icon = statusIcon(a.status);
+		const name = a.tag.replace(/-\d+$/, ""); // Remove suffix like "-0"
+		const turn = a.turn > 0 ? ` [${a.turn}t]` : "";
+		return `${name}${turn} ${icon}`;
+	});
+
+	if (agents.length > 3) {
+		parts.push(`+${agents.length - 3}`);
+	}
+
+	return parts.join(" | ");
 }
 
 async function executeSingleAgentWithPanel(
@@ -365,9 +386,17 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 				}
 			};
 
-			// Set panel as widget if UI is available
+			// Update status in footer periodically
+			let statusInterval: ReturnType<typeof setInterval> | undefined;
 			if (ctx.hasUI) {
-				ctx.ui.setWidget("subagent-panel", (_tui, _theme) => panel, { placement: "aboveEditor" });
+				const updateStatus = () => {
+					const status = getCompactStatus(panel);
+					if (status) {
+						ctx.ui.setStatus("subagents", status);
+					}
+				};
+				updateStatus();
+				statusInterval = setInterval(updateStatus, 500);
 			}
 
 			try {
@@ -474,9 +503,12 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 					details: undefined,
 				};
 			} finally {
-				// Clear widget when done
+				// Clear status when done
+				if (statusInterval) {
+					clearInterval(statusInterval);
+				}
 				if (ctx.hasUI) {
-					ctx.ui.setWidget("subagent-panel", undefined);
+					ctx.ui.setStatus("subagents", undefined);
 				}
 			}
 		},
