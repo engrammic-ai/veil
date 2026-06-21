@@ -3,9 +3,11 @@ export {
 	type SubagentPanelTheme,
 } from "./subagent-panel.ts";
 export {
+	createSubagentRenderer,
 	formatCost,
 	formatTokens,
 	renderToolHistory,
+	type SubagentRenderContext,
 	statusIcon,
 } from "./subagent-renderer.ts";
 export {
