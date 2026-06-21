@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -70,6 +71,21 @@ jobs:
           cp installer/dist/veil-installer-* packages/coding-agent/binaries/
           cd packages/coding-agent/binaries
           sha256sum veil-installer-* >> checksums.sha256
+
+      - name: Authenticate to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/241570418660/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: gha-deployer@engrammic.iam.gserviceaccount.com
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Publish to GCS
+        env:
+          VEIL_VERSION: ${{ inputs.version }}
+          VEIL_CHANNEL: ${{ inputs.prerelease && 'beta' || 'stable' }}
+        run: ./scripts/publish-gcs.sh
 
       - name: Create GitHub Release
         env:

@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
 )
 
 const (
-	githubReleasesURL = "https://api.github.com/repos/engrammic-ai/veil/releases"
-	apiTimeout        = 15 * time.Second
+	releasesURL = "https://storage.googleapis.com/veil-releases/releases.json"
+	apiTimeout  = 15 * time.Second
 )
 
 // Channel represents a release channel.
@@ -34,15 +33,9 @@ type Release struct {
 	Assets   map[string]string `json:"assets"`   // platform -> download URL
 }
 
-// githubRelease is the GitHub API response shape we care about.
-type githubRelease struct {
-	TagName    string `json:"tag_name"`
-	Prerelease bool   `json:"prerelease"`
-	Draft      bool   `json:"draft"`
-	Assets     []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
+// releasesManifest is the GCS releases.json shape.
+type releasesManifest struct {
+	Releases []Release `json:"releases"`
 }
 
 // VersionCache is satisfied by download.Cache for version caching.
@@ -57,7 +50,7 @@ func FetchReleases(cache VersionCache, channel Channel) ([]Release, error) {
 	return fetchReleasesInternal(cache, channel, false)
 }
 
-// FetchReleasesRefresh fetches releases from GitHub, bypassing cache.
+// FetchReleasesRefresh fetches releases from GCS, bypassing cache.
 // Use for commands like `releases` and `update` where fresh data is expected.
 func FetchReleasesRefresh(cache VersionCache, channel Channel) ([]Release, error) {
 	return fetchReleasesInternal(cache, channel, true)
@@ -73,12 +66,10 @@ func fetchReleasesInternal(cache VersionCache, channel Channel, refresh bool) ([
 		}
 	}
 
-	releases, err := fetchFromGitHub()
+	all, err := fetchFromGCS()
 	if err != nil {
 		return nil, err
 	}
-
-	all := toReleases(releases)
 
 	raw, err := json.Marshal(all)
 	if err == nil {
@@ -141,22 +132,16 @@ func CompareVersions(a, b string) int {
 	return va.Compare(vb)
 }
 
-func fetchFromGitHub() ([]githubRelease, error) {
+func fetchFromGCS() ([]Release, error) {
 	client := &http.Client{Timeout: apiTimeout}
-	req, err := http.NewRequest(http.MethodGet, githubReleasesURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := client.Do(req)
+	resp, err := client.Get(releasesURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned %s", resp.Status)
+		return nil, fmt.Errorf("fetch releases: %s", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -164,55 +149,11 @@ func fetchFromGitHub() ([]githubRelease, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	var releases []githubRelease
-	if err := json.Unmarshal(body, &releases); err != nil {
+	var manifest releasesManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
 		return nil, fmt.Errorf("parse releases: %w", err)
 	}
-	return releases, nil
-}
-
-// toReleases converts GitHub API responses to Release structs.
-func toReleases(gr []githubRelease) []Release {
-	var out []Release
-	for _, r := range gr {
-		if r.Draft {
-			continue
-		}
-		ch := classifyChannel(r.TagName, r.Prerelease)
-		rel := Release{
-			Version: strings.TrimPrefix(r.TagName, "v"),
-			Channel: ch,
-			Assets:  make(map[string]string),
-		}
-		for _, a := range r.Assets {
-			if strings.HasSuffix(a.Name, ".sha256") || strings.Contains(a.Name, "checksums") {
-				continue
-			}
-			// Map asset name to platform key
-			// Archives: "veil-linux-x64.tar.gz" -> "linux-x64"
-			//           "veil-windows-x64.zip" -> "windows-x64"
-			name := a.Name
-			name = strings.TrimPrefix(name, "veil-")
-			name = strings.TrimSuffix(name, ".tar.gz")
-			name = strings.TrimSuffix(name, ".zip")
-			name = strings.TrimSuffix(name, ".exe")
-			rel.Assets[name] = a.BrowserDownloadURL
-		}
-		out = append(out, rel)
-	}
-	return out
-}
-
-// classifyChannel maps a tag name and prerelease flag to a Channel.
-func classifyChannel(tag string, prerelease bool) Channel {
-	tag = strings.ToLower(tag)
-	if strings.Contains(tag, "nightly") || strings.Contains(tag, "dev") {
-		return ChannelNightly
-	}
-	if prerelease || strings.Contains(tag, "rc") || strings.Contains(tag, "beta") || strings.Contains(tag, "alpha") {
-		return ChannelBeta
-	}
-	return ChannelStable
+	return manifest.Releases, nil
 }
 
 // GetAssetURL returns the download URL for a specific platform.
