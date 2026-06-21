@@ -855,7 +855,7 @@ func (m *Model) renderExtensionsPrompt() string {
 	lines = append(lines, "  • pi-web-access - Web search, content fetching, video understanding")
 	lines = append(lines, "    Works zero-config via Exa MCP, or add API keys for more providers.")
 	lines = append(lines, "")
-	lines = append(lines, "  • @tintinweb/pi-subagents - Parallel subagent orchestration")
+	lines = append(lines, "  • @engrammic/veil-subagents - Parallel subagent orchestration")
 	lines = append(lines, "    Spawn and coordinate multiple agents for complex tasks.")
 	lines = append(lines, "")
 	lines = append(lines, "Install recommended extensions? [Y/n]")
@@ -876,7 +876,7 @@ func (m *Model) installRecommendedExtensions() tea.Cmd {
 
 		extensions := []string{
 			"npm:pi-web-access",
-			"npm:@tintinweb/pi-subagents",
+			"npm:@engrammic/veil-subagents",
 		}
 
 		for _, ext := range extensions {
