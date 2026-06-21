@@ -13,10 +13,12 @@ import {
 	createSubagentContext,
 	discoverAgents,
 	IpcServer,
+	type SubagentContext,
 	spawnSubagent,
 } from "@veil/subagent";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
+import { SubagentPanel } from "../../ui/subagent-panel.ts";
 
 // Agent discovery paths
 const USER_AGENT_DIR = path.join(os.homedir(), ".veil", "agents");
@@ -81,20 +83,29 @@ interface ExecutionResult {
 	error?: string;
 }
 
+interface RunningAgent {
+	ipcServer: IpcServer;
+	subCtx: SubagentContext;
+	abortController: AbortController;
+}
+
 function getDbPath(cwd: string): string {
 	return path.join(cwd, ".veil", "context.db");
 }
 
-async function executeSingleAgent(
+async function executeSingleAgentWithPanel(
 	agentConfig: AgentConfig,
 	task: string,
 	cwd: string,
 	sessionId: string,
+	panel: SubagentPanel,
+	runningAgents: Map<string, RunningAgent>,
 	signal?: AbortSignal,
 	modelOverride?: string,
 ): Promise<ExecutionResult> {
 	const dbPath = getDbPath(cwd);
-	const subCtx = createSubagentContext(dbPath, sessionId, { tag: agentConfig.name });
+	const tag = agentConfig.name;
+	const subCtx = createSubagentContext(dbPath, sessionId, { tag });
 
 	// Apply model override if provided
 	const effectiveConfig: AgentConfig = modelOverride ? { ...agentConfig, model: modelOverride } : agentConfig;
@@ -102,19 +113,43 @@ async function executeSingleAgent(
 	const ipcServer = new IpcServer(subCtx.ipcPath);
 	await ipcServer.start();
 
+	// Create abort controller for this agent
+	const agentAbort = new AbortController();
+	if (signal?.aborted) {
+		agentAbort.abort();
+	} else {
+		signal?.addEventListener("abort", () => agentAbort.abort(), { once: true });
+	}
+
+	// Track running agent
+	runningAgents.set(tag, { ipcServer, subCtx, abortController: agentAbort });
+
+	// Register agent in panel
+	panel.addAgent(tag, task);
+
 	let totalTokens = 0;
 	let lastOutput = "";
 
+	// Wire IPC events to panel
 	ipcServer.onMessage((msg: ChildMessage) => {
 		switch (msg.type) {
 			case "checkpoint":
 				totalTokens = msg.tokens;
+				panel.onCheckpoint(tag, msg.turn, msg.tokens, msg.lastTool);
+				break;
+			case "progress":
+				panel.onProgress(tag, msg.message, msg.percent);
 				break;
 			case "complete":
 				lastOutput = msg.result;
+				panel.onComplete(tag, msg.result);
 				break;
 			case "error":
 				lastOutput = `Error: ${msg.message}`;
+				panel.onError(tag, msg.message);
+				break;
+			case "escalate":
+				panel.onEscalate(tag, msg.requestId, msg.question);
 				break;
 		}
 	});
@@ -123,12 +158,14 @@ async function executeSingleAgent(
 		const result = await spawnSubagent(subCtx, effectiveConfig, {
 			cwd,
 			task,
-			signal,
+			signal: agentAbort.signal,
 		});
 
 		await ipcServer.close();
+		runningAgents.delete(tag);
 
 		if (result.exitCode !== 0) {
+			panel.onError(tag, result.stderr || "Process exited with error");
 			return {
 				success: false,
 				output: lastOutput || result.stderr || "Subagent failed",
@@ -137,6 +174,7 @@ async function executeSingleAgent(
 			};
 		}
 
+		panel.onComplete(tag, lastOutput || "Done");
 		return {
 			success: true,
 			output: lastOutput || result.stdout.join("\n"),
@@ -144,21 +182,26 @@ async function executeSingleAgent(
 		};
 	} catch (err) {
 		await ipcServer.close();
+		runningAgents.delete(tag);
+		const errorMsg = err instanceof Error ? err.message : String(err);
+		panel.onError(tag, errorMsg);
 		return {
 			success: false,
 			output: "",
-			error: err instanceof Error ? err.message : String(err),
+			error: errorMsg,
 		};
 	} finally {
 		await subCtx.cleanup();
 	}
 }
 
-async function executeParallel(
+async function executeParallelWithPanel(
 	agents: Map<string, AgentConfig>,
 	tasks: Array<{ agent: string; task: string; model?: string }>,
 	cwd: string,
 	sessionId: string,
+	panel: SubagentPanel,
+	runningAgents: Map<string, RunningAgent>,
 	signal?: AbortSignal,
 ): Promise<ExecutionResult[]> {
 	const results: ExecutionResult[] = [];
@@ -166,16 +209,31 @@ async function executeParallel(
 	// Run in batches to respect MAX_CONCURRENT
 	for (let i = 0; i < tasks.length; i += MAX_CONCURRENT) {
 		const batch = tasks.slice(i, i + MAX_CONCURRENT);
-		const batchPromises = batch.map(async (t) => {
+		const batchPromises = batch.map(async (t, batchIdx) => {
 			const agentConfig = agents.get(t.agent);
 			if (!agentConfig) {
+				// Use unique tag for missing agents
+				const tag = `${t.agent}-${i + batchIdx}`;
+				panel.addAgent(tag, t.task);
+				panel.onError(tag, `Agent not found: ${t.agent}`);
 				return {
 					success: false,
 					output: "",
 					error: `Agent not found: ${t.agent}`,
 				};
 			}
-			return executeSingleAgent(agentConfig, t.task, cwd, sessionId, signal, t.model);
+			// Use unique tag if same agent appears multiple times
+			const uniqueConfig = { ...agentConfig, name: `${agentConfig.name}-${i + batchIdx}` };
+			return executeSingleAgentWithPanel(
+				uniqueConfig,
+				t.task,
+				cwd,
+				sessionId,
+				panel,
+				runningAgents,
+				signal,
+				t.model,
+			);
 		});
 
 		const batchResults = await Promise.all(batchPromises);
@@ -185,18 +243,24 @@ async function executeParallel(
 	return results;
 }
 
-async function executeChain(
+async function executeChainWithPanel(
 	agents: Map<string, AgentConfig>,
 	chain: Array<{ agent: string; task: string; model?: string }>,
 	cwd: string,
 	sessionId: string,
+	panel: SubagentPanel,
+	runningAgents: Map<string, RunningAgent>,
 	signal?: AbortSignal,
 ): Promise<ExecutionResult> {
 	let previous = "";
 
-	for (const step of chain) {
+	for (let i = 0; i < chain.length; i++) {
+		const step = chain[i]!;
 		const agentConfig = agents.get(step.agent);
 		if (!agentConfig) {
+			const tag = `${step.agent}-${i}`;
+			panel.addAgent(tag, step.task);
+			panel.onError(tag, `Agent not found: ${step.agent}`);
 			return {
 				success: false,
 				output: previous,
@@ -206,7 +270,18 @@ async function executeChain(
 
 		// Replace {previous} placeholder with prior output
 		const task = step.task.replace(/\{previous\}/g, previous);
-		const result = await executeSingleAgent(agentConfig, task, cwd, sessionId, signal, step.model);
+		// Use step index in tag for chain uniqueness
+		const uniqueConfig = { ...agentConfig, name: `${agentConfig.name}-step${i + 1}` };
+		const result = await executeSingleAgentWithPanel(
+			uniqueConfig,
+			task,
+			cwd,
+			sessionId,
+			panel,
+			runningAgents,
+			signal,
+			step.model,
+		);
 
 		if (!result.success) {
 			return result;
@@ -253,86 +328,157 @@ export default function subagentExtension(pi: ExtensionAPI): void {
 				};
 			}
 
-			// Determine execution mode
-			if (input.chain && input.chain.length > 0) {
-				// Chain mode
-				const result = await executeChain(agentMap, input.chain, cwd, sessionId, signal);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: result.success
-								? `Chain completed:\n\n${result.output}`
-								: `Chain failed: ${result.error}\n\nPartial output:\n${result.output}`,
-						},
-					],
-					details: undefined,
-				};
+			// Determine mode and create panel
+			const mode = input.chain?.length ? "chain" : input.tasks?.length ? "parallel" : "single";
+			const panel = new SubagentPanel(mode);
+			const runningAgents = new Map<string, RunningAgent>();
+
+			// Wire panel callbacks to control running agents
+			panel.onKill = (tag: string) => {
+				const running = runningAgents.get(tag);
+				if (running) {
+					running.ipcServer.send({ version: 1, type: "abort", reason: "User killed" });
+					running.abortController.abort();
+				}
+			};
+
+			panel.onPause = (tag: string) => {
+				const running = runningAgents.get(tag);
+				if (running) {
+					running.ipcServer.send({ version: 1, type: "interrupt" });
+					panel.updateAgent(tag, { status: "paused" });
+				}
+			};
+
+			panel.onResume = (tag: string) => {
+				const running = runningAgents.get(tag);
+				if (running) {
+					running.ipcServer.send({ version: 1, type: "resume" });
+					panel.updateAgent(tag, { status: "running" });
+				}
+			};
+
+			panel.onEscalationAnswer = (tag: string, requestId: string, answer: string) => {
+				const running = runningAgents.get(tag);
+				if (running) {
+					running.ipcServer.send({ version: 1, type: "respond", requestId, answer });
+				}
+			};
+
+			// Set panel as widget if UI is available
+			if (ctx.hasUI) {
+				ctx.ui.setWidget("subagent-panel", (_tui, _theme) => panel, { placement: "aboveEditor" });
 			}
 
-			if (input.tasks && input.tasks.length > 0) {
-				// Parallel mode
-				const results = await executeParallel(agentMap, input.tasks, cwd, sessionId, signal);
-				const outputs = results.map((r, i) => {
-					const taskInfo = input.tasks![i];
-					const header = `## ${taskInfo.agent}: ${taskInfo.task.slice(0, 50)}...`;
-					return r.success ? `${header}\n\n${r.output}` : `${header}\n\nFailed: ${r.error}`;
-				});
-
-				const successCount = results.filter((r) => r.success).length;
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Parallel execution: ${successCount}/${results.length} succeeded\n\n${outputs.join("\n\n---\n\n")}`,
-						},
-					],
-					details: undefined,
-				};
-			}
-
-			if (input.agent && input.task) {
-				// Single mode
-				const agentConfig = agentMap.get(input.agent);
-				if (!agentConfig) {
-					const available = Array.from(agentMap.keys()).join(", ");
+			try {
+				// Execute based on mode
+				if (input.chain && input.chain.length > 0) {
+					const result = await executeChainWithPanel(
+						agentMap,
+						input.chain,
+						cwd,
+						sessionId,
+						panel,
+						runningAgents,
+						signal,
+					);
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `Agent not found: ${input.agent}\n\nAvailable agents: ${available || "none"}`,
+								text: result.success
+									? `Chain completed:\n\n${result.output}`
+									: `Chain failed: ${result.error}\n\nPartial output:\n${result.output}`,
 							},
 						],
 						details: undefined,
 					};
 				}
 
-				const result = await executeSingleAgent(agentConfig, input.task, cwd, sessionId, signal, input.model);
+				if (input.tasks && input.tasks.length > 0) {
+					const results = await executeParallelWithPanel(
+						agentMap,
+						input.tasks,
+						cwd,
+						sessionId,
+						panel,
+						runningAgents,
+						signal,
+					);
+					const outputs = results.map((r, i) => {
+						const taskInfo = input.tasks![i];
+						const header = `## ${taskInfo.agent}: ${taskInfo.task.slice(0, 50)}...`;
+						return r.success ? `${header}\n\n${r.output}` : `${header}\n\nFailed: ${r.error}`;
+					});
+
+					const successCount = results.filter((r) => r.success).length;
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Parallel execution: ${successCount}/${results.length} succeeded\n\n${outputs.join("\n\n---\n\n")}`,
+							},
+						],
+						details: undefined,
+					};
+				}
+
+				if (input.agent && input.task) {
+					const agentConfig = agentMap.get(input.agent);
+					if (!agentConfig) {
+						const available = Array.from(agentMap.keys()).join(", ");
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Agent not found: ${input.agent}\n\nAvailable agents: ${available || "none"}`,
+								},
+							],
+							details: undefined,
+						};
+					}
+
+					const result = await executeSingleAgentWithPanel(
+						agentConfig,
+						input.task,
+						cwd,
+						sessionId,
+						panel,
+						runningAgents,
+						signal,
+						input.model,
+					);
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: result.success
+									? result.output
+									: `Subagent failed: ${result.error}\n\nOutput:\n${result.output}`,
+							},
+						],
+						details: undefined,
+					};
+				}
+
+				// No valid input - list available agents
+				const agentList = discovery.agents.map((a) => `- **${a.name}** (${a.source}): ${a.description}`).join("\n");
+
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: result.success
-								? result.output
-								: `Subagent failed: ${result.error}\n\nOutput:\n${result.output}`,
+							text: `No task specified. Available agents:\n\n${agentList}\n\nUsage:\n- Single: \`{agent: "scout", task: "find auth code"}\`\n- Parallel: \`{tasks: [{agent: "scout", task: "..."}, ...]}\`\n- Chain: \`{chain: [{agent: "scout", task: "..."}, {agent: "reviewer", task: "review {previous}"}]}\``,
 						},
 					],
 					details: undefined,
 				};
+			} finally {
+				// Clear widget when done
+				if (ctx.hasUI) {
+					ctx.ui.setWidget("subagent-panel", undefined);
+				}
 			}
-
-			// No valid input - list available agents
-			const agentList = discovery.agents.map((a) => `- **${a.name}** (${a.source}): ${a.description}`).join("\n");
-
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `No task specified. Available agents:\n\n${agentList}\n\nUsage:\n- Single: \`{agent: "scout", task: "find auth code"}\`\n- Parallel: \`{tasks: [{agent: "scout", task: "..."}, ...]}\`\n- Chain: \`{chain: [{agent: "scout", task: "..."}, {agent: "reviewer", task: "review {previous}"}]}\``,
-					},
-				],
-				details: undefined,
-			};
 		},
 	});
 }
