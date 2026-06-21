@@ -51,6 +51,8 @@ function wakeUp() {
 	resetIdleTimer();
 }
 
+const VEIL_HARNESS_KEY = Symbol.for("veil:harness");
+
 export default function veilStatusbar(pi: ExtensionAPI) {
 	// Subscribe to tool results to track veil_* custom tool calls only
 	pi.on("tool_result", (event: ToolResultEvent) => {
@@ -75,6 +77,23 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 
 		const config = loadConfig(ctx.cwd);
+
+		// Subscribe to VeilHarness memory events if available
+		let unsubscribeMemory: (() => void) | undefined;
+		const harness = (globalThis as any)[VEIL_HARNESS_KEY];
+		if (harness?.onMemoryEvent) {
+			unsubscribeMemory = harness.onMemoryEvent((event: { type: string; detail?: string }) => {
+				if (!currentLayout) return;
+				resetIdleTimer();
+
+				const catState = event.type as CatState;
+				if (!["sleeping", "watching", "remembering", "learned", "recalled", "conflict"].includes(catState)) {
+					return;
+				}
+
+				currentLayout.emit({ type: "memory", state: catState, detail: event.detail });
+			});
+		}
 
 		ctx.ui.setFooter((_tui, theme, footerData) => {
 			const layout = new StatusBarLayout();
@@ -116,6 +135,7 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 				invalidate: () => layout.invalidate(),
 				dispose: () => {
 					unsubscribeMode();
+					unsubscribeMemory?.();
 					currentLayout = null;
 					layout.dispose();
 				},
