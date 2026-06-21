@@ -49,6 +49,12 @@ export {
 	renderContextSearch,
 	type SearchResult,
 } from "./commands/context.ts";
+export {
+	executeHistoryCommand,
+	formatHistoryResults,
+	type HistoryCommandOptions,
+	type HistoryResult,
+} from "./commands/history.ts";
 // Compression pipeline
 export {
 	type CodeCompressOptions,
@@ -78,6 +84,14 @@ export {
 } from "./convergence.ts";
 export { type ArchivedTurn, ConversationArchive } from "./conversation-archive.ts";
 export { EvictionController, type EvictionResult } from "./eviction.ts";
+export {
+	createEvictionFeedbackTracker,
+	detectRerequest,
+	type EvictionFeedback,
+	type EvictionFeedbackTracker,
+	type EvictionFeedbackType,
+	REREQUEST_PATTERNS,
+} from "./eviction-feedback.ts";
 export { createVeilExtension } from "./extension.ts";
 export { applyTaskSuccessSignal, type FeedbackResult, FeedbackTracker } from "./feedback.ts";
 export { DEFAULT_FSRS_CONFIG, defaultFSRS, type FSRSConfig, FSRSEngine } from "./fsrs.ts";
@@ -194,6 +208,7 @@ export {
 	selectForEviction,
 	TYPE_WEIGHTS,
 } from "./turn-eviction.ts";
+export { generateStub, groupConsecutiveTurns, type StubOptions, summarizeAction } from "./turn-stub.ts";
 export {
 	type CaptureRule,
 	type ContextBudget,

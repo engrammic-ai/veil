@@ -149,6 +149,20 @@ export class ConversationArchive {
 		return rows.map(rowToTurn);
 	}
 
+	async searchContent(query: string, limit = 20): Promise<ArchivedTurn[]> {
+		const rows = this.conn
+			.prepare("SELECT * FROM conversation_archive WHERE content LIKE ? ORDER BY turn_number DESC LIMIT ?")
+			.all(`%${query}%`, limit) as any[];
+		return rows.map(rowToTurn);
+	}
+
+	async getByType(metaType: string, limit = 20): Promise<ArchivedTurn[]> {
+		const rows = this.conn
+			.prepare("SELECT * FROM conversation_archive WHERE meta_type = ? ORDER BY turn_number DESC LIMIT ?")
+			.all(metaType, limit) as any[];
+		return rows.map(rowToTurn);
+	}
+
 	async pruneOldTurns(olderThanMs: number, excludeTypes: string[]): Promise<number> {
 		const cutoff = Date.now() - olderThanMs;
 		const placeholders = excludeTypes.length > 0 ? excludeTypes.map(() => "?").join(", ") : null;
