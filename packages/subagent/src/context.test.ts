@@ -44,10 +44,18 @@ describe("createSubagentContext", () => {
 });
 
 describe("mergeSubagentContext", () => {
-	it("returns zeros when child DB does not exist", async () => {
+	it("returns zeros when child DB does not exist (with mock harness)", async () => {
 		const ctx = createSubagentContext("/tmp/nonexistent.db", "parent", { tag: "test" });
 
-		const result = await mergeSubagentContext("/tmp/nonexistent.db", ctx);
+		// Create a minimal mock harness that just calls importFromDb
+		const mockHarness = {
+			async importFromDb(_childDbPath: string, _options: { tag?: string; sessionId?: string }) {
+				// Since the child DB doesn't exist, importFromDb should return zeros
+				return { imported: 0, skipped: 0 };
+			},
+		};
+
+		const result = await mergeSubagentContext(mockHarness as any, ctx);
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
 		expect(result.childSession).toContain("test");

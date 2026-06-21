@@ -719,35 +719,32 @@ export async function main(args: string[], options?: MainOptions) {
 			mkdirSync(veilDir, { recursive: true });
 		}
 
-		// Detect child (subagent) mode from CLI flags.
-		// TODO(subagent-wiring): When VeilHarness gains child-mode support, pass these
-		// options to the constructor so it can attach to the parent's warm cache DB,
-		// register provenance via veilSessionId, apply the tag prefix, and connect to
-		// the IPC socket for result reporting back to the parent process.
-		//
-		//   const isChildMode = parsed.veilParentDb !== undefined;
-		//   if (isChildMode) {
-		//     veilHarness = new VeilHarness({
-		//       dbPath: join(veilDir, "context.db"),
-		//       maxTokens: contextBudget,
-		//       sessionId: sessionManager.getSessionId(),
-		//       parentDb: parsed.veilParentDb,
-		//       parentSessionId: parsed.veilSessionId,
-		//       tagPrefix: parsed.veilTag,
-		//       ipcPath: parsed.veilIpc,
-		//       enableVeilTools: parsed.veilTools ?? true,
-		//     });
-		//   }
-
 		// Create VeilHarness with graceful degradation
+		// Detect child (subagent) mode from CLI flags
 		const contextBudget = Math.floor((sessionOptions.model?.contextWindow ?? 128000) * 0.7);
+		const isChildMode = parsed.veilParentDb !== undefined;
 		let veilHarness: VeilHarness | undefined;
 		try {
-			veilHarness = new VeilHarness({
-				dbPath: join(veilDir, "context.db"),
-				maxTokens: contextBudget,
-				sessionId: sessionManager.getSessionId(),
-			});
+			if (isChildMode) {
+				// Child mode: connect to parent's IPC, apply tag prefix
+				veilHarness = new VeilHarness({
+					dbPath: join(veilDir, "context.db"),
+					maxTokens: contextBudget,
+					sessionId: sessionManager.getSessionId(),
+					parentDbPath: parsed.veilParentDb,
+					parentSessionId: parsed.veilSessionId,
+					tagPrefix: parsed.veilTag,
+					ipcPath: parsed.veilIpc,
+					enableVeilTools: parsed.veilTools ?? true,
+				});
+			} else {
+				// Normal mode
+				veilHarness = new VeilHarness({
+					dbPath: join(veilDir, "context.db"),
+					maxTokens: contextBudget,
+					sessionId: sessionManager.getSessionId(),
+				});
+			}
 		} catch (err) {
 			console.error(`Failed to initialize context management: ${err instanceof Error ? err.message : String(err)}`);
 			console.error("Continuing without context management.");

@@ -4,6 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { VeilHarness } from "@engrammic/veil-context";
 import { ipcPath } from "./ipc.ts";
 import type { MergeOptions, MergeResult, SubagentContext, SubagentContextOptions } from "./types.ts";
 
@@ -51,25 +52,32 @@ export function createSubagentContext(
 }
 
 /**
- * Merge child's captures into parent (placeholder - full impl needs VeilHarness)
+ * Merge child's captures into parent via VeilHarness.importFromDb().
+ *
+ * @param harness The parent's VeilHarness instance
+ * @param childContext The child's SubagentContext
+ * @param options Merge options (transferWeights)
+ * @returns Merge result with import counts
  */
 export async function mergeSubagentContext(
-	_parentDbPath: string,
+	harness: VeilHarness,
 	childContext: SubagentContext,
-	_options: MergeOptions = {},
+	options: MergeOptions = {},
 ): Promise<MergeResult> {
 	// Check if child DB exists
 	if (!fs.existsSync(childContext.childDbPath)) {
 		return { imported: 0, skipped: 0, childSession: childContext.sessionId };
 	}
 
-	// TODO: Full implementation requires better-sqlite3 to read child DB
-	// and VeilHarness API to import items. For now, return placeholder.
-	// The actual merge will be done when we have the full VeilHarness integration.
+	const result = await harness.importFromDb(childContext.childDbPath, {
+		tag: childContext.tag,
+		sessionId: childContext.sessionId,
+		transferWeights: options.transferWeights ?? true,
+	});
 
 	return {
-		imported: 0,
-		skipped: 0,
+		imported: result.imported,
+		skipped: result.skipped,
 		childSession: childContext.sessionId,
 	};
 }

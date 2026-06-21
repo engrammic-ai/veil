@@ -2,6 +2,7 @@
  * Subagent tool - delegate tasks to specialized agents
  */
 
+import type { VeilHarness } from "@engrammic/veil-context";
 import { discoverAgents } from "./agents.ts";
 import { createSubagentContext, mergeSubagentContext } from "./context.ts";
 import { IpcServer } from "./ipc.ts";
@@ -14,6 +15,8 @@ const MAX_CONCURRENCY = 4;
 export interface SubagentToolConfig {
 	parentDbPath: string;
 	parentSessionId: string;
+	/** VeilHarness instance for context merge (optional - if not provided, merge is skipped) */
+	harness?: VeilHarness;
 	onEscalate?: (question: string, childTag: string) => Promise<string>;
 	onCheckpoint?: (checkpoint: ChildMessage & { type: "checkpoint" }, childTag: string) => void;
 	onProgress?: (progress: ChildMessage & { type: "progress" }, childTag: string) => void;
@@ -107,8 +110,10 @@ async function runSingleAgent(
 			signal,
 		});
 
-		// Merge context back to parent
-		await mergeSubagentContext(config.parentDbPath, ctx);
+		// Merge context back to parent (if harness provided)
+		if (config.harness) {
+			await mergeSubagentContext(config.harness, ctx);
+		}
 
 		// Parse final output from stdout (JSON mode)
 		let finalOutput = "";

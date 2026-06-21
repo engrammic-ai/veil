@@ -1303,3 +1303,135 @@ describe("VeilHarness.search", () => {
 		await harness.close();
 	});
 });
+
+describe("VeilHarness.importFromDb", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "veil-import-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true });
+	});
+
+	test("imports items from child DB with provenance tags", async () => {
+		const childDbPath = join(tmpDir, "child.db");
+
+		// Create "child" harness and store some items
+		const childHarness = new VeilHarness({
+			dbPath: childDbPath,
+			coldStore: new MemoryColdStore(),
+		});
+
+		childHarness.remember("child item 1", "fact", ["child", "test"]);
+		childHarness.remember("child item 2", "episodic", ["child"]);
+
+		// Important: Get items count before close since close() flushes to cold storage
+		const childCache = childHarness.getManager().getCache();
+		const childItems = childCache.getAll();
+		expect(childItems.length).toBe(2);
+
+		// Close the cache directly (without flush) to persist WAL
+		childCache.close();
+
+		// Create "parent" harness and import
+		const parentHarness = new VeilHarness({
+			dbPath: join(tmpDir, "parent.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const result = await parentHarness.importFromDb(childDbPath, {
+			tag: "scout",
+			sessionId: "child-session-123",
+		});
+
+		expect(result.imported).toBe(2);
+		expect(result.skipped).toBe(0);
+
+		// Verify items are in parent with provenance tags
+		const results = parentHarness.search("child item");
+		expect(results.length).toBe(2);
+
+		await parentHarness.close();
+	});
+
+	test("deduplicates by content hash", async () => {
+		const childDbPath = join(tmpDir, "child.db");
+
+		const childHarness = new VeilHarness({
+			dbPath: childDbPath,
+			coldStore: new MemoryColdStore(),
+		});
+		childHarness.remember("duplicate content", "fact", ["child"]);
+		// Close cache directly without flush to keep items in warm storage
+		childHarness.getManager().getCache().close();
+
+		const parentHarness = new VeilHarness({
+			dbPath: join(tmpDir, "parent.db"),
+			coldStore: new MemoryColdStore(),
+		});
+		// Store same content in parent
+		parentHarness.remember("duplicate content", "fact", ["parent"]);
+
+		const result = await parentHarness.importFromDb(childDbPath, {
+			tag: "scout",
+		});
+
+		expect(result.imported).toBe(0);
+		expect(result.skipped).toBe(1);
+
+		await parentHarness.close();
+	});
+
+	test("returns zeros for non-existent child DB", async () => {
+		const parentHarness = new VeilHarness({
+			dbPath: join(tmpDir, "parent.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		const result = await parentHarness.importFromDb(join(tmpDir, "nonexistent.db"), {
+			tag: "missing",
+		});
+
+		expect(result.imported).toBe(0);
+		expect(result.skipped).toBe(0);
+
+		await parentHarness.close();
+	});
+
+	test("transfers cognitive weights when enabled", async () => {
+		const childDbPath = join(tmpDir, "child.db");
+
+		const childHarness = new VeilHarness({
+			dbPath: childDbPath,
+			coldStore: new MemoryColdStore(),
+		});
+		const childItem = childHarness.remember("weighted item", "fact", ["child"]);
+		// Simulate cognitive weight update via multiple "good" outcomes
+		childHarness.getManager().getCache().updateCognitiveWeight(childItem.id, 0.5);
+		// Close cache directly without flush to keep items in warm storage
+		childHarness.getManager().getCache().close();
+
+		const parentHarness = new VeilHarness({
+			dbPath: join(tmpDir, "parent.db"),
+			coldStore: new MemoryColdStore(),
+		});
+
+		// Add same content to parent first so dedup triggers weight transfer
+		const parentItem = parentHarness.remember("weighted item", "fact", ["parent"]);
+
+		const result = await parentHarness.importFromDb(childDbPath, {
+			tag: "scout",
+			transferWeights: true,
+		});
+
+		expect(result.skipped).toBe(1);
+
+		// Parent item should have updated cognitive weight
+		const updated = parentHarness.getManager().getCache().get(parentItem.id);
+		expect(updated?.cognitiveWeight).not.toBe(0);
+
+		await parentHarness.close();
+	});
+});

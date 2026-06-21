@@ -104,6 +104,8 @@ export {
 	type AfterToolCallResult,
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
+	type ImportOptions as SubagentImportOptions,
+	type ImportResult as SubagentImportResult,
 	type MemoryEvent,
 	type MemoryEventType,
 	type ToolResultEvent,
@@ -137,6 +139,8 @@ export type {
 	SessionIntentManagerOptions,
 } from "./intent/index.ts";
 export { generateIntentId, loadProjectIntent, SessionIntentManager, saveProjectIntent } from "./intent/index.ts";
+// IPC client for child mode
+export { type ChildMessage, IpcClient, type ParentMessage } from "./ipc-client.ts";
 // Core
 export { ContextManager } from "./manager.ts";
 export {
