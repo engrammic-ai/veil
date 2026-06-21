@@ -227,3 +227,24 @@ def check_episode_boundary(prev_chunk, curr_chunk):
 ```
 
 Uses local embedding model (e.g., `all-MiniLM-L6-v2`, 80MB) - no cloud calls.
+
+---
+
+## Conversation Eviction
+
+Separate from memory chunk eviction, conversation eviction prunes old conversation turns while preserving critical context (decisions, corrections, intent declarations).
+
+Key differences from memory eviction:
+- **Scope**: Conversation turns vs memory chunks
+- **Storage**: `conversation_archive` table vs warm/cold memory tiers
+- **Classification**: Turn types (decision, exploration, action) vs chunk types (episodic, procedural)
+- **Reference tracking**: Embedding similarity for implicit references vs explicit dependency graphs
+
+See [SPEC-intent-tracking.md](SPEC-intent-tracking.md#conversation-eviction) for full details.
+
+Components:
+- `turn-classifier.ts` - Classify turns via `<turn-meta>` or heuristics
+- `turn-eviction.ts` - Score turns for eviction (12-turn protected window)
+- `reference-detector.ts` - Embedding similarity for reference detection
+- `turn-stub.ts` - Generate stubs for evicted turns
+- `eviction-feedback.ts` - Learn from eviction mistakes

@@ -97,6 +97,58 @@ When `complete(id)` is called on the current sub-intent, the pointer auto-advanc
 
 Intent items are pinned against context eviction (see `manager.ts` eviction exclusions). This ensures the agent always knows what it's working toward, even under memory pressure.
 
+## Conversation Eviction
+
+Intent tracking enables *smart conversation eviction* - pruning old turns while preserving critical context.
+
+### Turn Classification
+
+Every turn gets classified for eviction scoring:
+
+| Type | Evictable? | Example |
+|------|------------|---------|
+| `intent_declaration` | NEVER | "I want to refactor auth" |
+| `decision` | NEVER (until superseded) | "Let's use approach X" |
+| `correction` | NEVER | "No, not that way" |
+| `exploration` | YES (after conclusion) | "What if we tried..." |
+| `action` | YES (after completion) | "Read file X" |
+| `status` | YES (after N turns) | "Done with step 1" |
+
+### Classification Modes
+
+**Mode C (loops/autonomous):** Agent calls `veil_turn_meta` tool — ~99% compliance via schema enforcement
+
+**Mode B (interactive):** Agent emits `<turn-meta>` block, heuristic fallback if missing
+
+### Reference Detection
+
+References inferred via embedding similarity (no agent cooperation needed):
+- 12-turn protected window (never evicted)
+- Cosine similarity > 0.7 = referenced = lower eviction score
+
+### Components
+
+| File | Purpose |
+|------|---------|
+| `turn-classifier.ts` | Parse `<turn-meta>` + heuristic fallback |
+| `conversation-archive.ts` | SQLite storage for archived turns |
+| `reference-detector.ts` | Embedding similarity for references |
+| `turn-eviction.ts` | Eviction scoring with protected window |
+| `turn-stub.ts` | Generate stubs for evicted turns |
+| `eviction-feedback.ts` | Detect eviction mistakes |
+| `commands/history.ts` | `/history` command for archive search |
+
+### Storage
+
+Separate `conversation_archive` table from veil-memory (different retention policies):
+- Active session: keep all turns
+- Evicted: archive for 30 days
+- Decisions/corrections: keep indefinitely
+
+### Commands
+
+- `/history <query>` - Search conversation archive (distinct from `veil_history` for episodic memory)
+
 ## Future Work
 
 - **Agent-inferred sub-intents**: Let the agent propose task breakdowns
