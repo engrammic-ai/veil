@@ -134,7 +134,8 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 	},
 	{
 		name: "veil_turn_meta",
-		description: "REQUIRED: Call at the end of every response to classify your turn for context management.",
+		description:
+			"Classify your turn for context management. Call once per assistant turn, not repeatedly. Only use when you have meaningful metadata to record.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -353,9 +354,12 @@ async function executeVeilHistory(params: { query: string; days?: number }, ctx:
 	return { success: true, data: { formatted, items: results } };
 }
 
-function executeTurnMeta(_params: { type: string; intent_id?: string; decision_summary?: string }): ToolResult {
+function executeTurnMeta(params: { type: string; intent_id?: string; decision_summary?: string }): ToolResult {
 	// Storage will be wired up in Phase 8b; for now just acknowledge receipt
-	return { success: true };
+	return {
+		success: true,
+		data: `Turn classified as "${params.type}". Do not call veil_turn_meta again this turn.`,
+	};
 }
 
 // Wrap tool results in explicit tags for better model interpretation
