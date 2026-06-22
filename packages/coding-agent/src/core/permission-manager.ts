@@ -135,6 +135,34 @@ const DESTRUCTIVE_BASH_PATTERNS = [
 	/\bshred\s/,
 ];
 
+// Bash patterns that bypass write/edit tool permissions - always prompt with warning
+const WRITE_BYPASS_PATTERNS: Array<{ pattern: RegExp; suggestion: string }> = [
+	{ pattern: /\becho\s+.*>/, suggestion: "Use the write tool to create/overwrite files" },
+	{ pattern: /\bprintf\s+.*>/, suggestion: "Use the write tool to create/overwrite files" },
+	{ pattern: />>/, suggestion: "Use the edit tool to append to files" },
+	{ pattern: /<<\s*['"]?EOF/i, suggestion: "Use the write tool instead of heredocs" },
+	{ pattern: /<<\s*['"]?END/i, suggestion: "Use the write tool instead of heredocs" },
+	{ pattern: /<<[-]?\s*['"]?\w+['"]?\s*$/, suggestion: "Use the write tool instead of heredocs" },
+	{ pattern: /\bsed\s+(-[^i]*)?-i/, suggestion: "Use the edit tool for in-place file modifications" },
+	{ pattern: /\bperl\s+(-[^i]*)?-i/, suggestion: "Use the edit tool for in-place file modifications" },
+	{ pattern: /\|\s*tee\s/, suggestion: "Use the write tool instead of tee" },
+	{ pattern: /\bawk\s+.*>/, suggestion: "Use the write tool instead of awk output redirection" },
+];
+
+/**
+ * Check if a bash command bypasses write/edit permissions.
+ * Returns a warning message if it does, undefined otherwise.
+ */
+export function detectWriteBypass(command: string): string | undefined {
+	const trimmed = command.trim();
+	for (const { pattern, suggestion } of WRITE_BYPASS_PATTERNS) {
+		if (pattern.test(trimmed)) {
+			return `This command writes to files, bypassing permission controls. ${suggestion}.`;
+		}
+	}
+	return undefined;
+}
+
 function isBashReadOnly(command: string): boolean {
 	const trimmed = command.trim();
 
@@ -353,6 +381,8 @@ export class PermissionManager {
 			const command = String(args.command);
 			if (this.config.bash?.deny?.some((p) => matchesBashPattern(command, p))) return true;
 			if (this.config.bash?.allow?.some((p) => matchesBashPattern(command, p))) return false;
+			// Write-bypass commands always prompt (even in auto mode)
+			if (detectWriteBypass(command)) return true;
 		}
 
 		// Mode-specific logic

@@ -83,7 +83,7 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
-import { PermissionManager } from "./permission-manager.ts";
+import { detectWriteBypass, PermissionManager } from "./permission-manager.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
@@ -445,10 +445,16 @@ export class AgentSession {
 			// Permission check
 			if (this._permissionManager.shouldPrompt(toolContext)) {
 				const argsPreview = JSON.stringify(args).slice(0, 100);
-				const approved = await this._extensionUIContext?.confirm(
-					"Tool Approval",
-					`Allow ${toolCall.name}? Args: ${argsPreview}`,
-				);
+				// Check for write-bypass warning (bash commands that should use write/edit tools)
+				const argsRecord = args as Record<string, unknown>;
+				const writeBypassWarning =
+					toolCall.name === "bash" && argsRecord?.command
+						? detectWriteBypass(String(argsRecord.command))
+						: undefined;
+				const message = writeBypassWarning
+					? `WARNING: ${writeBypassWarning}\n\nAllow ${toolCall.name}? Args: ${argsPreview}`
+					: `Allow ${toolCall.name}? Args: ${argsPreview}`;
+				const approved = await this._extensionUIContext?.confirm("Tool Approval", message);
 				if (!approved) {
 					return { block: true, reason: "User denied tool execution" };
 				}

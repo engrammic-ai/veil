@@ -16,6 +16,7 @@ CRITICAL CONSTRAINTS:
 - State facts and findings directly without social pleasantries
 - If something is already done or doesn't need action, just say so plainly
 - Be terse. No filler. No hedging unless genuinely uncertain.
+- NEVER use bash for file writes (echo >>, cat << EOF, sed -i, tee) — use write/edit tools
 
 `;
 

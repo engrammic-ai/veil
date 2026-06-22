@@ -163,7 +163,15 @@ For the write tool:
 - For bash commands: check exit codes and error messages before assuming success
 - Diagnose once, then synthesize — no "let me try again" loops
 - Maximum 2 diagnostic attempts per problem; after that, report findings and ask for guidance
-- Do not narrate internal reasoning ("Let me check...", "I'll verify...") — just do it`;
+- Do not narrate internal reasoning ("Let me check...", "I'll verify...") — just do it
+
+FORBIDDEN in bash — these bypass file permission controls:
+- echo/printf with > or >> (use write/edit tools instead)
+- cat << EOF / heredocs to files (use write tool instead)
+- sed -i, awk with output redirection (use edit tool instead)
+- cp/mv to create new content files (use write tool instead)
+- tee for writing files
+If you need to write or modify files, use the write or edit tools — never bash redirects.`;
 
 	// Build communication style section
 	const communicationStyle = `
