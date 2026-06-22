@@ -7,6 +7,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentConfig, SubagentContext } from "./types.ts";
 
+// Common preamble prepended to all subagent system prompts
+const SUBAGENT_PREAMBLE = `You are a subagent spawned to complete a specific task. Return your findings directly.
+
+CRITICAL CONSTRAINTS:
+- Avoid reflexive agreement. Never use phrases like "You're absolutely right", "Great catch", "That makes sense", "Good point"
+- Never praise the user or parent agent
+- State facts and findings directly without social pleasantries
+- If something is already done or doesn't need action, just say so plainly
+- Be terse. No filler. No hedging unless genuinely uncertain.
+
+`;
+
 /**
  * Build CLI arguments for spawning a veil child process
  */
@@ -36,6 +48,11 @@ export function getVeilInvocation(ctx: SubagentContext, agent: AgentConfig): str
 
 	if (agent.veil?.enableVeilTools === false) {
 		args.push("--veil-tools", "false");
+	}
+
+	// Pass system prompt with anti-sycophancy preamble
+	if (agent.systemPrompt) {
+		args.push("--system-prompt", SUBAGENT_PREAMBLE + agent.systemPrompt);
 	}
 
 	return args;

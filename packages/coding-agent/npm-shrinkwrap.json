@@ -1,12 +1,12 @@
 {
 	"name": "@engrammic/veil",
-	"version": "0.1.27",
+	"version": "0.1.28",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@engrammic/veil",
-			"version": "0.1.27",
+			"version": "0.1.28",
 			"license": "MIT",
 			"dependencies": {
 				"@earendil-works/pi-agent-core": "^0.79.6",
@@ -1283,8 +1283,8 @@
 			}
 		},
 		"node_modules/@veil/subagent": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@veil/subagent/-/subagent-0.1.26.tgz",
+			"version": "0.1.27",
+			"resolved": "https://registry.npmjs.org/@veil/subagent/-/subagent-0.1.27.tgz",
 			"dependencies": {
 				"@engrammic/veil-context": "*",
 				"better-sqlite3": "11.10.0"

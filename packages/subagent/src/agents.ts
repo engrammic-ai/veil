@@ -11,11 +11,13 @@ const CONFIG_DIR_NAME = ".veil";
 
 // Built-in agents shipped with Veil
 // Model is optional - if omitted, inherits from parent session or can be overridden by caller
+// Built-in agents shipped with Veil
+// Tools omitted = inherit all tools from parent session (including MCP tools)
+// Model omitted = inherit from parent session
 const BUILTIN_AGENTS: AgentConfig[] = [
 	{
 		name: "scout",
 		description: "Fast codebase reconnaissance - finds files, patterns, and structure",
-		tools: ["Read", "Bash", "Glob", "Grep"],
 		model: "fast", // hint: use fastest available model
 		systemPrompt: `You are a fast reconnaissance agent. Your job is to quickly locate information in the codebase and return concise, compressed context.
 
@@ -33,8 +35,6 @@ If you find what was asked for, stop and report. Don't over-research.`,
 	{
 		name: "reviewer",
 		description: "Code review agent - analyzes code for bugs, issues, and improvements",
-		tools: ["Read", "Bash", "Glob", "Grep"],
-		// model omitted - inherits from parent (review needs same quality as caller)
 		systemPrompt: `You are a code review agent. Analyze code for:
 
 1. **Bugs**: Logic errors, edge cases, null checks, off-by-ones
@@ -55,8 +55,6 @@ Be thorough but prioritize. Critical bugs first.`,
 	{
 		name: "researcher",
 		description: "Deep research agent - explores topics with web search and documentation",
-		tools: ["Read", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"],
-		// model omitted - inherits from parent
 		systemPrompt: `You are a research agent. Gather comprehensive information on the given topic.
 
 Process:
@@ -78,8 +76,6 @@ Be thorough. Cite sources. Note confidence levels.`,
 	{
 		name: "implementer",
 		description: "Implementation agent - writes code, runs tests, makes changes",
-		tools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-		// model omitted - inherits from parent
 		systemPrompt: `You are an implementation agent. Execute the given task precisely.
 
 Process:
@@ -101,8 +97,6 @@ Report what you changed and test results.`,
 	{
 		name: "planner",
 		description: "Planning agent - breaks down tasks into steps and dependencies",
-		tools: ["Read", "Bash", "Glob", "Grep"],
-		// model omitted - inherits from parent
 		systemPrompt: `You are a planning agent. Break down complex tasks into actionable steps.
 
 For each task:
