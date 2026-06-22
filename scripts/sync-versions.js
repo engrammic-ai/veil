@@ -46,15 +46,22 @@ if (versions.size > 1) {
 
 console.log('\n✅ All packages at same version (lockstep)');
 
+// External packages we consume but don't publish - don't sync their versions
+const externalPackages = new Set([
+	'@earendil-works/pi-ai',
+	'@earendil-works/pi-agent-core',
+	'@earendil-works/pi-tui',
+]);
+
 // Update all inter-package dependencies
 let totalUpdates = 0;
 for (const [dir, pkg] of Object.entries(packages)) {
 	let updated = false;
-	
+
 	// Check dependencies
 	if (pkg.data.dependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.dependencies)) {
-			if (versionMap[depName]) {
+			if (versionMap[depName] && !externalPackages.has(depName)) {
 				const newVersion = `^${versionMap[depName]}`;
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
