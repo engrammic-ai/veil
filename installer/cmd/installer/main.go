@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ func main() {
 }
 
 // InstallerVersion should match app.InstallerVersion
-const InstallerVersion = "0.1.30"
+const InstallerVersion = "0.1.31"
 
 var rootCmd = &cobra.Command{
 	Use:     "veil-installer",
@@ -771,7 +772,7 @@ func doSelfUpdate(asPrereq bool) bool {
 		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("create dir: %w", err))
 	}
 
-	if err := os.Rename(tmpPath, installerPath); err != nil {
+	if err := moveFile(tmpPath, installerPath); err != nil {
 		os.Remove(tmpPath)
 		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("replace installer: %w", err))
 	}
@@ -1071,7 +1072,7 @@ func ensureInstallerInstalled() {
 		return
 	}
 
-	if err := os.Rename(tmpPath, destPath); err != nil {
+	if err := moveFile(tmpPath, destPath); err != nil {
 		os.Remove(tmpPath)
 		return
 	}
@@ -1093,4 +1094,40 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// moveFile moves src to dst, handling cross-device moves by copying then deleting.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	// Rename failed (likely cross-device), fall back to copy + delete
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		os.Remove(dst)
+		return err
+	}
+
+	if err := dstFile.Close(); err != nil {
+		os.Remove(dst)
+		return err
+	}
+
+	return os.Remove(src)
 }
