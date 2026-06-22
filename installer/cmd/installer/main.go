@@ -48,7 +48,7 @@ func main() {
 }
 
 // InstallerVersion should match app.InstallerVersion
-const InstallerVersion = "0.1.31"
+const InstallerVersion = "0.1.32"
 
 var rootCmd = &cobra.Command{
 	Use:     "veil-installer",

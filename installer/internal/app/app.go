@@ -24,7 +24,7 @@ import (
 )
 
 // InstallerVersion is the version of the installer itself.
-const InstallerVersion = "0.1.31"
+const InstallerVersion = "0.1.32"
 
 // embedderConfig is the JSON config for the embedder server.
 type embedderConfig struct {
