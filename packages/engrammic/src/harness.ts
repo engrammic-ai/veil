@@ -98,6 +98,14 @@ export type MemoryEventType =
 export interface MemoryEvent {
 	type: MemoryEventType;
 	detail?: string;
+	/** Current harness usage stats, included with budget-related events */
+	usage?: {
+		hotTokens: number;
+		hotItems: number;
+		budgetMax: number;
+		budgetUsed: number;
+		percent: number;
+	};
 }
 
 export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
@@ -576,6 +584,7 @@ export class VeilHarness {
 
 		if (evicted.length > 0) {
 			// Track evicted tool call IDs for faded history
+			let freedTokens = 0;
 			for (const candidate of evicted) {
 				if (candidate.item.sourceToolCallId) {
 					this.evictedToolCallIds.add(candidate.item.sourceToolCallId);
@@ -583,6 +592,7 @@ export class VeilHarness {
 				// Decrement token budget only for items auto-captured by this harness
 				if (this.autoCapturedIds.has(candidate.item.id)) {
 					const freed = this.estimateTokens(candidate.item.content);
+					freedTokens += freed;
 					this.tokenBudget.used = Math.max(0, this.tokenBudget.used - freed);
 					this.autoCapturedIds.delete(candidate.item.id);
 				}
@@ -596,6 +606,8 @@ export class VeilHarness {
 				}
 				this.sessionStats.evicted++;
 			}
+			// Emit eviction event with budget info
+			this.emitMemoryEvent("forgetting", `evicted ${evicted.length}, freed ~${freedTokens} tokens`);
 			if (this.config.onEviction) {
 				this.config.onEviction(evicted);
 			}
@@ -1198,7 +1210,20 @@ export class VeilHarness {
 	 * Also updates cat widget state and tracks session stats.
 	 */
 	private emitMemoryEvent(type: MemoryEventType, detail?: string): void {
-		const event = { type, detail };
+		// Include usage stats for budget-related events
+		const includeUsage = ["forgetting", "budget_exceeded", "budget_warning", "learned", "remembering"].includes(type);
+		let usage: MemoryEvent["usage"];
+		if (includeUsage) {
+			const stats = this.getUsage();
+			usage = {
+				hotTokens: stats.hotTokens,
+				hotItems: stats.hotItems,
+				budgetMax: stats.budgetMax,
+				budgetUsed: stats.budgetUsed,
+				percent: stats.percent,
+			};
+		}
+		const event: MemoryEvent = { type, detail, usage };
 
 		// Update cat widget state (only forward states the widget understands)
 		const CAT_STATES = new Set([
