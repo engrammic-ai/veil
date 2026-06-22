@@ -142,7 +142,7 @@ const WRITE_BYPASS_PATTERNS: Array<{ pattern: RegExp; suggestion: string }> = [
 	{ pattern: />>/, suggestion: "Use the edit tool to append to files" },
 	{ pattern: /<<\s*['"]?EOF/i, suggestion: "Use the write tool instead of heredocs" },
 	{ pattern: /<<\s*['"]?END/i, suggestion: "Use the write tool instead of heredocs" },
-	{ pattern: /<<[-]?\s*['"]?\w+['"]?\s*$/, suggestion: "Use the write tool instead of heredocs" },
+	{ pattern: /<<-?\s*['"]?\w+['"]?/, suggestion: "Use the write tool instead of heredocs" },
 	{ pattern: /\bsed\s+(-[^i]*)?-i/, suggestion: "Use the edit tool for in-place file modifications" },
 	{ pattern: /\bperl\s+(-[^i]*)?-i/, suggestion: "Use the edit tool for in-place file modifications" },
 	{ pattern: /\|\s*tee\s/, suggestion: "Use the write tool instead of tee" },
