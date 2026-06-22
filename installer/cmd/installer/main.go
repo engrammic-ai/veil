@@ -47,7 +47,7 @@ func main() {
 }
 
 // InstallerVersion should match app.InstallerVersion
-const InstallerVersion = "0.1.24"
+const InstallerVersion = "0.1.26"
 
 var rootCmd = &cobra.Command{
 	Use:     "veil-installer",
@@ -95,6 +95,13 @@ var checkCmd = &cobra.Command{
 	Run:   runCheck,
 }
 
+var selfUpdateCmd = &cobra.Command{
+	Use:   "self-update",
+	Short: "Update the installer itself to the latest version",
+	Long:  "Download and install the latest version of veil-installer from the releases server.",
+	Run:   runSelfUpdate,
+}
+
 var embedderCmd = &cobra.Command{
 	Use:   "embedder",
 	Short: "Manage the Veil embedder server",
@@ -133,7 +140,7 @@ func init() {
 
 	embedderCacheCmd.AddCommand(embedderCacheClearCmd)
 	embedderCmd.AddCommand(embedderCacheCmd)
-	rootCmd.AddCommand(installCmd, updateCmd, uninstallCmd, infoCmd, releasesCmd, checkCmd, embedderCmd)
+	rootCmd.AddCommand(installCmd, updateCmd, uninstallCmd, infoCmd, releasesCmd, checkCmd, selfUpdateCmd, embedderCmd)
 }
 
 // newDownloadClient creates a download client with proxy/CA-cert config from flags.
@@ -406,6 +413,9 @@ func runInstall(cmd *cobra.Command, args []string) {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) {
+	// Self-update the installer first (defaults to yes)
+	doSelfUpdate(true)
+
 	destPath, err := resolveInstallPath()
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrGeneral, err)
@@ -663,15 +673,119 @@ func runAirgapInstall(_ *cobra.Command, _ []string) {
 	}
 }
 
+func runSelfUpdate(cmd *cobra.Command, args []string) {
+	doSelfUpdate(false)
+}
+
+// doSelfUpdate updates the installer itself. Returns true if an update was performed.
+// If asPrereq is true, this is being called as part of `update` and should be quieter.
+func doSelfUpdate(asPrereq bool) bool {
+	installerRelease, err := config.GetInstallerRelease()
+	if err != nil {
+		if !asPrereq && !quiet {
+			fmt.Printf("Warning: could not fetch installer release info: %v\n", err)
+		}
+		return false
+	}
+
+	if installerRelease == nil {
+		if !asPrereq && !quiet {
+			fmt.Println("No installer release info available.")
+		}
+		return false
+	}
+
+	// Compare versions
+	if config.CompareVersions(installerRelease.Version, InstallerVersion) <= 0 {
+		if !asPrereq && !quiet {
+			fmt.Printf("Installer is up to date (%s)\n", InstallerVersion)
+		}
+		return false
+	}
+
+	// Get current platform
+	plat := platform.Detect()
+	assetURL, ok := installerRelease.GetAssetURL(plat.AssetKey())
+	if !ok {
+		if !asPrereq && !quiet {
+			fmt.Printf("No installer binary available for %s\n", plat.AssetKey())
+		}
+		return false
+	}
+
+	if !quiet {
+		fmt.Printf("Installer update available: %s -> %s\n", InstallerVersion, installerRelease.Version)
+	}
+
+	// Default to yes for self-update
+	if !yes && !asPrereq {
+		fmt.Print("Update installer? [Y/n] ")
+		var answer string
+		fmt.Scanln(&answer)
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		if answer == "n" || answer == "no" {
+			fmt.Println("Skipped installer update.")
+			return false
+		}
+	}
+
+	// Download new installer
+	client, err := newDownloadClient()
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("create download client: %w", err))
+	}
+
+	if !quiet {
+		fmt.Printf("Downloading installer %s...\n", installerRelease.Version)
+	}
+
+	tmpFile, err := os.CreateTemp("", "veil-installer-*.tmp")
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("create temp file: %w", err))
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+
+	if err := client.Download(context.Background(), assetURL, tmpPath, nil); err != nil {
+		os.Remove(tmpPath)
+		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("download installer: %w", err))
+	}
+
+	// Make executable
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		os.Remove(tmpPath)
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("chmod: %w", err))
+	}
+
+	// Find current installer path
+	home, err := os.UserHomeDir()
+	if err != nil {
+		os.Remove(tmpPath)
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("resolve home: %w", err))
+	}
+	installerPath := filepath.Join(home, ".local", "bin", "veil-installer")
+
+	// Replace installer
+	if err := os.MkdirAll(filepath.Dir(installerPath), 0o755); err != nil {
+		os.Remove(tmpPath)
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("create dir: %w", err))
+	}
+
+	if err := os.Rename(tmpPath, installerPath); err != nil {
+		os.Remove(tmpPath)
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("replace installer: %w", err))
+	}
+
+	if !quiet {
+		fmt.Printf("Installer updated to %s\n", installerRelease.Version)
+	}
+	return true
+}
+
 func runCheck(cmd *cobra.Command, args []string) {
 	destPath, err := resolveInstallPath()
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrGeneral, err)
-	}
-
-	current := "0.0.0"
-	if _, err := os.Stat(destPath); err == nil {
-		current = installedVersion(destPath)
 	}
 
 	cache, err := download.NewCache()
@@ -680,21 +794,145 @@ func runCheck(cmd *cobra.Command, args []string) {
 	}
 
 	ch := config.Channel(channel)
+	hasUpdate := false
+
+	if !quiet {
+		fmt.Println()
+		fmt.Println("  Veil Health Check")
+		fmt.Println("  =================")
+		fmt.Println()
+	}
+
+	// Check installer version
+	installerRelease, _ := config.GetInstallerRelease()
+	installerStatus := "up to date"
+	installerLatest := InstallerVersion
+	if installerRelease != nil {
+		installerLatest = installerRelease.Version
+		if config.CompareVersions(installerRelease.Version, InstallerVersion) > 0 {
+			installerStatus = "update available"
+			hasUpdate = true
+		}
+	}
+	if !quiet {
+		fmt.Printf("  Installer:    %s", InstallerVersion)
+		if installerStatus == "update available" {
+			fmt.Printf(" -> %s available", installerLatest)
+		} else {
+			fmt.Printf(" (latest)")
+		}
+		fmt.Println()
+	}
+
+	// Check veil version
+	veilInstalled := false
+	current := "not installed"
+	if _, err := os.Stat(destPath); err == nil {
+		current = installedVersion(destPath)
+		veilInstalled = true
+	}
+
 	latest, err := config.GetLatestRefresh(cache, ch)
 	if err != nil {
 		exitcodes.ExitError(exitcodes.ErrNetwork, fmt.Errorf("fetch latest release: %w", err))
 	}
 
-	if config.CompareVersions(latest.Version, current) > 0 {
-		if !quiet {
-			fmt.Printf("Update available: %s -> %s\n", current, latest.Version)
-		}
-		os.Exit(10)
+	veilStatus := "up to date"
+	if !veilInstalled {
+		veilStatus = "not installed"
+	} else if config.CompareVersions(latest.Version, current) > 0 {
+		veilStatus = "update available"
+		hasUpdate = true
 	}
 
 	if !quiet {
-		fmt.Printf("Up to date (%s)\n", current)
+		fmt.Printf("  Veil CLI:     %s", current)
+		if veilStatus == "update available" {
+			fmt.Printf(" -> %s available", latest.Version)
+		} else if veilInstalled {
+			fmt.Printf(" (latest)")
+		}
+		fmt.Println()
+		fmt.Printf("  Channel:      %s\n", ch)
+		fmt.Printf("  Path:         %s\n", destPath)
 	}
+
+	// Check extensions
+	if veilInstalled {
+		home, _ := os.UserHomeDir()
+		extensionsDir := filepath.Join(home, ".veil", "extensions")
+		agentsDir := filepath.Join(home, ".veil", "agents")
+
+		extCount := countFiles(extensionsDir, ".ts", ".js")
+		agentCount := countFiles(agentsDir, ".md")
+
+		if !quiet {
+			fmt.Printf("  Extensions:   %d custom\n", extCount)
+			fmt.Printf("  Agents:       %d custom\n", agentCount)
+		}
+	}
+
+	// Check shell integration
+	if veilInstalled && !quiet {
+		shell := platform.DetectShell()
+		shellCfg := platform.GetShellConfig(shell)
+		pathOk := install.IsPathConfigured(shellCfg)
+		completionPath := install.GetCompletionPath(shell)
+		completionsOk := false
+		if completionPath != "" {
+			_, statErr := os.Stat(completionPath)
+			completionsOk = statErr == nil
+		}
+
+		fmt.Println()
+		fmt.Printf("  Shell:        %s\n", shell)
+		fmt.Printf("  PATH:         %s\n", boolStatus(pathOk))
+		fmt.Printf("  Completions:  %s\n", boolStatus(completionsOk))
+	}
+
+	if !quiet {
+		fmt.Println()
+		if hasUpdate {
+			fmt.Println("  Run 'veil-installer update' to update.")
+		} else if veilInstalled {
+			fmt.Println("  Everything looks good!")
+		} else {
+			fmt.Println("  Run 'veil-installer install' to install Veil.")
+		}
+		fmt.Println()
+	}
+
+	if hasUpdate {
+		os.Exit(10)
+	}
+}
+
+func boolStatus(ok bool) string {
+	if ok {
+		return "configured"
+	}
+	return "not configured"
+}
+
+func countFiles(dir string, exts ...string) int {
+	count := 0
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		for _, ext := range exts {
+			if strings.HasSuffix(name, ext) {
+				count++
+				break
+			}
+		}
+	}
+	return count
 }
 
 func runEmbedderCacheClear(cmd *cobra.Command, args []string) {

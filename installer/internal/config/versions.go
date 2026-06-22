@@ -33,9 +33,16 @@ type Release struct {
 	Assets   map[string]string `json:"assets"`   // platform -> download URL
 }
 
+// InstallerRelease represents the installer binary release info.
+type InstallerRelease struct {
+	Version string            `json:"version"`
+	Assets  map[string]string `json:"assets"` // platform -> download URL
+}
+
 // releasesManifest is the GCS releases.json shape.
 type releasesManifest struct {
-	Releases []Release `json:"releases"`
+	Releases  []Release         `json:"releases"`
+	Installer *InstallerRelease `json:"installer,omitempty"`
 }
 
 // VersionCache is satisfied by download.Cache for version caching.
@@ -133,6 +140,14 @@ func CompareVersions(a, b string) int {
 }
 
 func fetchFromGCS() ([]Release, error) {
+	manifest, err := fetchManifestFromGCS()
+	if err != nil {
+		return nil, err
+	}
+	return manifest.Releases, nil
+}
+
+func fetchManifestFromGCS() (*releasesManifest, error) {
 	client := &http.Client{Timeout: apiTimeout}
 	resp, err := client.Get(releasesURL)
 	if err != nil {
@@ -153,7 +168,25 @@ func fetchFromGCS() ([]Release, error) {
 	if err := json.Unmarshal(body, &manifest); err != nil {
 		return nil, fmt.Errorf("parse releases: %w", err)
 	}
-	return manifest.Releases, nil
+	return &manifest, nil
+}
+
+// GetInstallerRelease fetches the latest installer release info.
+func GetInstallerRelease() (*InstallerRelease, error) {
+	manifest, err := fetchManifestFromGCS()
+	if err != nil {
+		return nil, err
+	}
+	return manifest.Installer, nil
+}
+
+// GetAssetURL returns the download URL for a specific platform.
+func (r *InstallerRelease) GetAssetURL(platform string) (string, bool) {
+	if r == nil || r.Assets == nil {
+		return "", false
+	}
+	url, ok := r.Assets[platform]
+	return url, ok
 }
 
 // GetAssetURL returns the download URL for a specific platform.
