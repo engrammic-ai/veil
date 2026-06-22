@@ -206,10 +206,8 @@ export default function subagentHooksExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		// Attach child harness to the session
-		event.session.veilHarness = forkResult.harness;
-
 		// Wire up auto-capture so subagent tool results are captured
+		// (harness passed directly to wireAutoCapture, not set on session)
 		wireAutoCapture(event.id, forkResult.harness, event.session);
 	});
 
