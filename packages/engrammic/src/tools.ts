@@ -1,5 +1,6 @@
 // packages/engrammic/src/tools.ts
 
+import type { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { hydrateStub, parseStub } from "./hydration.ts";
 import { formatStub } from "./injection.ts";
 import type { ContextManager } from "./manager.ts";
@@ -154,12 +155,39 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 			required: ["type"],
 		},
 	},
+	{
+		name: "veil_conflicts",
+		description:
+			"List conflicting beliefs in cold storage. Returns pairs of facts that contradict each other on the same subject.",
+		parameters: {
+			type: "object",
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "veil_resolve_conflict",
+		description: "Resolve a conflict by picking which belief to keep. The loser is retracted.",
+		parameters: {
+			type: "object",
+			properties: {
+				conflict_event_id: {
+					type: "string",
+					description: "Event ID of the conflicting belief (from veil_conflicts)",
+				},
+				winner_event_id: { type: "string", description: "Event ID of the belief to keep" },
+				reason: { type: "string", description: "Brief explanation of why this belief wins" },
+			},
+			required: ["conflict_event_id", "winner_event_id", "reason"],
+		},
+	},
 ];
 
 // Tool implementations
 
 export interface ToolContext {
 	manager: ContextManager;
+	coldStore?: VeilMemoryColdStore;
 	onRecall?: (ids: string[]) => void;
 }
 
@@ -191,6 +219,13 @@ export async function executeVeilTool(
 			return await executeVeilHistory(params as { query: string; days?: number }, ctx);
 		case "veil_turn_meta":
 			return executeTurnMeta(params as { type: string; intent_id?: string; decision_summary?: string });
+		case "veil_conflicts":
+			return executeConflicts(ctx);
+		case "veil_resolve_conflict":
+			return executeResolveConflict(
+				params as { conflict_event_id: string; winner_event_id: string; reason: string },
+				ctx,
+			);
 		default:
 			return { success: false, error: `Unknown tool: ${name}` };
 	}
@@ -327,4 +362,43 @@ function executeTurnMeta(_params: { type: string; intent_id?: string; decision_s
 function wrapToolResult(tool: string, count: number, content: string): string {
 	const status = count > 0 ? `Found ${count} item${count === 1 ? "" : "s"}` : "No items found";
 	return `<veil-${tool} count="${count}">\n${status}:\n${content}\n</veil-${tool}>`;
+}
+
+function executeConflicts(ctx: ToolContext): ToolResult {
+	if (!ctx.coldStore) {
+		return { success: false, error: "Cold storage not configured" };
+	}
+
+	const conflicts = ctx.coldStore.getConflicts();
+	if (conflicts.length === 0) {
+		return { success: true, data: { formatted: "No conflicts detected.", conflicts: [] } };
+	}
+
+	const lines = conflicts.map((c, i) => {
+		return `[${i + 1}] Subject: ${c.subjectHash.slice(0, 8)}...
+  A: "${c.contentA.slice(0, 60)}..." (id: ${c.eventIdA}, conf: ${c.confidenceA})
+  B: "${c.contentB.slice(0, 60)}..." (id: ${c.eventIdB}, conf: ${c.confidenceB})`;
+	});
+
+	const formatted = `<veil-conflicts count="${conflicts.length}">
+${lines.join("\n\n")}
+</veil-conflicts>`;
+
+	return { success: true, data: { formatted, conflicts } };
+}
+
+function executeResolveConflict(
+	params: { conflict_event_id: string; winner_event_id: string; reason: string },
+	ctx: ToolContext,
+): ToolResult {
+	if (!ctx.coldStore) {
+		return { success: false, error: "Cold storage not configured" };
+	}
+
+	try {
+		ctx.coldStore.resolveConflict(params.conflict_event_id, params.winner_event_id, params.reason);
+		return { success: true, data: { resolved: params.conflict_event_id, winner: params.winner_event_id } };
+	} catch (err) {
+		return { success: false, error: `Resolution failed: ${err instanceof Error ? err.message : String(err)}` };
+	}
 }

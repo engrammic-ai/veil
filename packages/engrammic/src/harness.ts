@@ -18,6 +18,7 @@ import { extractContent, generateInternalTags, getCaptureRule } from "./capture.
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
 import type { ColdStore } from "./cold/interface.ts";
+import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
 import {
 	buildConvergenceWarning,
@@ -59,6 +60,7 @@ import type {
 	ContextManagerConfig,
 	ContextManifest,
 	EvictionCandidate,
+	PendingConflict,
 	TaskContext,
 	Trigger,
 } from "./types.ts";
@@ -87,6 +89,7 @@ export type MemoryEventType =
 	| "remembering"
 	| "learned"
 	| "recalled"
+	| "forgetting"
 	| "conflict"
 	| "sleeping"
 	| "budget_exceeded"
@@ -313,12 +316,69 @@ export class VeilHarness {
 	private parentSessionId: string | undefined;
 	private ipcClient: IpcClient | null = null;
 
+	// Cold storage reference for conflict tools
+	private coldStore: VeilMemoryColdStore | undefined;
+
+	// Pending conflicts for LLM resolution
+	private pendingConflicts: PendingConflict[] = [];
+
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
 		this.captureConfig = { ...DEFAULT_CAPTURE_CONFIG, ...config.captureConfig };
 		this.learningConfig = { ...this.learningConfig, ...config.learningConfig };
-		this.manager = new ContextManager(config, config.coldStore);
+
+		// Create cold store with conflict callbacks if not provided
+		// Cold store uses ~/.veil/cold.db globally with projectId-based isolation
+		let coldStore = config.coldStore;
+		if (!coldStore) {
+			coldStore = new VeilMemoryColdStore({
+				// dbPath defaults to ~/.veil/cold.db, projectId defaults to cwd hash
+				onConflict: (_newId: string, _conflictsWith: string[], content: string) => {
+					this.emitMemoryEvent("conflict", content);
+				},
+				onSemanticConflict: (conflict) => {
+					// Only queue unresolved conflicts for LLM review
+					if (!conflict.autoResolved || conflict.resolution === "unresolved") {
+						const pendingConflict: PendingConflict = {
+							id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+							subject: conflict.existingContent.slice(0, 50),
+							beliefA: {
+								eventId: conflict.existingEventId,
+								content: conflict.existingContent,
+								confidence: conflict.existingConfidence,
+								sourceTier: conflict.existingSourceTier as PendingConflict["beliefA"]["sourceTier"],
+								recordedAt: Date.now(), // We don't have the original timestamp here
+							},
+							beliefB: {
+								eventId: "new", // Will be filled after store
+								content: conflict.newContent,
+								confidence: conflict.newConfidence,
+								sourceTier: conflict.newSourceTier as PendingConflict["beliefB"]["sourceTier"],
+								recordedAt: Date.now(),
+							},
+							similarity: conflict.similarity,
+							detectedAt: Date.now(),
+							suggestion: "Compare the sources and content to determine which belief is correct.",
+						};
+						this.pendingConflicts.push(pendingConflict);
+						this.emitMemoryEvent(
+							"conflict",
+							`Semantic conflict: "${conflict.existingContent.slice(0, 30)}..." vs new fact`,
+						);
+					} else if (conflict.autoResolved) {
+						// Log auto-resolved conflicts
+						this.emitMemoryEvent("learned", `Auto-resolved: ${conflict.reason}`);
+					}
+				},
+			});
+		}
+		// Save reference for conflict tools
+		if (coldStore instanceof VeilMemoryColdStore) {
+			this.coldStore = coldStore;
+		}
+
+		this.manager = new ContextManager(config, coldStore);
 		const customTriggers = this.manager.getCache().loadCustomTriggers();
 		this.triggers = [...DEFAULT_TRIGGERS, ...customTriggers];
 
@@ -1141,10 +1201,18 @@ export class VeilHarness {
 		const event = { type, detail };
 
 		// Update cat widget state (only forward states the widget understands)
-		const CAT_STATES = new Set(["sleeping", "watching", "remembering", "learned", "recalled", "conflict"]);
+		const CAT_STATES = new Set([
+			"sleeping",
+			"watching",
+			"remembering",
+			"learned",
+			"recalled",
+			"forgetting",
+			"conflict",
+		]);
 		if (CAT_STATES.has(type)) {
 			this.catWidget.setState({
-				state: type as "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict",
+				state: type as "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "forgetting" | "conflict",
 				detail,
 			});
 		}
@@ -1231,21 +1299,47 @@ export class VeilHarness {
 
 	/**
 	 * Remember something (store in warm cache).
+	 * For facts, also checks cold storage for conflicts.
 	 */
 	remember(content: string, type: "episodic" | "procedural" | "fact", tags: string[] = [], toolCallId?: string) {
 		this.emitMemoryEvent("remembering", content.slice(0, 50));
 		const result = this.manager.remember(content, type, tags, toolCallId);
 		this.emitMemoryEvent("learned", type);
+
+		// Check for conflicts with cold storage on factual items
+		if (type === "fact" && this.config.coldStore instanceof VeilMemoryColdStore) {
+			const conflicts = this.config.coldStore.getConflicts();
+			// Extract subject from first tag or content prefix
+			const subject = tags[0] ?? content.slice(0, 50).replace(/\n/g, " ").trim();
+			const subjectHash = hashContent(subject);
+			const matching = conflicts.filter((c) => c.subjectHash === subjectHash);
+			if (matching.length > 0) {
+				this.emitMemoryEvent("conflict", `${matching.length} conflicting belief(s) on "${subject.slice(0, 30)}"`);
+			}
+		}
+
 		return result;
 	}
 
 	/**
 	 * Recall items by tags.
+	 * Also checks if any recalled items have conflicts in cold storage.
 	 */
 	async recall(tags: string[], limit = 10) {
 		this.emitMemoryEvent("watching", `searching ${tags.join(", ")}`);
 		const result = await this.manager.recall(tags, limit);
 		this.emitMemoryEvent("recalled", `found ${result.length} items`);
+
+		// Check for conflicts among recalled items
+		if (result.length > 0 && this.config.coldStore instanceof VeilMemoryColdStore) {
+			const conflicts = this.config.coldStore.getConflicts();
+			const recalledIds = new Set(result.map((r) => r.id));
+			const matching = conflicts.filter((c) => recalledIds.has(c.eventIdA) || recalledIds.has(c.eventIdB));
+			if (matching.length > 0) {
+				this.emitMemoryEvent("conflict", `${matching.length} conflict(s) in recalled items`);
+			}
+		}
+
 		return result;
 	}
 
@@ -1326,6 +1420,7 @@ export class VeilHarness {
 	 * Also decrements capture budget if item was auto-captured.
 	 */
 	async forget(id: string) {
+		this.emitMemoryEvent("forgetting", id.slice(0, 20));
 		// Decrement capture budget if this was an auto-captured item
 		if (this.autoCapturedIds.has(id)) {
 			const item = this.manager.getWindow().items.find((i) => i.id === id);
@@ -1393,6 +1488,7 @@ export class VeilHarness {
 
 		const result = await executeVeilTool(name, params, {
 			manager: this.manager,
+			coldStore: this.coldStore,
 			onRecall: (ids) => this.onRecall(ids),
 		});
 
@@ -1406,6 +1502,29 @@ export class VeilHarness {
 				this.emitMemoryEvent("recalled", "promoted");
 			} else if (name === "veil_pin") {
 				this.emitMemoryEvent("learned", "pinned");
+			} else if (name === "veil_conflicts") {
+				const data = result.data as { conflicts?: unknown[] } | undefined;
+				if (data?.conflicts && data.conflicts.length > 0) {
+					this.emitMemoryEvent("conflict", `${data.conflicts.length} conflict(s)`);
+				}
+			} else if (name === "veil_resolve_conflict") {
+				this.emitMemoryEvent("learned", "resolved conflict");
+				// Clear resolved conflict from pending queue
+				const resolvedData = result.data as { resolved?: string } | undefined;
+				if (resolvedData?.resolved) {
+					// Find and remove any pending conflict involving this event ID
+					this.pendingConflicts = this.pendingConflicts.filter(
+						(c) => c.beliefA.eventId !== resolvedData.resolved && c.beliefB.eventId !== resolvedData.resolved,
+					);
+				}
+			} else if (name === "veil_forget") {
+				// Also clear conflicts involving forgotten items
+				const forgetParams = params as { id?: string };
+				if (forgetParams.id) {
+					this.pendingConflicts = this.pendingConflicts.filter(
+						(c) => c.beliefA.eventId !== forgetParams.id && c.beliefB.eventId !== forgetParams.id,
+					);
+				}
 			}
 		}
 
@@ -1442,6 +1561,87 @@ export class VeilHarness {
 				});
 			}
 		}
+	}
+
+	/**
+	 * Get pending conflicts that need LLM resolution.
+	 * Returns formatted string for context injection, or null if no conflicts.
+	 */
+	getConflictSection(): string | null {
+		if (this.pendingConflicts.length === 0) return null;
+
+		const lines = ["MEMORY CONFLICT DETECTED - Resolution Required:", ""];
+
+		for (const conflict of this.pendingConflicts) {
+			const tierLabel = (tier: string) => {
+				const labels: Record<string, string> = {
+					authoritative: "authoritative source",
+					validated: "validated",
+					observed: "observed",
+					inferred: "inferred",
+				};
+				return labels[tier] ?? tier;
+			};
+
+			const formatAge = (ts: number) => {
+				const ms = Date.now() - ts;
+				const mins = Math.floor(ms / 60000);
+				if (mins < 60) return `${mins}min ago`;
+				const hours = Math.floor(mins / 60);
+				if (hours < 24) return `${hours}hr ago`;
+				return `${Math.floor(hours / 24)}d ago`;
+			};
+
+			lines.push(`Conflict ID: ${conflict.id}`);
+			lines.push(`Similarity: ${(conflict.similarity * 100).toFixed(0)}%`);
+			lines.push("");
+			lines.push(`Belief A: "${conflict.beliefA.content}"`);
+			lines.push(
+				`  - Source: ${tierLabel(conflict.beliefA.sourceTier)}${conflict.beliefA.sourceToolName ? ` (${conflict.beliefA.sourceToolName})` : ""}`,
+			);
+			lines.push(`  - Confidence: ${conflict.beliefA.confidence.toFixed(2)}`);
+			lines.push(`  - Recorded: ${formatAge(conflict.beliefA.recordedAt)}`);
+			lines.push(`  - Event ID: ${conflict.beliefA.eventId}`);
+			lines.push("");
+			lines.push(`Belief B: "${conflict.beliefB.content}"`);
+			lines.push(
+				`  - Source: ${tierLabel(conflict.beliefB.sourceTier)}${conflict.beliefB.sourceToolName ? ` (${conflict.beliefB.sourceToolName})` : ""}`,
+			);
+			lines.push(`  - Confidence: ${conflict.beliefB.confidence.toFixed(2)}`);
+			lines.push(`  - Recorded: ${formatAge(conflict.beliefB.recordedAt)}`);
+			lines.push(`  - Event ID: ${conflict.beliefB.eventId}`);
+			lines.push("");
+			if (conflict.suggestion) {
+				lines.push(`Suggestion: ${conflict.suggestion}`);
+			}
+			lines.push(
+				"Action: Use veil_resolve_conflict to pick the correct belief, or veil_forget to remove the incorrect one.",
+			);
+			lines.push("---");
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Get pending conflicts array.
+	 */
+	getPendingConflicts(): PendingConflict[] {
+		return [...this.pendingConflicts];
+	}
+
+	/**
+	 * Clear a resolved conflict from the pending queue.
+	 */
+	clearConflict(conflictId: string): void {
+		this.pendingConflicts = this.pendingConflicts.filter((c) => c.id !== conflictId);
+	}
+
+	/**
+	 * Clear all pending conflicts.
+	 */
+	clearAllConflicts(): void {
+		this.pendingConflicts = [];
 	}
 
 	/**

@@ -2,10 +2,10 @@
 name: researcher
 description: Research agent with memory - searches, reads, and remembers key findings
 tools:
-  - Read
-  - Bash
-  - WebSearch
-  - WebFetch
+  - read
+  - bash
+  - web_search
+  - web_fetch
   - veil_recall
   - veil_remember
 promptMode: append

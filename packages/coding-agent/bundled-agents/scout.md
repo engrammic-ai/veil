@@ -2,10 +2,10 @@
 name: scout
 description: Codebase explorer with memory - finds patterns, structures, and conventions
 tools:
-  - Read
-  - Bash
-  - Grep
-  - Glob
+  - read
+  - bash
+  - grep
+  - find
   - veil_recall
   - veil_remember
 promptMode: append

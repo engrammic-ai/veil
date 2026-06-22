@@ -20,6 +20,9 @@ const UNICODE_FRAMES = {
 	recalled: `   /\\_/\\
   ( ^.^ )
    > ♦ <`,
+	forgetting: `   /\\_/\\
+  ( x.x )
+   > - <`,
 	conflict: `   /\\_/\\
   ( o.o )
    > ! <`,
@@ -41,6 +44,9 @@ const ASCII_FRAMES = {
 	recalled: `   /\\_/\\
   ( ^.^ )
    > * <`,
+	forgetting: `   /\\_/\\
+  ( x.x )
+   > - <`,
 	conflict: `   /\\_/\\
   ( o.o )
    > ! <`,
@@ -113,6 +119,7 @@ export class CatWidget {
 			remembering: "~",
 			learned: "+",
 			recalled: "*",
+			forgetting: "x",
 			conflict: "!",
 		}[this.currentState.state];
 

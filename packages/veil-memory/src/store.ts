@@ -23,6 +23,7 @@ import type {
 	MemoryType,
 	RecallOptions,
 	RememberOptions,
+	SemanticConflict,
 	SourceTier,
 	VersionVector,
 } from "./types.ts";
@@ -82,11 +83,73 @@ export class MemoryStore {
 		content: string,
 		subject: string,
 		options: LearnOptions = {},
-	): Promise<{ eventId: string; conflictsWith?: string[] }> {
+	): Promise<{ eventId: string; conflictsWith?: string[]; semanticConflicts?: SemanticConflict[] }> {
 		const eventId = ulid();
 		const now = Date.now();
 		const ns = options.namespace ?? this.namespace;
 		const subjectHash = this.hash(subject);
+		const contentHash = this.hash(content);
+		const newConfidence = options.confidence ?? 0.8;
+		const newSourceTier = options.sourceTier ?? "observed";
+
+		// Semantic conflict detection via embeddings
+		let semanticConflicts: SemanticConflict[] | undefined;
+		let embedding: Float32Array | undefined;
+
+		if (this.embedder) {
+			embedding = await this.embedder.embed(content);
+			const similar = await this.findSimilarFacts(embedding, ns, {
+				limit: 5,
+				maxDistance: 0.3, // ~85% similarity
+				excludeContentHash: contentHash,
+			});
+
+			if (similar.length > 0) {
+				semanticConflicts = similar.map((s) => {
+					const similarity = 1 - s.distance; // Convert distance to similarity
+					const existing: SemanticConflict = {
+						existingEventId: s.eventId,
+						existingContent: s.content,
+						existingConfidence: s.confidence,
+						existingSourceTier: s.sourceTier as SourceTier,
+						similarity,
+						autoResolved: false,
+						resolution: "unresolved",
+						reason: undefined,
+					};
+
+					// Try auto-resolution
+					const tierRank: Record<string, number> = {
+						authoritative: 4,
+						validated: 3,
+						observed: 2,
+						inferred: 1,
+					};
+					const newTierRank = tierRank[newSourceTier] ?? 2;
+					const existingTierRank = tierRank[s.sourceTier] ?? 2;
+
+					if (newTierRank > existingTierRank) {
+						existing.autoResolved = true;
+						existing.resolution = "new_wins";
+						existing.reason = `New fact has higher source tier (${newSourceTier} > ${s.sourceTier})`;
+					} else if (existingTierRank > newTierRank) {
+						existing.autoResolved = true;
+						existing.resolution = "existing_wins";
+						existing.reason = `Existing fact has higher source tier (${s.sourceTier} > ${newSourceTier})`;
+					} else if (newConfidence - s.confidence > 0.3) {
+						existing.autoResolved = true;
+						existing.resolution = "new_wins";
+						existing.reason = `New fact has significantly higher confidence (${newConfidence.toFixed(2)} vs ${s.confidence.toFixed(2)})`;
+					} else if (s.confidence - newConfidence > 0.3) {
+						existing.autoResolved = true;
+						existing.resolution = "existing_wins";
+						existing.reason = `Existing fact has significantly higher confidence (${s.confidence.toFixed(2)} vs ${newConfidence.toFixed(2)})`;
+					}
+
+					return existing;
+				});
+			}
+		}
 
 		const currentEvent = this.db
 			.prepare(`
@@ -105,19 +168,19 @@ export class MemoryStore {
 			eventType: "assert",
 			agentId: this.agentId,
 			content,
-			contentHash: this.hash(content),
+			contentHash,
 			memoryType: "factual",
 			subject,
 			subjectHash,
 			versionVector: newVV,
-			confidence: options.confidence ?? 0.8,
+			confidence: newConfidence,
 			evidenceCount: options.evidenceCount ?? 1,
 			validFrom: now,
 			recordedAt: now,
 			difficulty: this.fsrs.getInitialDifficulty(),
 			stability: this.fsrs.getInitialStability("factual"),
 			embeddingModel: "nomic-embed-text-v1.5",
-			sourceTier: options.sourceTier ?? "observed",
+			sourceTier: newSourceTier,
 			tags: options.tags ?? [],
 		};
 
@@ -152,8 +215,7 @@ export class MemoryStore {
 				JSON.stringify(event.tags),
 			);
 
-		if (this.embedder) {
-			const embedding = await this.embedder.embed(content);
+		if (embedding) {
 			const result = this.db.prepare("INSERT INTO memory_vectors (embedding) VALUES (?)").run(embedding);
 			this.db
 				.prepare("INSERT INTO memory_vector_map (rowid, event_id) VALUES (?, ?)")
@@ -165,9 +227,17 @@ export class MemoryStore {
 			conflictsWith = [currentEvent.event_id];
 		}
 
+		// Add unresolved semantic conflicts to conflictsWith
+		if (semanticConflicts) {
+			const unresolved = semanticConflicts.filter((c) => !c.autoResolved || c.resolution === "unresolved");
+			if (unresolved.length > 0) {
+				conflictsWith = [...(conflictsWith ?? []), ...unresolved.map((c) => c.existingEventId)];
+			}
+		}
+
 		this.updateProjection(event as MemoryEvent, conflictsWith);
 
-		return { eventId, conflictsWith };
+		return { eventId, conflictsWith, semanticConflicts };
 	}
 
 	async remember(content: string, options: RememberOptions = {}): Promise<string> {
@@ -859,6 +929,72 @@ export class MemoryStore {
 				.all(embedding) as Array<{ event_id: string }>;
 
 			return rows.map((r) => r.event_id);
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Find semantically similar factual beliefs with distance scores.
+	 * Used for conflict detection during learn().
+	 */
+	async findSimilarFacts(
+		embedding: Float32Array,
+		namespace: string,
+		options: { limit?: number; maxDistance?: number; excludeContentHash?: string } = {},
+	): Promise<
+		Array<{
+			eventId: string;
+			content: string;
+			contentHash: string;
+			confidence: number;
+			sourceTier: string;
+			distance: number;
+		}>
+	> {
+		const limit = options.limit ?? 5;
+		const maxDistance = options.maxDistance ?? 0.3; // ~0.85 similarity
+
+		try {
+			let sql = `
+				SELECT m.event_id, cb.content, me.content_hash, cb.confidence, me.source_tier, distance
+				FROM memory_vectors v
+				JOIN memory_vector_map m ON v.rowid = m.rowid
+				JOIN current_beliefs cb ON m.event_id = cb.event_id
+				JOIN memory_events me ON m.event_id = me.event_id
+				WHERE cb.namespace = ? AND cb.memory_type = 'factual'
+			`;
+			const params: unknown[] = [namespace, limit];
+
+			if (options.excludeContentHash) {
+				sql += " AND me.content_hash != ?";
+				params.splice(1, 0, options.excludeContentHash);
+			}
+
+			sql += " ORDER BY distance LIMIT ?";
+
+			const rows = this.db
+				.prepare(sql)
+				.bind(...params)
+				.all(embedding) as Array<{
+				event_id: string;
+				content: string;
+				content_hash: string;
+				confidence: number;
+				source_tier: string;
+				distance: number;
+			}>;
+
+			return rows
+				.filter((r) => r.distance <= maxDistance)
+				.map((r) => ({
+					eventId: r.event_id,
+					content: r.content,
+					contentHash: r.content_hash,
+					confidence: r.confidence,
+					sourceTier: r.source_tier,
+					distance: r.distance,
+				}));
 		} catch {
 			return [];
 		}

@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 // Import from veil-memory package
@@ -38,12 +38,40 @@ function readEmbedderConfig(): EmbedderConfig | null {
 	}
 }
 
+/**
+ * Derive a projectId from cwd for cross-project isolation.
+ * Uses first 12 chars of sha256 for compact but collision-resistant ID.
+ */
+function deriveProjectId(cwd: string = process.cwd()): string {
+	return createHash("sha256").update(cwd).digest("hex").slice(0, 12);
+}
+
+export interface SemanticConflictInfo {
+	existingEventId: string;
+	existingContent: string;
+	existingConfidence: number;
+	existingSourceTier: string;
+	newContent: string;
+	newConfidence: number;
+	newSourceTier: string;
+	similarity: number;
+	autoResolved: boolean;
+	resolution?: "new_wins" | "existing_wins" | "unresolved";
+	reason?: string;
+}
+
 export interface VeilMemoryColdStoreConfig extends ColdStoreConfig {
 	dbPath?: string;
 	agentId?: string;
+	// Project ID for cross-project isolation. Defaults to hash of cwd.
+	projectId?: string;
 	// Optional: override embedder config (defaults to reading ~/.veil/embedder.json)
 	embedderTier?: EmbedderTier;
 	ollamaBaseUrl?: string;
+	// Callback when conflicts are detected during demote
+	onConflict?: (newEventId: string, conflictsWith: string[], content: string) => void;
+	// Callback for semantic conflicts with full provenance
+	onSemanticConflict?: (conflict: SemanticConflictInfo) => void;
 }
 
 export type EmbedderStatus = "active" | "failed" | "disabled";
@@ -53,6 +81,8 @@ export class VeilMemoryColdStore implements ColdStore {
 	private namespace: string;
 	private _embedderStatus: EmbedderStatus = "disabled";
 	private _embedderError?: string;
+	private onConflict?: (newEventId: string, conflictsWith: string[], content: string) => void;
+	private onSemanticConflict?: (conflict: SemanticConflictInfo) => void;
 
 	readonly capabilities: ColdStoreCapabilities = {
 		semantic: true, // sqlite-vec embeddings
@@ -61,10 +91,24 @@ export class VeilMemoryColdStore implements ColdStore {
 	};
 
 	constructor(config: VeilMemoryColdStoreConfig) {
-		this.namespace = config.namespace ?? "default";
+		// Derive projectId from cwd for cross-project isolation
+		const projectId = config.projectId ?? deriveProjectId();
+		// Use projectId as namespace for isolation (overrides config.namespace)
+		this.namespace = config.namespace ?? projectId;
+		this.onConflict = config.onConflict;
+		this.onSemanticConflict = config.onSemanticConflict;
+
+		// Global DB by default - enables cross-project sharing
+		const globalDir = join(homedir(), ".veil");
+		const dbPath = config.dbPath ?? join(globalDir, "cold.db");
+
+		// Ensure ~/.veil exists for global DB
+		if (!config.dbPath && !existsSync(globalDir)) {
+			mkdirSync(globalDir, { recursive: true });
+		}
 
 		const storeConfig: StoreConfig = {
-			dbPath: config.dbPath ?? ".veil/memory.db",
+			dbPath,
 			namespace: this.namespace,
 			agentId: config.agentId ?? "veil-harness",
 		};
@@ -115,12 +159,42 @@ export class VeilMemoryColdStore implements ColdStore {
 				sourceTier: item.pinned ? "authoritative" : "validated",
 			});
 		} else {
-			// factual - learn() returns {eventId, conflictsWith?}
+			// factual - learn() returns {eventId, conflictsWith?, semanticConflicts?}
+			const sourceTier = item.pinned ? "authoritative" : "observed";
+			const confidence = this.mapCognitiveWeight(item.cognitiveWeight);
 			const result = await this.store.learn(item.content, subject, {
-				confidence: this.mapCognitiveWeight(item.cognitiveWeight),
+				confidence,
 				tags: item.tags,
-				sourceTier: item.pinned ? "authoritative" : "observed",
+				sourceTier,
+				sourceToolName: item.sourceToolName,
+				sourcePath: item.sourcePath,
+				sessionId: item.sourceSessionId,
 			});
+
+			// Notify if subject-based conflicts detected
+			if (result.conflictsWith && result.conflictsWith.length > 0 && this.onConflict) {
+				this.onConflict(result.eventId, result.conflictsWith, item.content.slice(0, 50));
+			}
+
+			// Notify for semantic conflicts with full provenance
+			if (result.semanticConflicts && this.onSemanticConflict) {
+				for (const sc of result.semanticConflicts) {
+					this.onSemanticConflict({
+						existingEventId: sc.existingEventId,
+						existingContent: sc.existingContent,
+						existingConfidence: sc.existingConfidence,
+						existingSourceTier: sc.existingSourceTier,
+						newContent: item.content,
+						newConfidence: confidence,
+						newSourceTier: sourceTier,
+						similarity: sc.similarity,
+						autoResolved: sc.autoResolved,
+						resolution: sc.resolution,
+						reason: sc.reason,
+					});
+				}
+			}
+
 			return result.eventId;
 		}
 	}
@@ -192,6 +266,14 @@ export class VeilMemoryColdStore implements ColdStore {
 
 	getConflicts(): ConflictPair[] {
 		return this.store.conflicts();
+	}
+
+	/**
+	 * Resolve a conflict by picking a winner.
+	 * The loser is retracted, winner remains as the current belief.
+	 */
+	resolveConflict(conflictEventId: string, winnerEventId: string, reason: string): void {
+		this.store.resolve(conflictEventId, winnerEventId, reason);
 	}
 
 	/** Get raw access to the underlying store for advanced operations */

@@ -4,7 +4,7 @@ import type { ReadonlyFooterDataProvider } from "../../core/footer-data-provider
 import type { ReadonlySessionManager } from "../../core/session-manager.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 
-export type CatState = "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict";
+export type CatState = "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "forgetting" | "conflict";
 
 export type WidgetEvent =
 	| { type: "memory"; state: CatState; detail?: string }

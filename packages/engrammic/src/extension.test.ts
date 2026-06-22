@@ -21,6 +21,8 @@ function makeHarness(
 		getTurnCount: vi.fn(() => 3),
 		getAndClearEvictedToolCallIds: vi.fn(() => []),
 		processUserMessage: vi.fn(async () => processUserMessageResult),
+		onMemoryEvent: vi.fn(() => () => {}),
+		getCatWidget: vi.fn(() => ({ getState: () => ({ state: "watching" }) })),
 	} as unknown as VeilHarness;
 }
 

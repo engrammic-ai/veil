@@ -23,31 +23,64 @@ const VEIL_TOOL_STATES: Record<string, CatState> = {
 	veil_recall: "recalled",
 	veil_history: "recalled",
 	veil_hydrate: "recalled",
-	veil_remember: "learned",
+	veil_remember: "remembering",
 	veil_promote: "recalled",
 	veil_demote: "watching",
 	veil_pin: "learned",
 	veil_unpin: "watching",
-	veil_forget: "watching",
+	veil_forget: "forgetting",
+	veil_conflicts: "conflict",
+	veil_resolve_conflict: "learned",
 };
 
 let currentLayout: StatusBarLayout | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let stateHoldTimer: ReturnType<typeof setTimeout> | null = null;
+let currentState: CatState = "watching";
 const IDLE_TIMEOUT_MS = 120000; // 2 minutes to go to sleep
+const STATE_HOLD_MS = 2000; // Hold active states for 2 seconds before allowing "watching"
+
+// States that should hold before returning to watching
+const HOLD_STATES = new Set<CatState>(["remembering", "learned", "recalled", "forgetting", "conflict"]);
 
 function resetIdleTimer() {
 	if (idleTimer) clearTimeout(idleTimer);
 	idleTimer = setTimeout(() => {
 		if (currentLayout) {
-			currentLayout.emit({ type: "memory", state: "sleeping" as CatState, detail: "" });
+			emitState("sleeping", "");
 		}
 	}, IDLE_TIMEOUT_MS);
 }
 
-function wakeUp() {
-	if (currentLayout) {
-		currentLayout.emit({ type: "memory", state: "watching" as CatState, detail: "" });
+function emitState(state: CatState, detail: string) {
+	if (!currentLayout) return;
+
+	// If trying to go to "watching" but we're in a hold state, schedule it instead
+	if (state === "watching" && HOLD_STATES.has(currentState)) {
+		if (!stateHoldTimer) {
+			stateHoldTimer = setTimeout(() => {
+				stateHoldTimer = null;
+				if (currentLayout && HOLD_STATES.has(currentState)) {
+					currentState = "watching";
+					currentLayout.emit({ type: "memory", state: "watching", detail: "" });
+				}
+			}, STATE_HOLD_MS);
+		}
+		return;
 	}
+
+	// Clear hold timer if transitioning to a new active state
+	if (stateHoldTimer && state !== "watching") {
+		clearTimeout(stateHoldTimer);
+		stateHoldTimer = null;
+	}
+
+	currentState = state;
+	currentLayout.emit({ type: "memory", state, detail });
+}
+
+function wakeUp() {
+	emitState("watching", "");
 	resetIdleTimer();
 }
 
@@ -70,7 +103,7 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 		const detail = textContent && "text" in textContent ? textContent.text?.slice(0, 30) : undefined;
 
 		// Emit memory event to update cat widget
-		currentLayout.emit({ type: "memory", state: catState, detail });
+		emitState(catState, detail ?? "");
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -78,26 +111,29 @@ export default function veilStatusbar(pi: ExtensionAPI) {
 
 		const config = loadConfig(ctx.cwd);
 
-		// Subscribe to VeilHarness memory events if available
-		let unsubscribeMemory: (() => void) | undefined;
-		const harness = (globalThis as any)[VEIL_HARNESS_KEY];
-		if (harness?.onMemoryEvent) {
-			unsubscribeMemory = harness.onMemoryEvent((event: { type: string; detail?: string }) => {
-				if (!currentLayout) return;
-				resetIdleTimer();
-
-				const catState = event.type as CatState;
-				if (!["sleeping", "watching", "remembering", "learned", "recalled", "conflict"].includes(catState)) {
-					return;
-				}
-
-				currentLayout.emit({ type: "memory", state: catState, detail: event.detail });
-			});
-		}
-
 		ctx.ui.setFooter((_tui, theme, footerData) => {
 			const layout = new StatusBarLayout();
 			currentLayout = layout;
+
+			// Subscribe to VeilHarness memory events AFTER layout is ready
+			let unsubscribeMemory: (() => void) | undefined;
+			const harness = (globalThis as any)[VEIL_HARNESS_KEY];
+			if (harness?.onMemoryEvent) {
+				unsubscribeMemory = harness.onMemoryEvent((event: { type: string; detail?: string }) => {
+					resetIdleTimer();
+
+					const catState = event.type as CatState;
+					if (
+						!["sleeping", "watching", "remembering", "learned", "recalled", "forgetting", "conflict"].includes(
+							catState,
+						)
+					) {
+						return;
+					}
+
+					emitState(catState, event.detail ?? "");
+				});
+			}
 
 			const widgetCtx: WidgetContext = {
 				sessionManager: ctx.sessionManager,

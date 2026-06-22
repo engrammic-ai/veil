@@ -277,6 +277,7 @@ export class AgentSession {
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
+	private _veilMemoryUnsubscribe?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
@@ -798,6 +799,8 @@ export class AgentSession {
 			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
+		this._veilMemoryUnsubscribe?.();
+		this._veilMemoryUnsubscribe = undefined;
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
 	}
@@ -981,9 +984,13 @@ export class AgentSession {
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
 		const veilPromptSection = this._veilHarness?.getSystemPromptSection();
+		const veilConflictSection = this._veilHarness?.getConflictSection();
 		const appendParts = [...loaderAppendSystemPrompt];
 		if (veilPromptSection) {
 			appendParts.push(veilPromptSection);
+		}
+		if (veilConflictSection) {
+			appendParts.push(veilConflictSection);
 		}
 		const appendSystemPrompt = appendParts.length > 0 ? appendParts.join("\n\n") : undefined;
 		const loadedSkills = this._resourceLoader.getSkills().skills;
@@ -2248,6 +2255,33 @@ export class AgentSession {
 		this._extensionErrorUnsubscriber = this._extensionErrorListener
 			? runner.onError(this._extensionErrorListener)
 			: undefined;
+
+		// Wire VeilHarness memory events to status bar
+		this._veilMemoryUnsubscribe?.();
+		if (this._veilHarness && this._extensionUIContext) {
+			const ui = this._extensionUIContext;
+			this._veilMemoryUnsubscribe = this._veilHarness.onMemoryEvent((event) => {
+				const indicators: Record<string, string> = {
+					sleeping: "z",
+					watching: ".",
+					remembering: "~",
+					learned: "+",
+					recalled: "*",
+					conflict: "!",
+				};
+				const indicator = indicators[event.type] ?? ".";
+				const shortDetail = event.detail ? ` ${event.detail.slice(0, 20)}` : "";
+				const color =
+					event.type === "conflict"
+						? "warning"
+						: event.type === "learned" || event.type === "recalled"
+							? "success"
+							: event.type === "remembering"
+								? "accent"
+								: "dim";
+				ui.setStatus("veil-cat", ui.theme.fg(color, `[${indicator}]${shortDetail}`));
+			});
+		}
 	}
 
 	private _refreshCurrentModelFromRegistry(): void {

@@ -40,6 +40,9 @@ export interface ContextItem {
 	// Source tracking
 	source: "auto" | "explicit"; // auto-captured vs explicitly remembered
 	sourceToolCallId?: string; // links to Pi tool call for faded history
+	sourceToolName?: string; // tool that produced this (Read, Bash, etc.)
+	sourcePath?: string; // file path if from file read
+	sourceSessionId?: string; // session where this was captured
 
 	// Staleness tracking
 	resourceMtime?: number; // mtime (ms) of referenced file when captured
@@ -119,6 +122,28 @@ export const DEFAULT_EVICTION_NOTIFY_CONFIG: EvictionNotifyConfig = {
 	minItems: 3,
 	verbosity: "minimal",
 };
+
+// Conflict tracking with provenance for LLM resolution
+export interface BeliefProvenance {
+	eventId: string;
+	content: string;
+	confidence: number;
+	sourceTier: "authoritative" | "validated" | "observed" | "inferred";
+	sourceToolName?: string;
+	sourcePath?: string;
+	sessionId?: string;
+	recordedAt: number;
+}
+
+export interface PendingConflict {
+	id: string; // conflict ID for tracking
+	subject: string; // what the conflict is about
+	beliefA: BeliefProvenance;
+	beliefB: BeliefProvenance;
+	similarity: number; // semantic similarity score
+	detectedAt: number;
+	suggestion?: string; // hint for resolution
+}
 
 export interface ContextWindow {
 	items: ContextItem[];

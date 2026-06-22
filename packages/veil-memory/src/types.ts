@@ -96,6 +96,20 @@ export interface LearnOptions {
 	evidenceCount?: number;
 	sourceTier?: SourceTier;
 	tags?: string[];
+	sourceToolName?: string;
+	sourcePath?: string;
+	sessionId?: string;
+}
+
+export interface SemanticConflict {
+	existingEventId: string;
+	existingContent: string;
+	existingConfidence: number;
+	existingSourceTier: SourceTier;
+	similarity: number; // 0-1, higher = more similar
+	autoResolved: boolean;
+	resolution?: "new_wins" | "existing_wins" | "unresolved";
+	reason?: string;
 }
 
 export interface RememberOptions {
@@ -105,7 +119,7 @@ export interface RememberOptions {
 }
 
 export interface CatState {
-	state: "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "conflict";
+	state: "sleeping" | "watching" | "remembering" | "learned" | "recalled" | "forgetting" | "conflict";
 	detail?: string;
 }
 
