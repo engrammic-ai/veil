@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.34] - 2026-06-22
 
 All notable changes to Veil will be documented in this file.
 
