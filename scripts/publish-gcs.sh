@@ -11,9 +11,12 @@ CHANNEL="${VEIL_CHANNEL:-stable}"
 
 echo "==> Uploading v$VERSION to GCS"
 
-# Upload archives
+# Upload veil archives
 gcloud storage cp "$BINARIES_DIR"/veil-*.tar.gz "$BINARIES_DIR"/veil-*.zip "$BUCKET/v$VERSION/"
 gcloud storage cp "$BINARIES_DIR/checksums.sha256" "$BUCKET/v$VERSION/"
+
+# Upload installer binaries
+gcloud storage cp "$BINARIES_DIR"/veil-installer-* "$BUCKET/v$VERSION/"
 
 echo "==> Updating releases.json"
 
@@ -50,9 +53,30 @@ NEW_RELEASE=$(cat <<EOF
 EOF
 )
 
-# Use jq to prepend new release, removing any existing entry for this version
-UPDATED=$(jq --argjson new "$NEW_RELEASE" '
-  .releases = [$new] + [.releases[] | select(.version != $new.version)]
+# Build installer asset URLs
+INSTALLER_ASSETS=$(cat <<EOF
+{
+  "linux-x64": "$BASE_URL/veil-installer-linux-x64",
+  "linux-arm64": "$BASE_URL/veil-installer-linux-arm64",
+  "darwin-x64": "$BASE_URL/veil-installer-darwin-x64",
+  "darwin-arm64": "$BASE_URL/veil-installer-darwin-arm64",
+  "windows-x64": "$BASE_URL/veil-installer-windows-x64.exe"
+}
+EOF
+)
+
+INSTALLER_RELEASE=$(cat <<EOF
+{
+  "version": "$VERSION",
+  "assets": $INSTALLER_ASSETS
+}
+EOF
+)
+
+# Use jq to prepend new release and update installer info
+UPDATED=$(jq --argjson new "$NEW_RELEASE" --argjson installer "$INSTALLER_RELEASE" '
+  .releases = [$new] + [.releases[] | select(.version != $new.version)] |
+  .installer = $installer
 ' "$MANIFEST")
 
 echo "$UPDATED" > "$MANIFEST"
