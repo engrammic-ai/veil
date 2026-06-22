@@ -97,3 +97,11 @@ jobs:
             --generate-notes \
             ${{ inputs.prerelease && '--prerelease' || '' }} \
             veil-*.tar.gz veil-*.zip veil-installer-* checksums.sha256
+
+      - name: Publish to npm
+        if: ${{ !inputs.prerelease }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" > ~/.npmrc
+          node scripts/publish.mjs

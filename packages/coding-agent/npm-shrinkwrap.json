@@ -12,15 +12,17 @@
 				"@earendil-works/pi-agent-core": "^0.79.6",
 				"@earendil-works/pi-ai": "^0.79.6",
 				"@earendil-works/pi-tui": "^0.79.6",
-				"@engrammic/veil-context": "*",
 				"@modelcontextprotocol/sdk": "1.29.0",
 				"@silvia-odwyer/photon-node": "0.3.4",
-				"@veil/embedder": "*",
-				"@veil/subagent": "*",
+				"@xenova/transformers": "2.17.2",
+				"better-sqlite3": "11.10.0",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
 				"diff": "8.0.4",
+				"fastify": "5.3.3",
 				"glob": "13.0.6",
+				"graphology": "0.26.0",
+				"graphology-pagerank": "1.1.0",
 				"highlight.js": "10.7.3",
 				"hosted-git-info": "9.0.3",
 				"ignore": "7.0.5",
@@ -28,8 +30,16 @@
 				"minimatch": "10.2.5",
 				"proper-lockfile": "4.1.2",
 				"semver": "7.8.0",
+				"sqlite-vec": "0.1.9",
+				"tree-sitter-go": "0.25.0",
+				"tree-sitter-javascript": "0.25.0",
+				"tree-sitter-python": "0.25.0",
+				"tree-sitter-rust": "0.24.0",
+				"tree-sitter-typescript": "0.23.2",
 				"typebox": "1.1.38",
+				"ulid": "2.3.0",
 				"undici": "8.5.0",
+				"web-tree-sitter": "0.25.6",
 				"yaml": "2.9.0"
 			},
 			"optionalDependencies": {
@@ -568,38 +578,6 @@
 			},
 			"engines": {
 				"node": ">=22.19.0"
-			}
-		},
-		"node_modules/@engrammic/veil-context": {
-			"version": "0.1.27",
-			"resolved": "https://registry.npmjs.org/@engrammic/veil-context/-/veil-context-0.1.27.tgz",
-			"dependencies": {
-				"@veil/memory": "*",
-				"better-sqlite3": "11.10.0",
-				"graphology": "0.26.0",
-				"graphology-pagerank": "1.1.0",
-				"tree-sitter-go": "0.25.0",
-				"tree-sitter-javascript": "0.25.0",
-				"tree-sitter-python": "0.25.0",
-				"tree-sitter-rust": "0.24.0",
-				"tree-sitter-typescript": "0.23.2",
-				"web-tree-sitter": "0.25.6"
-			},
-			"peerDependencies": {
-				"@getzep/zep-cloud": "^2.0.0",
-				"@lancedb/lancedb": "^0.15.0",
-				"chromadb": "^1.9.0"
-			},
-			"peerDependenciesMeta": {
-				"@getzep/zep-cloud": {
-					"optional": true
-				},
-				"@lancedb/lancedb": {
-					"optional": true
-				},
-				"chromadb": {
-					"optional": true
-				}
 			}
 		},
 		"node_modules/@fastify/ajv-compiler": {
@@ -1245,49 +1223,6 @@
 			"license": "MIT",
 			"dependencies": {
 				"undici-types": "~6.21.0"
-			}
-		},
-		"node_modules/@veil/embedder": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@veil/embedder/-/embedder-0.1.26.tgz",
-			"dependencies": {
-				"@xenova/transformers": "2.17.2",
-				"fastify": "5.3.3"
-			},
-			"bin": {
-				"veil-embedder": "dist/server.js"
-			},
-			"engines": {
-				"node": ">=22.19.0"
-			}
-		},
-		"node_modules/@veil/memory": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@veil/memory/-/memory-0.1.26.tgz",
-			"dependencies": {
-				"@veil/embedder": "*",
-				"better-sqlite3": "11.10.0",
-				"sqlite-vec": "0.1.9",
-				"ulid": "2.3.0"
-			},
-			"peerDependencies": {
-				"@huggingface/transformers": "^3.0.0"
-			},
-			"peerDependenciesMeta": {
-				"@huggingface/transformers": {
-					"optional": true
-				}
-			},
-			"engines": {
-				"node": ">=22.0.0"
-			}
-		},
-		"node_modules/@veil/subagent": {
-			"version": "0.1.27",
-			"resolved": "https://registry.npmjs.org/@veil/subagent/-/subagent-0.1.27.tgz",
-			"dependencies": {
-				"@engrammic/veil-context": "*",
-				"better-sqlite3": "11.10.0"
 			}
 		},
 		"node_modules/@xenova/transformers": {
