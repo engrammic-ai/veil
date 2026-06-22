@@ -23,8 +23,8 @@ import (
 	"github.com/engrammic-ai/veil-installer/internal/verify"
 )
 
-// InstallerVersion is the version of the installer itself.
-const InstallerVersion = "0.1.32"
+// Version is set by the caller (from ldflags in main.go).
+var Version = "dev"
 
 // embedderConfig is the JSON config for the embedder server.
 type embedderConfig struct {
@@ -337,7 +337,7 @@ func (m *Model) View() string {
 	var header string
 
 	// Show big banner only at start, then switch to mini cat
-	versionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v" + InstallerVersion)
+	versionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(" v" + Version)
 	if m.showBanner && m.state == StateDetectPlatform {
 		header = ui.RenderBanner() + "\n" +
 			lipgloss.NewStyle().Bold(true).Foreground(ui.Pink).Render("veil installer") +

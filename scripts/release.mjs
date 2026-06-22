@@ -142,32 +142,6 @@ function addUnreleasedSection() {
 	}
 }
 
-function syncInstallerVersion(version) {
-	// ponytail: updates hardcoded Go consts; ldflags could replace this but consts are used at runtime
-	const installerFiles = [
-		"installer/internal/app/app.go",
-		"installer/cmd/installer/main.go",
-	];
-
-	const versionRe = /const InstallerVersion = "[^"]+"/;
-	const replacement = `const InstallerVersion = "${version}"`;
-
-	for (const file of installerFiles) {
-		if (!existsSync(file)) {
-			console.log(`  Skipping ${file}: not found`);
-			continue;
-		}
-		const content = readFileSync(file, "utf-8");
-		if (!versionRe.test(content)) {
-			console.log(`  Skipping ${file}: no InstallerVersion const`);
-			continue;
-		}
-		const updated = content.replace(versionRe, replacement);
-		writeFileSync(file, updated);
-		console.log(`  Updated ${file}`);
-	}
-}
-
 // Main flow
 console.log("\n=== Release Script ===\n");
 
@@ -184,11 +158,6 @@ console.log("  Working directory clean\n");
 // 2. Bump or set version
 const version = bumpOrSetVersion(RELEASE_TARGET);
 console.log(`  New version: ${version}\n`);
-
-// 2b. Sync installer version
-console.log("Syncing installer version...");
-syncInstallerVersion(version);
-console.log();
 
 // 3. Update changelogs
 console.log("Updating CHANGELOG.md files...");

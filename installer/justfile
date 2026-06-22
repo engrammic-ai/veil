@@ -8,7 +8,7 @@ version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
 commit := `git rev-parse --short HEAD 2>/dev/null || echo "unknown"`
 date := `date -u +%Y-%m-%dT%H:%M:%SZ`
 
-ldflags := "-s -w -X main.version=" + version + " -X main.commit=" + commit + " -X main.date=" + date
+ldflags := "-s -w -X main.installerVersion=" + version + " -X main.commit=" + commit + " -X main.date=" + date
 
 # Show available recipes
 default:

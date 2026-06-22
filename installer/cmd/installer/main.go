@@ -47,14 +47,20 @@ func main() {
 	}
 }
 
-// InstallerVersion should match app.InstallerVersion
-const InstallerVersion = "0.1.32"
+// installerVersion is set via ldflags at build time (see justfile).
+// Falls back to "dev" for local builds without tags.
+var installerVersion = "dev"
+
+func init() {
+	// Share version with app package for TUI display
+	app.Version = installerVersion
+}
 
 var rootCmd = &cobra.Command{
 	Use:     "veil-installer",
 	Short:   "Veil CLI installer and manager",
 	Long:    "A TUI-based installer for the Veil CLI tool. Installs, updates, and manages Veil releases.",
-	Version: InstallerVersion,
+	Version: installerVersion,
 	Run:     runInstall,
 }
 
@@ -697,9 +703,9 @@ func doSelfUpdate(asPrereq bool) bool {
 	}
 
 	// Compare versions
-	if config.CompareVersions(installerRelease.Version, InstallerVersion) <= 0 {
+	if config.CompareVersions(installerRelease.Version, installerVersion) <= 0 {
 		if !asPrereq && !quiet {
-			fmt.Printf("Installer is up to date (%s)\n", InstallerVersion)
+			fmt.Printf("Installer is up to date (%s)\n", installerVersion)
 		}
 		return false
 	}
@@ -715,7 +721,7 @@ func doSelfUpdate(asPrereq bool) bool {
 	}
 
 	if !quiet {
-		fmt.Printf("Installer update available: %s -> %s\n", InstallerVersion, installerRelease.Version)
+		fmt.Printf("Installer update available: %s -> %s\n", installerVersion, installerRelease.Version)
 	}
 
 	// Default to yes for self-update
@@ -807,16 +813,16 @@ func runCheck(cmd *cobra.Command, args []string) {
 	// Check installer version
 	installerRelease, _ := config.GetInstallerRelease()
 	installerStatus := "up to date"
-	installerLatest := InstallerVersion
+	installerLatest := installerVersion
 	if installerRelease != nil {
 		installerLatest = installerRelease.Version
-		if config.CompareVersions(installerRelease.Version, InstallerVersion) > 0 {
+		if config.CompareVersions(installerRelease.Version, installerVersion) > 0 {
 			installerStatus = "update available"
 			hasUpdate = true
 		}
 	}
 	if !quiet {
-		fmt.Printf("  Installer:    %s", InstallerVersion)
+		fmt.Printf("  Installer:    %s", installerVersion)
 		if installerStatus == "update available" {
 			fmt.Printf(" -> %s available", installerLatest)
 		} else {
