@@ -2,6 +2,14 @@ import type { StatusBarWidget, WidgetContext, WidgetEvent } from "../types.ts";
 
 const VEIL_HARNESS_KEY = Symbol.for("veil:harness");
 
+interface UsageStats {
+	contextPercent: number;
+	hotTokens: number;
+	hotItems: number;
+	budgetMax: number;
+	budgetUsed: number;
+}
+
 export class ContextBarWidget implements StatusBarWidget {
 	id = "context-bar";
 	name = "Context Usage";
@@ -10,7 +18,7 @@ export class ContextBarWidget implements StatusBarWidget {
 
 	private ctx: WidgetContext | null = null;
 	private contextWindow = 200000;
-	private harnessUsage: { hotTokens: number; budgetMax: number; percent: number } | null = null;
+	private usage: UsageStats | null = null;
 	private unsubscribe: (() => void) | null = null;
 
 	init(config: Record<string, unknown>, ctx: WidgetContext): void {
@@ -22,57 +30,61 @@ export class ContextBarWidget implements StatusBarWidget {
 		// Subscribe to harness memory events for real-time usage updates
 		const harness = (globalThis as any)[VEIL_HARNESS_KEY];
 		if (harness?.onMemoryEvent) {
-			this.unsubscribe = harness.onMemoryEvent(
-				(event: { usage?: { hotTokens: number; budgetMax: number; percent: number } }) => {
-					if (event.usage) {
-						this.harnessUsage = event.usage;
-					}
-				},
-			);
+			this.unsubscribe = harness.onMemoryEvent((event: { usage?: UsageStats }) => {
+				if (event.usage) {
+					this.usage = event.usage;
+				}
+			});
 		}
 	}
 
 	render(_width: number): string[] {
 		const theme = this.ctx?.theme;
 
-		// Get API context usage from session entries
-		let apiUsed = 0;
-		if (this.ctx?.sessionManager) {
+		// Use harness-reported context percent if available, else compute from session
+		let percent = 0;
+		let tokensUsed = 0;
+
+		if (this.usage?.contextPercent != null) {
+			percent = Math.round(this.usage.contextPercent);
+			tokensUsed = Math.round((percent / 100) * this.contextWindow);
+		} else if (this.ctx?.sessionManager) {
+			// Fallback: compute from last assistant message
 			const lastEntry = [...this.ctx.sessionManager.getEntries()]
 				.reverse()
 				.find((e) => e.type === "message" && e.message.role === "assistant");
 			if (lastEntry?.type === "message" && lastEntry.message.role === "assistant") {
-				apiUsed = lastEntry.message.usage.input + lastEntry.message.usage.cacheRead;
+				tokensUsed = lastEntry.message.usage.input + lastEntry.message.usage.cacheRead;
+				percent = this.contextWindow > 0 ? Math.round((tokensUsed / this.contextWindow) * 100) : 0;
 			}
 		}
 
-		const apiPercent = this.contextWindow > 0 ? Math.round((apiUsed / this.contextWindow) * 100) : 0;
-		const barWidth = 16;
-		const filled = Math.round((apiPercent / 100) * barWidth);
+		const barWidth = 20;
+		const filled = Math.round((percent / 100) * barWidth);
 		const empty = barWidth - filled;
 
 		const bar = "█".repeat(filled) + "░".repeat(empty);
-		const apiUsedK = this.formatTokens(apiUsed);
+		const usedK = this.formatTokens(tokensUsed);
 		const totalK = this.formatTokens(this.contextWindow);
 
-		const barColored = theme ? theme.fg("accent", bar) : bar;
-
-		// Build line with API usage and harness budget if available
-		let line = `API: [${barColored}] ${apiUsedK}/${totalK}`;
-
-		if (this.harnessUsage) {
-			const hotK = this.formatTokens(this.harnessUsage.hotTokens);
-			const budgetK = this.formatTokens(this.harnessUsage.budgetMax);
-			const hPercent = Math.round(this.harnessUsage.percent);
-			line += ` | Hot: ${hotK}/${budgetK} (${hPercent}%)`;
+		// Color bar based on usage
+		let barColored = bar;
+		if (theme) {
+			if (percent >= 90) {
+				barColored = theme.fg("error", bar);
+			} else if (percent >= 75) {
+				barColored = theme.fg("warning", bar);
+			} else {
+				barColored = theme.fg("accent", bar);
+			}
 		}
 
+		const line = `Context: [${barColored}] ${usedK}/${totalK} (${percent}%)`;
 		return [line];
 	}
 
 	update(_event: WidgetEvent): void {
-		// Context computed on render from sessionManager
-		// Harness usage updated via memory event subscription
+		// Usage updated via memory event subscription
 	}
 
 	dispose(): void {

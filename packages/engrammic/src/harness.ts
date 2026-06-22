@@ -93,18 +93,22 @@ export type MemoryEventType =
 	| "conflict"
 	| "sleeping"
 	| "budget_exceeded"
-	| "budget_warning";
+	| "budget_warning"
+	| "context_update";
 
 export interface MemoryEvent {
 	type: MemoryEventType;
 	detail?: string;
-	/** Current harness usage stats, included with budget-related events */
+	/** Current context usage stats, included with budget-related events */
 	usage?: {
+		/** Overall context window usage (0-100) as reported by agent-session */
+		contextPercent: number;
+		/** Harness hot tier tokens */
 		hotTokens: number;
 		hotItems: number;
+		/** Harness budget */
 		budgetMax: number;
 		budgetUsed: number;
-		percent: number;
 	};
 }
 
@@ -1211,16 +1215,23 @@ export class VeilHarness {
 	 */
 	private emitMemoryEvent(type: MemoryEventType, detail?: string): void {
 		// Include usage stats for budget-related events
-		const includeUsage = ["forgetting", "budget_exceeded", "budget_warning", "learned", "remembering"].includes(type);
+		const includeUsage = [
+			"forgetting",
+			"budget_exceeded",
+			"budget_warning",
+			"learned",
+			"remembering",
+			"context_update",
+		].includes(type);
 		let usage: MemoryEvent["usage"];
 		if (includeUsage) {
 			const stats = this.getUsage();
 			usage = {
+				contextPercent: this.contextUsagePercent,
 				hotTokens: stats.hotTokens,
 				hotItems: stats.hotItems,
 				budgetMax: stats.budgetMax,
 				budgetUsed: stats.budgetUsed,
-				percent: stats.percent,
 			};
 		}
 		const event: MemoryEvent = { type, detail, usage };
@@ -1470,7 +1481,13 @@ export class VeilHarness {
 	 * Called by agent-session to inform eviction decisions.
 	 */
 	setContextUsage(percent: number): void {
-		this.contextUsagePercent = Math.max(0, Math.min(100, percent));
+		const newPercent = Math.max(0, Math.min(100, percent));
+		const changed = Math.abs(newPercent - this.contextUsagePercent) >= 1;
+		this.contextUsagePercent = newPercent;
+		// Emit update event when context usage changes significantly (>=1%)
+		if (changed) {
+			this.emitMemoryEvent("context_update");
+		}
 	}
 
 	/**
