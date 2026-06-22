@@ -1,46 +1,46 @@
 {
-  "name": "@veil/memory",
-  "version": "0.1.26",
-  "description": "FSRS-powered memory companion for AI agents",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "clean": "rm -rf dist"
-  },
-  "dependencies": {
-    "@veil/embedder": "*",
-    "better-sqlite3": "11.10.0",
-    "sqlite-vec": "0.1.9",
-    "ulid": "2.3.0"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "7.6.13",
-    "@types/node": "24.12.4",
-    "typescript": "5.9.3",
-    "vitest": "3.2.4"
-  },
-  "peerDependencies": {
-    "@huggingface/transformers": "^3.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@huggingface/transformers": {
-      "optional": true
-    }
-  },
-  "engines": {
-    "node": ">=22.0.0"
-  },
-  "files": [
-    "dist"
-  ]
+	"name": "@veil/memory",
+	"version": "0.1.33",
+	"description": "FSRS-powered memory companion for AI agents",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"@veil/embedder": "^0.1.33",
+		"better-sqlite3": "11.10.0",
+		"sqlite-vec": "0.1.9",
+		"ulid": "2.3.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "7.6.13",
+		"@types/node": "24.12.4",
+		"typescript": "5.9.3",
+		"vitest": "3.2.4"
+	},
+	"peerDependencies": {
+		"@huggingface/transformers": "^3.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@huggingface/transformers": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"node": ">=22.0.0"
+	},
+	"files": [
+		"dist"
+	]
 }

@@ -1,17 +1,17 @@
 {
 	"name": "@engrammic/veil",
-	"version": "0.1.32",
+	"version": "0.1.33",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@engrammic/veil",
-			"version": "0.1.32",
+			"version": "0.1.33",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-agent-core": "^0.79.6",
-				"@earendil-works/pi-ai": "^0.79.6",
-				"@earendil-works/pi-tui": "^0.79.6",
+				"@earendil-works/pi-agent-core": "^0.1.33",
+				"@earendil-works/pi-ai": "^0.1.33",
+				"@earendil-works/pi-tui": "^0.1.33",
 				"@modelcontextprotocol/sdk": "1.29.0",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"@xenova/transformers": "2.17.2",
@@ -531,11 +531,11 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-agent-core": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.1.26.tgz",
+			"version": "0.1.33",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.1.33.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@earendil-works/pi-ai": "^0.79.6",
+				"@earendil-works/pi-ai": "^0.1.33",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
@@ -545,8 +545,8 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-ai": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.1.26.tgz",
+			"version": "0.1.33",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.1.33.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -569,8 +569,8 @@
 			}
 		},
 		"node_modules/@earendil-works/pi-tui": {
-			"version": "0.1.26",
-			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.1.26.tgz",
+			"version": "0.1.33",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.1.33.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
