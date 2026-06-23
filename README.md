@@ -1,77 +1,135 @@
-# Veil
+<div align="center">
 
-**Autonomic context for AI agents.** Context that governs itself, so you stop thinking about it.
+<img src=".github/media/banner.svg" alt="Veil" width="800" />
+
+[![npm version](https://img.shields.io/npm/v/@engrammic/veil?style=flat-square&color=a855f7)](https://www.npmjs.com/package/@engrammic/veil)
+[![license](https://img.shields.io/npm/l/@engrammic/veil?style=flat-square&color=6366f1)](LICENSE)
+
+[Install](#install) ·
+[Why Veil](#why-veil) ·
+[Features](#features) ·
+[Docs](#documentation)
+
+</div>
+
+---
+
+## Install
 
 ```bash
+# npm
+npm install -g @engrammic/veil
+
+# or curl
 curl -sSL https://veil.engrammic.ai/install | sh
 ```
 
-## What it does
-
-Veil is a coding agent (like Claude Code, Cursor, Aider) with **self-managing context**:
-
-- **Auto-eviction** — stale context fades automatically, no manual cleanup
-- **Self-tuning** — learns what matters from its own mistakes (AIMD control)
-- **Failure memory** — remembers what didn't work so loops converge instead of grinding
-- **Compression** — code, config, and conversations compress intelligently
-
-No LLM in the memory loop. Pure deterministic scoring on the hot path. Model intelligence stays off-path where it can't break things.
-
-## Quick start
+Then run in any project:
 
 ```bash
-# Install
-curl -sSL https://veil.engrammic.ai/install | sh
-
-# Run in any project
-cd your-project
 veil
 ```
 
-## Why Veil?
+---
 
-Every coding agent fails the same way:
-- **Claude Code** — auto-compaction destroys context; no real cross-session memory
-- **Cursor/Windsurf** — silent truncation, stale indexes, "vicious circle" of context loss
-- **Aider/Cline/etc.** — one stale markdown file + an LLM summarizer that loops and burns tokens
+## Why Veil
 
-Veil is different: **two-speed autonomic design**.
+Context that governs itself, so you stop thinking about it.
 
-| Fast path (reflexes) | Slow path (deliberation) |
-|---------------------|-------------------------|
-| Deterministic scorer + eviction | Reads event log, writes policy |
-| Runs every turn, sub-10ms | Runs between turns, off critical path |
-| Never blocks, never flakes | Bad policy is bounded + reversible |
+Veil is a coding agent with **self-managing context** — stale context fades automatically, the system learns what matters from its own mistakes, and failures are remembered so loops converge instead of grinding.
 
-The slow layer never mutates live context — only the rules. That's why it doesn't rot.
+No LLM in the memory loop. Pure deterministic scoring on the hot path.
+
+---
 
 ## Features
 
-| Feature | Status |
-|---------|--------|
-| Self-tuning eviction (AIMD) | Done |
-| Worldview (structural + behavioral) | Done |
-| Failure memory + convergence detection | Done |
-| Compression pipeline | Done |
-| CLI (`veil` command) | Done |
+<table>
+<tr>
+<td width="50%">
+
+### Self-Tuning Eviction
+*AIMD control*
+
+Context pressure triggers eviction. Success grows the window, failure shrinks it. No manual cleanup.
+
+</td>
+<td width="50%">
+
+### Failure Memory
+*Loops converge*
+
+Failed approaches are remembered. The agent doesn't grind — it learns what didn't work and moves on.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### Worldview
+*Structural + behavioral*
+
+Persistent understanding of the codebase and your patterns. Survives compaction.
+
+</td>
+<td width="50%">
+
+### Compression
+*Intelligent decay*
+
+Code, config, and conversations compress based on relevance. Old context fades, important context persists.
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph AGENT["Agent Loop (Pi fork)"]
+        direction TB
+        A[Tool Call] --> H[VeilHarness]
+    end
+
+    subgraph CONTEXT["Context Management"]
+        direction TB
+        H --> CM[ContextManager]
+        CM --> S[Scorer]
+        CM --> E[Eviction]
+        CM --> I[Injection]
+    end
+
+    subgraph STORAGE["Storage"]
+        direction LR
+        W[(SQLite + sqlite-vec<br/>Warm Tier)]
+        C[(Cold Tier<br/>Optional)]
+    end
+
+    CONTEXT --> W
+    W -.-> C
+
+    style AGENT fill:#1a1a2e,stroke:#a855f7,color:#e0e7ff
+    style CONTEXT fill:#1a1a2e,stroke:#6366f1,color:#e0e7ff
+    style STORAGE fill:#16213e,stroke:#a855f7,color:#e0e7ff
 ```
-Agent Loop (Pi fork)
-    │
-    ▼
-VeilHarness ──► hooks into tool calls
-    │
-    ▼
-ContextManager ──► scorer, eviction, injection
-    │
-    ▼
-SQLite (warm) ──► local-first, no network
-    │
-    ▼
-Cold tier (optional) ──► cross-session, cross-device
-```
+
+| Path | Behavior |
+|------|----------|
+| **Fast** | Deterministic scorer + eviction. Every turn, sub-10ms. Never blocks. |
+| **Slow** | Reads event log, writes policy. Between turns, off critical path. |
+
+---
+
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
+
+---
 
 ## Development
 
@@ -83,16 +141,20 @@ npm run build
 ./veil-test.sh
 ```
 
-See [CLAUDE.md](CLAUDE.md) for architecture details.
-
-## Documentation
-
-- [Design doc](context/DESIGN-autonomic.md) — full technical design
-- [Roadmap](context/ROADMAP.md) — what's done, what's next
-- [Alignment](alignment/) — vision, manifesto, principles
+---
 
 ## Credits
 
 Built on [pi-mono](https://github.com/badlogic/pi-mono) by Mario Zechner. MIT licensed.
 
 Part of the [Engrammic](https://engrammic.ai) ecosystem.
+
+---
+
+<p align="center">
+  <img src=".github/media/footer.svg" width="800">
+</p>
+
+<p align="center">
+  <sub>Engrammic · 2026</sub>
+</p>
