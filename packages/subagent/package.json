@@ -1,6 +1,6 @@
 {
 	"name": "@veil/subagent",
-	"version": "0.1.36",
+	"version": "0.1.37",
 	"description": "Subagent orchestration with Veil context propagation",
 	"type": "module",
 	"main": "./dist/index.js",
