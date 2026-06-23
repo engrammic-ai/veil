@@ -48,6 +48,9 @@ const external = [
 	"tree-sitter-typescript",
 ];
 
+import { renameSync, unlinkSync, existsSync } from "fs";
+
+// Bundle main cli
 await esbuild.build({
 	entryPoints: ["dist/cli.js"],
 	bundle: true,
@@ -58,11 +61,27 @@ await esbuild.build({
 	sourcemap: true,
 	external,
 });
-
-// Replace cli.js with bundled version
-import { renameSync, unlinkSync } from "fs";
 unlinkSync("dist/cli.js");
 renameSync("dist/cli.bundled.js", "dist/cli.js");
 renameSync("dist/cli.bundled.js.map", "dist/cli.js.map");
+
+// Bundle bun-specific entrypoints (they import from pi-ai/compat etc)
+for (const file of ["dist/bun/register-bedrock.js", "dist/bun/restore-sandbox-env.js"]) {
+	if (!existsSync(file)) continue;
+	const out = file.replace(".js", ".bundled.js");
+	await esbuild.build({
+		entryPoints: [file],
+		bundle: true,
+		platform: "node",
+		target: "node22",
+		format: "esm",
+		outfile: out,
+		sourcemap: true,
+		external,
+	});
+	unlinkSync(file);
+	renameSync(out, file);
+	if (existsSync(out + ".map")) renameSync(out + ".map", file + ".map");
+}
 
 console.log("Bundled dist/cli.js (workspace packages inlined)");
