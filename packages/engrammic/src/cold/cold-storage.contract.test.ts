@@ -1,11 +1,11 @@
 /**
  * Contract tests for ColdStore interface.
- * Verifies SqliteColdStore implementation meets the ColdStore contract.
+ * Verifies MockColdStore implementation meets the ColdStore contract.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ContextItem } from "../types.ts";
-import { SqliteColdStore } from "./sqlite.ts";
+import { MockColdStore } from "./mock.ts";
 
 function makeContextItem(overrides: Partial<ContextItem> = {}): ContextItem {
 	return {
@@ -29,11 +29,11 @@ function makeContextItem(overrides: Partial<ContextItem> = {}): ContextItem {
 	};
 }
 
-describe("ColdStore contract: SqliteColdStore", () => {
-	let store: SqliteColdStore;
+describe("ColdStore contract: MockColdStore", () => {
+	let store: MockColdStore;
 
 	beforeEach(() => {
-		store = new SqliteColdStore({ dbPath: ":memory:" });
+		store = new MockColdStore();
 	});
 
 	afterEach(async () => {

@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MemoryColdStore } from "./cold/memory.ts";
+import { MockColdStore } from "./cold/mock.ts";
 import type { ConvergenceState, EscalationResult } from "./convergence.ts";
 import type { ToolResultEvent, VeilHarnessConfig } from "./harness.ts";
 import { VeilHarness } from "./harness.ts";
@@ -26,7 +26,7 @@ function makeTmpDir(): string {
 function makeHarness(tmpDir: string, extra: VeilHarnessConfig = {}): VeilHarness {
 	return new VeilHarness({
 		dbPath: join(tmpDir, "context.db"),
-		coldStore: new MemoryColdStore(),
+		coldStore: new MockColdStore(),
 		sessionId: "scenario-session",
 		...extra,
 	});

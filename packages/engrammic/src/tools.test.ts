@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { MemoryColdStore } from "./cold/memory.ts";
+import { MockColdStore } from "./cold/mock.ts";
 import { ContextManager } from "./manager.ts";
 import { executeVeilTool, TOOL_SCHEMAS } from "./tools.ts";
 
@@ -31,7 +31,7 @@ describe("executeVeilTool", () => {
 
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "tools-test-"));
-		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, new MemoryColdStore());
+		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, new MockColdStore());
 	});
 
 	afterEach(async () => {
@@ -209,7 +209,7 @@ describe("executeVeilTool", () => {
 	});
 
 	test("veil_history returns empty message when no cold store query", async () => {
-		// MemoryColdStore has no query method, so searchHistory returns []
+		// MockColdStore has no query method, so searchHistory returns []
 		const result = await executeVeilTool("veil_history", { query: "test query" }, { manager });
 
 		expect(result.success).toBe(true);
@@ -218,7 +218,7 @@ describe("executeVeilTool", () => {
 	});
 
 	test("veil_history passes days parameter to since calculation", async () => {
-		// With MemoryColdStore (no query), always returns empty regardless of days
+		// With MockColdStore (no query), always returns empty regardless of days
 		const result = await executeVeilTool("veil_history", { query: "test", days: 30 }, { manager });
 
 		expect(result.success).toBe(true);
@@ -302,7 +302,7 @@ describe("ContextManager episode API", () => {
 
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "episode-api-test-"));
-		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, new MemoryColdStore());
+		manager = new ContextManager({ dbPath: join(tmpDir, "context.db") }, new MockColdStore());
 	});
 
 	afterEach(async () => {

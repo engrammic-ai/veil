@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { MemoryColdStore } from "./cold/memory.ts";
+import { MockColdStore } from "./cold/mock.ts";
 import { ContextManager } from "./manager.ts";
 
 // Loads several ~20-token items so total usage exceeds the budget and eviction fires.
@@ -10,7 +10,7 @@ import { ContextManager } from "./manager.ts";
 function makeManager(testDir: string, overrides = {}) {
 	return new ContextManager(
 		{ dbPath: join(testDir, "ctx.db"), maxTokens: 100, reserveTokens: 0, ...overrides },
-		new MemoryColdStore(),
+		new MockColdStore(),
 	);
 }
 

@@ -1,7 +1,7 @@
 /**
  * Basic integration test for VeilHarness
  *
- * Note: Tests use MemoryColdStore to avoid native SQLite dependency issues.
+ * Note: Tests use MockColdStore to avoid native SQLite dependency issues.
  * Full SQLite tests should run in CI with proper native module builds.
  */
 
@@ -9,12 +9,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, test, vi } from "vitest";
-import { MemoryColdStore } from "./cold/memory.ts";
+import { MockColdStore } from "./cold/mock.ts";
 import { VeilHarness } from "./harness.ts";
 
-describe("MemoryColdStore", () => {
+describe("MockColdStore", () => {
 	test("basic operations", async () => {
-		const store = new MemoryColdStore();
+		const store = new MockColdStore();
 
 		const item = {
 			id: "test-1",
@@ -36,7 +36,7 @@ describe("MemoryColdStore", () => {
 		};
 
 		const pointer = await store.demote(item);
-		expect(pointer.startsWith("mem_")).toBe(true);
+		expect(pointer.startsWith("mock_")).toBe(true);
 
 		const fetched = await store.fetch(pointer);
 		expect(fetched).toBeTruthy();
@@ -52,7 +52,7 @@ describe("MemoryColdStore", () => {
 	});
 
 	test("capabilities", () => {
-		const store = new MemoryColdStore();
+		const store = new MockColdStore();
 		expect(store.capabilities.semantic).toBe(false);
 		expect(store.capabilities.temporal).toBe(false);
 		expect(store.capabilities.provenance).toBe(false);
@@ -73,7 +73,7 @@ describe("VeilHarness", () => {
 	test("initializes with defaults", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const budget = harness.getBudget();
@@ -86,7 +86,7 @@ describe("VeilHarness", () => {
 	test("remember and recall", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const item = harness.remember("The API uses OAuth2 for authentication", "fact", ["auth", "api"]);
@@ -104,7 +104,7 @@ describe("VeilHarness", () => {
 	test("load and unload affect budget", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const item = harness.remember("Some content", "episodic", ["test"]);
@@ -130,7 +130,7 @@ describe("VeilHarness", () => {
 
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			checkpointIntervalTurns: 2,
 			onCheckpoint: (turn) => checkpoints.push(turn),
 		});
@@ -155,7 +155,7 @@ describe("VeilHarness", () => {
 	test("pin prevents eviction", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const item = harness.remember("Important info", "procedural", ["critical"]);
@@ -187,7 +187,7 @@ describe("getUsage", () => {
 	it("returns usage stats", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		// Remember and load an item
@@ -238,7 +238,7 @@ describe("autoCapture integration", () => {
 	test("captures Read tool results", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -265,7 +265,7 @@ describe("autoCapture integration", () => {
 	test("ignores non-capturable tools", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -290,7 +290,7 @@ describe("autoCapture integration", () => {
 	test("respects rate limits", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			captureConfig: { maxItemsPerTurn: 5, maxItemsPerSession: 500, minChars: 50, maxChars: 8000 },
 		});
 
@@ -323,7 +323,7 @@ describe("autoCapture integration", () => {
 	test("deduplicates identical content", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -357,7 +357,7 @@ describe("autoCapture integration", () => {
 
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -395,7 +395,7 @@ describe("autoCapture integration", () => {
 
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -442,7 +442,7 @@ describe("autoCapture integration", () => {
 	test("does not capture error results", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const { mockAgentHarness, emit } = makeMockAgentHarness();
@@ -477,7 +477,7 @@ describe("custom triggers loaded on startup", () => {
 		const dbPath = join(tmpDir, "context.db");
 
 		// First harness: persist a custom trigger and a matching item
-		const harness1 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		const harness1 = new VeilHarness({ dbPath, coldStore: new MockColdStore() });
 		harness1.remember("deployment runbook for canary releases", "procedural", ["deploy", "canary"]);
 		harness1
 			.getManager()
@@ -494,7 +494,7 @@ describe("custom triggers loaded on startup", () => {
 		await harness1.close();
 
 		// Second harness: reopen same DB — custom trigger must be loaded
-		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MockColdStore() });
 		const result = await harness2.processUserMessage("how do we deploy to production?");
 		await harness2.close();
 
@@ -519,7 +519,7 @@ describe("processUserMessage (anticipatory loading)", () => {
 	test("returns manifest when triggers match", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		// Store something with "test" tag
@@ -536,7 +536,7 @@ describe("processUserMessage (anticipatory loading)", () => {
 	test("returns null when no triggers match", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		harness.remember("Some content", "fact", ["unrelated"]);
@@ -551,7 +551,7 @@ describe("processUserMessage (anticipatory loading)", () => {
 		// Use small maxTokens with no reserve so we can easily exceed 70%
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			maxTokens: 100,
 			reserveTokens: 0,
 		});
@@ -577,7 +577,7 @@ describe("processUserMessage (anticipatory loading)", () => {
 	test("preloads top items when budget < 50%", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		// Store items - remember() now adds to loaded immediately
@@ -611,7 +611,7 @@ describe("maybeLearn", () => {
 	test("does not run before interval has elapsed", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			learningConfig: { intervalMs: 60 * 60 * 1000, minHydrations: 1 },
 		});
 
@@ -648,7 +648,7 @@ describe("maybeLearn", () => {
 	test("skips when fewer than minHydrations events exist", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			learningConfig: { intervalMs: 0, minHydrations: 5 },
 		});
 
@@ -679,7 +679,7 @@ describe("maybeLearn", () => {
 	test("persists new triggers when patterns are found", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			// intervalMs=0 forces the interval check to pass; minHydrations=3 is low enough
 			learningConfig: { intervalMs: 0, minHydrations: 3 },
 		});
@@ -717,7 +717,7 @@ describe("maybeLearn", () => {
 	test("uses learningConfig overrides from VeilHarnessConfig", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			learningConfig: { intervalMs: 999999999, minHydrations: 1 },
 		});
 
@@ -760,7 +760,7 @@ describe("learned trigger matches subsequent messages", () => {
 		// First harness: store item, log hydrations, run maybeLearn to produce a learned trigger
 		const harness1 = new VeilHarness({
 			dbPath,
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			learningConfig: { intervalMs: 0, minHydrations: 3 },
 		});
 
@@ -787,7 +787,7 @@ describe("learned trigger matches subsequent messages", () => {
 		await harness1.close();
 
 		// Second harness: reopen same DB — learned trigger is loaded at init
-		const harness2 = new VeilHarness({ dbPath, coldStore: new MemoryColdStore() });
+		const harness2 = new VeilHarness({ dbPath, coldStore: new MockColdStore() });
 
 		// Send a message that should match the learned trigger's pattern
 		const keyword = learnedTriggers[0].pattern.source; // e.g. "canary"
@@ -862,7 +862,7 @@ describe("getFailureSection", () => {
 	test("returns empty string when no current goal", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const section = harness.getFailureSection();
@@ -874,7 +874,7 @@ describe("getFailureSection", () => {
 	test("returns empty string when no failures for goal", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		// Simulate a goal being set without failures
@@ -890,7 +890,7 @@ describe("getFailureSection", () => {
 	test("returns failure section when failures exist", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const store = harness.getAttemptStore();
@@ -940,7 +940,7 @@ describe("getConvergenceState", () => {
 	test("returns null for unknown goal", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const state = harness.getConvergenceState("unknown-goal");
@@ -952,7 +952,7 @@ describe("getConvergenceState", () => {
 	test("getConvergenceMonitor returns monitor instance", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const monitor = harness.getConvergenceMonitor();
@@ -965,7 +965,7 @@ describe("getConvergenceState", () => {
 	test("convergenceThresholds config is applied", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			convergenceThresholds: { maxConsecutiveFailures: 10 },
 		});
 
@@ -979,7 +979,7 @@ describe("getConvergenceState", () => {
 	test("convergence monitor tracks failures via direct update", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			convergenceThresholds: { maxConsecutiveFailures: 2 },
 		});
 
@@ -1056,7 +1056,7 @@ describe("token budget tracking", () => {
 	test("getCaptureBudget returns initial zero state", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			captureConfig: { maxTokenBudget: 8000, softThresholdPercent: 0.75 },
 		});
 
@@ -1074,7 +1074,7 @@ describe("token budget tracking", () => {
 		// After enough items to cross 100 tokens, warning fires.
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			captureConfig: {
 				maxTokenBudget: 200,
 				softThresholdPercent: 0.5,
@@ -1114,7 +1114,7 @@ describe("token budget tracking", () => {
 		// Very small budget: 50 tokens. Items ~80 chars → ~20 tokens each. Only 2-3 fit.
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			captureConfig: {
 				maxTokenBudget: 50,
 				softThresholdPercent: 0.75,
@@ -1156,7 +1156,7 @@ describe("token budget tracking", () => {
 	test("budget_warning emitted only once even when exceeded further", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 			captureConfig: {
 				maxTokenBudget: 200,
 				softThresholdPercent: 0.5,
@@ -1205,7 +1205,7 @@ describe("VeilHarness.search", () => {
 	test("returns hot items first with score 1.0", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const item = harness.remember("OAuth2 authentication flow", "fact", ["auth"]);
@@ -1223,7 +1223,7 @@ describe("VeilHarness.search", () => {
 	test("returns warm items with score 0.8 when not in hot tier", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		harness.remember("database migration guide", "procedural", ["db"]);
@@ -1240,7 +1240,7 @@ describe("VeilHarness.search", () => {
 	test("deduplicates: hot item wins over warm copy", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const item = harness.remember("dedup check content", "fact", ["dedup"]);
@@ -1260,7 +1260,7 @@ describe("VeilHarness.search", () => {
 	test("respects limit parameter", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		for (let i = 0; i < 8; i++) {
@@ -1276,7 +1276,7 @@ describe("VeilHarness.search", () => {
 	test("returns empty array when nothing matches", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		harness.remember("completely unrelated", "fact", []);
@@ -1290,7 +1290,7 @@ describe("VeilHarness.search", () => {
 	test("summary is first 40 chars of content", async () => {
 		const harness = new VeilHarness({
 			dbPath: join(tmpDir, "context.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const longContent = `${"A".repeat(100)} target ${"B".repeat(100)}`;
@@ -1321,7 +1321,7 @@ describe("VeilHarness.importFromDb", () => {
 		// Create "child" harness and store some items
 		const childHarness = new VeilHarness({
 			dbPath: childDbPath,
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		childHarness.remember("child item 1", "fact", ["child", "test"]);
@@ -1338,7 +1338,7 @@ describe("VeilHarness.importFromDb", () => {
 		// Create "parent" harness and import
 		const parentHarness = new VeilHarness({
 			dbPath: join(tmpDir, "parent.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const result = await parentHarness.importFromDb(childDbPath, {
@@ -1361,7 +1361,7 @@ describe("VeilHarness.importFromDb", () => {
 
 		const childHarness = new VeilHarness({
 			dbPath: childDbPath,
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 		childHarness.remember("duplicate content", "fact", ["child"]);
 		// Close cache directly without flush to keep items in warm storage
@@ -1369,7 +1369,7 @@ describe("VeilHarness.importFromDb", () => {
 
 		const parentHarness = new VeilHarness({
 			dbPath: join(tmpDir, "parent.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 		// Store same content in parent
 		parentHarness.remember("duplicate content", "fact", ["parent"]);
@@ -1387,7 +1387,7 @@ describe("VeilHarness.importFromDb", () => {
 	test("returns zeros for non-existent child DB", async () => {
 		const parentHarness = new VeilHarness({
 			dbPath: join(tmpDir, "parent.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		const result = await parentHarness.importFromDb(join(tmpDir, "nonexistent.db"), {
@@ -1405,7 +1405,7 @@ describe("VeilHarness.importFromDb", () => {
 
 		const childHarness = new VeilHarness({
 			dbPath: childDbPath,
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 		const childItem = childHarness.remember("weighted item", "fact", ["child"]);
 		// Simulate cognitive weight update via multiple "good" outcomes
@@ -1415,7 +1415,7 @@ describe("VeilHarness.importFromDb", () => {
 
 		const parentHarness = new VeilHarness({
 			dbPath: join(tmpDir, "parent.db"),
-			coldStore: new MemoryColdStore(),
+			coldStore: new MockColdStore(),
 		});
 
 		// Add same content to parent first so dedup triggers weight transfer

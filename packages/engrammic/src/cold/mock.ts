@@ -1,5 +1,5 @@
 /**
- * In-memory ColdStore - for testing and ephemeral sessions.
+ * Mock ColdStore - for testing only.
  * No persistence, everything lost on restart.
  */
 
@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { ContextItem } from "../types.ts";
 import type { ColdStore, ColdStoreCapabilities } from "./interface.ts";
 
-export class MemoryColdStore implements ColdStore {
+export class MockColdStore implements ColdStore {
 	private items: Map<string, ContextItem> = new Map();
 
 	readonly capabilities: ColdStoreCapabilities = {
@@ -17,7 +17,7 @@ export class MemoryColdStore implements ColdStore {
 	};
 
 	async demote(item: ContextItem): Promise<string> {
-		const pointer = `mem_${randomUUID()}`;
+		const pointer = `mock_${randomUUID()}`;
 		this.items.set(pointer, { ...item, kgPointer: pointer });
 		return pointer;
 	}

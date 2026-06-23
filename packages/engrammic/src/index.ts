@@ -26,21 +26,12 @@ export { type CatConfig, type CatState, CatWidget, DEFAULT_CAT_CONFIG, type Sess
 export { CircuitBreaker, type CircuitBreakerConfig } from "./circuit-breaker.ts";
 // Cold storage adapters
 export {
-	ChromaColdStore,
-	type ChromaColdStoreConfig,
-	// Interface
 	type ColdStore,
 	type ColdStoreCapabilities,
 	type ColdStoreConfig,
-	LanceDBColdStore,
-	type LanceDBColdStoreConfig,
-	MemoryColdStore,
-	// Adapters (no external deps)
-	SqliteColdStore,
-	type SqliteColdStoreConfig,
-	// Adapters (peer deps required)
-	ZepColdStore,
-	type ZepColdStoreConfig,
+	MockColdStore,
+	VeilMemoryColdStore,
+	type VeilMemoryColdStoreConfig,
 } from "./cold/index.ts";
 export {
 	type ContextCommandOptions,
