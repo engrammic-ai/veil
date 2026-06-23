@@ -2,8 +2,8 @@
 
 <img src=".github/media/banner.svg" alt="Veil" width="800" />
 
-[![npm version](https://img.shields.io/npm/v/@engrammic/veil?style=flat-square&color=a855f7)](https://www.npmjs.com/package/@engrammic/veil)
-[![license](https://img.shields.io/npm/l/@engrammic/veil?style=flat-square&color=6366f1)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@engrammic/veil?style=flat-square&color=c2410c)](https://www.npmjs.com/package/@engrammic/veil)
+[![license](https://img.shields.io/npm/l/@engrammic/veil?style=flat-square&color=92400e)](LICENSE)
 
 [Install](#install) ·
 [Why Veil](#why-veil) ·
@@ -111,9 +111,9 @@ flowchart TB
     CONTEXT --> W
     W -.-> C
 
-    style AGENT fill:#1a1a2e,stroke:#a855f7,color:#e0e7ff
-    style CONTEXT fill:#1a1a2e,stroke:#6366f1,color:#e0e7ff
-    style STORAGE fill:#16213e,stroke:#a855f7,color:#e0e7ff
+    style AGENT fill:#1c1917,stroke:#c2410c,color:#fef3c7
+    style CONTEXT fill:#1c1917,stroke:#92400e,color:#fef3c7
+    style STORAGE fill:#292524,stroke:#c2410c,color:#fef3c7
 ```
 
 | Path | Behavior |

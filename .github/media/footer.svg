@@ -4,7 +4,7 @@
       <style>
         .footer-container {
           font-family: 'JetBrains Mono', 'Fira Code', monospace;
-          color: #e0e7ff;
+          color: #fef3c7;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -16,14 +16,14 @@
         }
         .line {
           height: 1px;
-          background: linear-gradient(90deg, transparent, #6366f1, #a855f7, transparent);
+          background: linear-gradient(90deg, transparent, #92400e, #c2410c, transparent);
           flex-grow: 1;
           margin: 0 20px;
         }
 
         @media (prefers-color-scheme: light) {
-          .footer-container { color: #1a1a2e; }
-          .line { background: linear-gradient(90deg, transparent, #a855f7, #1a1a2e, transparent); }
+          .footer-container { color: #1c1917; }
+          .line { background: linear-gradient(90deg, transparent, #c2410c, #92400e, transparent); }
         }
       </style>
       <div class="footer-container">
