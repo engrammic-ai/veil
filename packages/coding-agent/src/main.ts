@@ -57,6 +57,7 @@ console.warn = (...args: unknown[]) => {
 	originalWarn(...args);
 };
 
+import { initLogger, log, logError } from "./core/logger.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
@@ -600,6 +601,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("createSessionManager");
 
+	// Init file logger for this session
+	const logLevel = parsed.veilParentDb ? "debug" : "info"; // verbose in child mode
+	initLogger(sessionManager.getSessionId(), logLevel);
+
 	const trustStore = new ProjectTrustStore(agentDir);
 	const sessionCwd = sessionManager.getCwd();
 	const autoTrustOnReloadCwd =
@@ -755,6 +760,11 @@ export async function main(args: string[], options?: MainOptions) {
 				});
 			}
 		} catch (err) {
+			logError("harness", err, "Failed to initialize context management");
+			if (isChildMode) {
+				// ponytail: child mode NEEDS veil tools — fail loudly
+				throw err;
+			}
 			console.error(`Failed to initialize context management: ${err instanceof Error ? err.message : String(err)}`);
 			console.error("Continuing without context management.");
 		}
@@ -763,6 +773,9 @@ export async function main(args: string[], options?: MainOptions) {
 		const VEIL_HARNESS_KEY = Symbol.for("veil:harness");
 		if (veilHarness) {
 			(globalThis as any)[VEIL_HARNESS_KEY] = veilHarness;
+			log("info", "harness", `Initialized${isChildMode ? " (child mode)" : ""}`, {
+				tools: veilHarness.getTools().length,
+			});
 		}
 
 		const created = await createAgentSessionFromServices({

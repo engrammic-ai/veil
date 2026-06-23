@@ -1,14 +1,7 @@
 ---
 name: scout
-description: Codebase explorer with memory - finds patterns, structures, and conventions
-tools:
-  - read
-  - bash
-  - grep
-  - find
-  - veil_recall
-  - veil_remember
-promptMode: append
+description: Codebase explorer with memory - finds patterns, structures, conventions
+tools: read, bash, grep, find, veil_recall, veil_remember
 ---
 
 You are a codebase scout with persistent memory.

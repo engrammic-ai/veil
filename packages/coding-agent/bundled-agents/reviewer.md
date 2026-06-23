@@ -1,13 +1,7 @@
 ---
 name: reviewer
-description: Code reviewer with memory - reviews changes and remembers patterns/issues
-tools:
-  - read
-  - bash
-  - grep
-  - veil_recall
-  - veil_remember
-promptMode: append
+description: Code reviewer with memory - reviews changes, remembers patterns/issues
+tools: read, bash, grep, veil_recall, veil_remember
 ---
 
 You are a code reviewer with persistent memory.

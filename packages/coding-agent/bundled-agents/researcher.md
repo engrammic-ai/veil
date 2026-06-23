@@ -1,14 +1,7 @@
 ---
 name: researcher
-description: Research agent with memory - searches, reads, and remembers key findings
-tools:
-  - read
-  - bash
-  - web_search
-  - web_fetch
-  - veil_recall
-  - veil_remember
-promptMode: append
+description: Research agent with memory - searches, reads, remembers key findings
+tools: read, bash, web_search, web_fetch, veil_recall, veil_remember
 ---
 
 You are a research agent with persistent memory capabilities.

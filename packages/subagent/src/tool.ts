@@ -104,11 +104,15 @@ async function runSingleAgent(
 
 	try {
 		// Spawn the subagent
+		console.error(`[subagent] Spawning ${agentName}: ${task.slice(0, 80)}...`);
 		const result = await spawnSubagent(ctx, agent, {
 			cwd,
 			task,
 			signal,
 		});
+		if (result.exitCode !== 0) {
+			console.error(`[subagent] ${agentName} failed (exit ${result.exitCode}): ${result.stderr.slice(0, 200)}`);
+		}
 
 		// Merge context back to parent (if harness provided)
 		if (config.harness) {
