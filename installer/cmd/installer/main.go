@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/engrammic-ai/veil-installer/internal/app"
@@ -114,6 +116,31 @@ var embedderCmd = &cobra.Command{
 	Short: "Manage the Veil embedder server",
 }
 
+var embedderStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check if the embedder server is running",
+	Run:   runEmbedderStatus,
+}
+
+var embedderStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the embedder server",
+	Run:   runEmbedderStart,
+}
+
+var embedderStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the embedder server",
+	Run:   runEmbedderStop,
+}
+
+var embedderRepairCmd = &cobra.Command{
+	Use:   "repair",
+	Short: "Repair embedder installation (reinstall dependencies)",
+	Long:  "Run npm install in the embedder directory to fix missing dependencies.",
+	Run:   runEmbedderRepair,
+}
+
 var embedderCacheCmd = &cobra.Command{
 	Use:   "cache",
 	Short: "Manage embedder model cache",
@@ -146,7 +173,7 @@ func init() {
 	uninstallCmd.Flags().BoolVar(&purge, "purge", false, "Also remove configuration and data files")
 
 	embedderCacheCmd.AddCommand(embedderCacheClearCmd)
-	embedderCmd.AddCommand(embedderCacheCmd)
+	embedderCmd.AddCommand(embedderStatusCmd, embedderStartCmd, embedderStopCmd, embedderRepairCmd, embedderCacheCmd)
 	rootCmd.AddCommand(installCmd, updateCmd, uninstallCmd, infoCmd, releasesCmd, checkCmd, selfUpdateCmd, embedderCmd)
 }
 
@@ -940,6 +967,184 @@ func countFiles(dir string, exts ...string) int {
 		}
 	}
 	return count
+}
+
+func getEmbedderDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "veil", "embedder")
+}
+
+func getEmbedderPidFile() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".veil", "embedder.pid")
+}
+
+func readEmbedderPid() int {
+	data, err := os.ReadFile(getEmbedderPidFile())
+	if err != nil {
+		return 0
+	}
+	// Handle JSON format: {"pid":123,...}
+	content := strings.TrimSpace(string(data))
+	if strings.HasPrefix(content, "{") {
+		// Extract pid from JSON
+		start := strings.Index(content, `"pid":`)
+		if start == -1 {
+			return 0
+		}
+		start += 6
+		end := strings.IndexAny(content[start:], ",}")
+		if end == -1 {
+			return 0
+		}
+		pidStr := strings.TrimSpace(content[start : start+end])
+		pid := 0
+		fmt.Sscanf(pidStr, "%d", &pid)
+		return pid
+	}
+	// Plain number format
+	pid := 0
+	fmt.Sscanf(content, "%d", &pid)
+	return pid
+}
+
+func isEmbedderRunning() bool {
+	pid := readEmbedderPid()
+	if pid == 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// On Unix, FindProcess always succeeds; check if process exists via signal 0
+	// Using syscall.Signal(0) tests if process exists without sending a real signal
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+func runEmbedderStatus(cmd *cobra.Command, args []string) {
+	embedderDir := getEmbedderDir()
+	serverPath := filepath.Join(embedderDir, "server.js")
+
+	if _, err := os.Stat(serverPath); os.IsNotExist(err) {
+		fmt.Println("Embedder: not installed")
+		return
+	}
+
+	pid := readEmbedderPid()
+	if pid == 0 || !isEmbedderRunning() {
+		fmt.Println("Embedder: stopped")
+		fmt.Printf("  Path: %s\n", embedderDir)
+		return
+	}
+
+	fmt.Println("Embedder: running")
+	fmt.Printf("  PID:  %d\n", pid)
+	fmt.Printf("  Path: %s\n", embedderDir)
+}
+
+func runEmbedderStart(cmd *cobra.Command, args []string) {
+	if isEmbedderRunning() {
+		if !quiet {
+			fmt.Println("Embedder server is already running.")
+		}
+		return
+	}
+
+	embedderDir := getEmbedderDir()
+	serverPath := filepath.Join(embedderDir, "server.js")
+
+	if _, err := os.Stat(serverPath); os.IsNotExist(err) {
+		exitcodes.Exit(exitcodes.ErrNotInstalled, "Embedder not installed. Run 'veil-installer install' with an archive that includes the embedder.")
+	}
+
+	// Check if node_modules exists
+	nodeModules := filepath.Join(embedderDir, "node_modules")
+	if _, err := os.Stat(nodeModules); os.IsNotExist(err) {
+		fmt.Println("Embedder dependencies missing. Running repair...")
+		runEmbedderRepair(cmd, args)
+	}
+
+	if !quiet {
+		fmt.Print("Starting embedder server")
+	}
+
+	proc := exec.Command("node", serverPath)
+	proc.Dir = embedderDir
+	if err := proc.Start(); err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("start embedder: %w", err))
+	}
+
+	// Wait for server to become ready
+	for i := 0; i < 30; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if !quiet {
+			fmt.Print(".")
+		}
+		if isEmbedderRunning() {
+			if !quiet {
+				fmt.Println()
+				fmt.Println("Embedder server started.")
+			}
+			return
+		}
+	}
+
+	if !quiet {
+		fmt.Println()
+	}
+	exitcodes.Exit(exitcodes.ErrGeneral, "Embedder server did not start within 15s. Run 'veil-installer embedder repair' and try again.")
+}
+
+func runEmbedderStop(cmd *cobra.Command, args []string) {
+	pid := readEmbedderPid()
+	if pid == 0 || !isEmbedderRunning() {
+		if !quiet {
+			fmt.Println("Embedder server is not running.")
+		}
+		return
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("find process: %w", err))
+	}
+
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		// Try SIGKILL as fallback
+		proc.Kill()
+	}
+
+	if !quiet {
+		fmt.Printf("Sent stop signal to embedder server (pid %d).\n", pid)
+	}
+}
+
+func runEmbedderRepair(cmd *cobra.Command, args []string) {
+	embedderDir := getEmbedderDir()
+
+	if _, err := os.Stat(embedderDir); os.IsNotExist(err) {
+		exitcodes.Exit(exitcodes.ErrNotInstalled, "Embedder not installed.")
+	}
+
+	if !quiet {
+		fmt.Printf("Repairing embedder installation in %s...\n", embedderDir)
+	}
+
+	// Run npm install --omit=dev
+	npmCmd := exec.Command("npm", "install", "--omit=dev")
+	npmCmd.Dir = embedderDir
+	npmCmd.Stdout = os.Stdout
+	npmCmd.Stderr = os.Stderr
+
+	if err := npmCmd.Run(); err != nil {
+		exitcodes.ExitError(exitcodes.ErrGeneral, fmt.Errorf("npm install failed: %w", err))
+	}
+
+	if !quiet {
+		fmt.Println("Embedder repair complete.")
+	}
 }
 
 func runEmbedderCacheClear(cmd *cobra.Command, args []string) {

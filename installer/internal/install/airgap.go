@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -142,6 +143,12 @@ func InstallFromArchive(archivePath, destPath string) error {
 		os.RemoveAll(embedderDst)
 		if err := copyDir(embedderSrc, embedderDst); err != nil {
 			return fmt.Errorf("install embedder: %w", err)
+		}
+		// Run npm install to ensure all dependencies are present
+		// (workspace-hoisted deps may be missing from archive)
+		if err := repairEmbedderDeps(embedderDst); err != nil {
+			// Non-fatal: user can run 'veil-installer embedder repair' later
+			fmt.Fprintf(os.Stderr, "Warning: could not install embedder dependencies: %v\n", err)
 		}
 	}
 
@@ -354,4 +361,23 @@ func BinaryNameForPlatform(platform string) string {
 		return "veil-" + platform + ".exe"
 	}
 	return "veil-" + platform
+}
+
+// repairEmbedderDeps runs npm install in the embedder directory to ensure
+// all dependencies are present. This is needed because npm workspace hoisting
+// may leave the archive with incomplete node_modules.
+func repairEmbedderDeps(embedderDir string) error {
+	pkgJSON := filepath.Join(embedderDir, "package.json")
+	if _, err := os.Stat(pkgJSON); os.IsNotExist(err) {
+		return nil // No package.json, nothing to install
+	}
+
+	cmd := exec.Command("npm", "install", "--omit=dev")
+	cmd.Dir = embedderDir
+	// Suppress npm output unless there's an error
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
 }
