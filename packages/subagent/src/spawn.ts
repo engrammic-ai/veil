@@ -43,12 +43,16 @@ export function getVeilInvocation(ctx: SubagentContext, agent: AgentConfig): str
 		args.push("--model", agent.model);
 	}
 
-	if (agent.tools && agent.tools.length > 0) {
-		args.push("--tools", agent.tools.join(","));
+	// Build tools list from builtinToolNames + extSelectors
+	const tools: string[] = [];
+	if (agent.builtinToolNames && agent.builtinToolNames.length > 0) {
+		tools.push(...agent.builtinToolNames);
 	}
-
-	if (agent.veil?.enableVeilTools === false) {
-		args.push("--veil-tools", "false");
+	if (agent.extSelectors && agent.extSelectors.length > 0) {
+		tools.push(...agent.extSelectors);
+	}
+	if (tools.length > 0) {
+		args.push("--tools", tools.join(","));
 	}
 
 	// Pass system prompt with anti-sycophancy preamble

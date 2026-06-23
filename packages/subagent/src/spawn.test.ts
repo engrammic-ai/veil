@@ -17,7 +17,7 @@ describe("getVeilInvocation", () => {
 			name: "scout",
 			description: "Fast recon",
 			model: "claude-haiku-4-5",
-			tools: ["read", "grep"],
+			builtinToolNames: ["read", "grep"],
 			systemPrompt: "You are a scout",
 			source: "user",
 			filePath: "/path/to/scout.md",
@@ -36,7 +36,7 @@ describe("getVeilInvocation", () => {
 		expect(args).toContain("read,grep");
 	});
 
-	it("includes veil-tools false when disabled", () => {
+	it("includes ext selectors in tools list", () => {
 		const ctx: SubagentContext = {
 			sessionId: "parent:worker:123",
 			parentDbPath: "/tmp/parent.db",
@@ -49,15 +49,16 @@ describe("getVeilInvocation", () => {
 		const agent: AgentConfig = {
 			name: "worker",
 			description: "Worker agent",
+			builtinToolNames: ["read"],
+			extSelectors: ["ext:mcp__foo"],
 			systemPrompt: "You are a worker",
 			source: "user",
 			filePath: "/path/to/worker.md",
-			veil: { enableVeilTools: false },
 		};
 
 		const args = getVeilInvocation(ctx, agent);
 
-		expect(args).toContain("--veil-tools");
-		expect(args).toContain("false");
+		expect(args).toContain("--tools");
+		expect(args).toContain("read,ext:mcp__foo");
 	});
 });

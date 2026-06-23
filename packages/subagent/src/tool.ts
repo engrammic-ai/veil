@@ -80,10 +80,11 @@ async function runSingleAgent(
 	}
 
 	// Create context for this subagent
+	// All subagents get veil tools by default
 	const ctx = createSubagentContext(config.parentDbPath, config.parentSessionId, {
 		tag: agentName,
-		inheritWarm: agent.veil?.inheritWarm ?? true,
-		enableVeilTools: agent.veil?.enableVeilTools ?? true,
+		inheritWarm: agent.inheritContext ?? true,
+		enableVeilTools: true, // ponytail: always enable veil tools for subagents
 	});
 
 	// Start IPC server

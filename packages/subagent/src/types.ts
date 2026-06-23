@@ -74,21 +74,78 @@ export type IpcMessage = ParentMessage | ChildMessage;
 // === Agent Discovery ===
 
 export type AgentScope = "user" | "project" | "both";
+export type PromptMode = "append" | "replace";
+export type ThinkingLevel = "none" | "brief" | "verbose";
+export type MemoryScope = "user" | "project" | "local";
+export type IsolationMode = "worktree";
 
-export interface AgentVeilConfig {
-	inheritWarm?: boolean;
-	enableVeilTools?: boolean;
-}
+// Built-in tool names that can be specified in tools: field
+export const BUILTIN_TOOL_NAMES = [
+	// Core tools
+	"read",
+	"write",
+	"edit",
+	"bash",
+	"grep",
+	"find",
+	"ls",
+	"web_search",
+	"web_fetch",
+	// Veil tools for subagents (no destructive ops: pin/unpin/forget/resolve_conflict)
+	"veil_recall",
+	"veil_remember",
+	"veil_promote",
+	"veil_demote",
+	"veil_hydrate",
+	"veil_history",
+	"veil_turn_meta",
+	"veil_conflicts", // can view conflicts but not resolve
+] as const;
 
 export interface AgentConfig {
 	name: string;
+	/** Display name shown in UI */
+	displayName?: string;
 	description: string;
-	tools?: string[];
+	/** Allowed built-in tools (omit = all, empty = none) */
+	builtinToolNames?: string[];
+	/** Extension tool selectors like "ext:mcp__foo" */
+	extSelectors?: string[];
+	/** Explicitly disallowed tools */
+	disallowedTools?: string[];
+	/** Load extensions: true = all, false = none, string[] = named */
+	extensions?: true | false | string[];
+	/** Exclude specific extensions */
+	excludeExtensions?: string[];
+	/** Load skills: true = all, false = none, string[] = named */
+	skills?: true | false | string[];
+	/** Model override (provider/model format) */
 	model?: string;
+	/** Thinking level */
+	thinking?: ThinkingLevel;
+	/** Max conversation turns (0 = unlimited) */
+	maxTurns?: number;
+	/** System prompt content */
 	systemPrompt: string;
+	/** How to combine with parent prompt */
+	promptMode?: PromptMode;
+	/** Inherit parent's conversation context */
+	inheritContext?: boolean;
+	/** Run in background */
+	runInBackground?: boolean;
+	/** Isolated execution */
+	isolated?: boolean;
+	/** Memory scope */
+	memory?: MemoryScope;
+	/** Isolation mode */
+	isolation?: IsolationMode;
+	/** Agent enabled (default true) */
+	enabled?: boolean;
+	/** Source location */
 	source: "user" | "project" | "builtin";
 	filePath: string;
-	veil?: AgentVeilConfig;
+	/** Is a default agent */
+	isDefault?: boolean;
 }
 
 export interface AgentDiscoveryResult {
