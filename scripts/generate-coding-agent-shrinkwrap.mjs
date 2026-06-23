@@ -223,13 +223,23 @@ function addInternalWorkspace(shrinkwrapPackages, addedPaths, queue, name, works
 	shrinkwrapPackages[outputPath] = sortedPackageEntry(entry);
 	addedPaths.add(outputPath);
 
+	const optionalDeps = new Set(Object.keys(packageJson.optionalDependencies ?? {}));
 	for (const dependencyName of Object.keys(packageDependencies(packageJson))) {
-		queue.push({ name: dependencyName, from: outputPath });
+		queue.push({ name: dependencyName, from: outputPath, isOptional: optionalDeps.has(dependencyName) });
 	}
 }
 
-function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, name, from) {
-	const lockPath = resolveExternalDependency(lockPackages, name, from);
+function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, name, from, isOptional = false) {
+	let lockPath;
+	try {
+		lockPath = resolveExternalDependency(lockPackages, name, from);
+	} catch (err) {
+		// ponytail: skip unresolvable optional deps (platform-specific packages like sqlite-vec-darwin-arm64)
+		if (isOptional) {
+			return;
+		}
+		throw err;
+	}
 	if (addedPaths.has(lockPath)) {
 		return;
 	}
@@ -238,8 +248,9 @@ function addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue,
 	shrinkwrapPackages[lockPath] = copyLockEntry(entry);
 	addedPaths.add(lockPath);
 
+	const optionalDeps = new Set(Object.keys(entry.optionalDependencies ?? {}));
 	for (const dependencyName of Object.keys(packageDependencies(entry))) {
-		queue.push({ name: dependencyName, from: lockPath });
+		queue.push({ name: dependencyName, from: lockPath, isOptional: optionalDeps.has(dependencyName) });
 	}
 }
 
@@ -289,7 +300,8 @@ function validateShrinkwrap(shrinkwrap, internalNames) {
 	}
 
 	for (const [lockPath, entry] of Object.entries(shrinkwrap.packages)) {
-		for (const dependencyName of Object.keys(packageDependencies(entry))) {
+		// ponytail: only validate required deps, skip optionalDependencies (platform-specific packages may not be installed)
+		for (const dependencyName of Object.keys(entry.dependencies ?? {})) {
 			const dependencyIncluded = [...includedPaths].some(
 				(candidate) => candidate === `node_modules/${dependencyName}` || candidate.endsWith(`/node_modules/${dependencyName}`),
 			);
@@ -341,7 +353,7 @@ function generateShrinkwrap() {
 			continue;
 		}
 
-		addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, item.name, item.from);
+		addExternalPackage(lockPackages, shrinkwrapPackages, addedPaths, queue, item.name, item.from, item.isOptional);
 	}
 
 	const shrinkwrap = {
