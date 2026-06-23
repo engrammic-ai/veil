@@ -14,10 +14,9 @@ const external = [
 	"@getzep/zep-cloud",
 	"@lancedb/lancedb",
 	"chromadb",
-	// Pi packages (published on npm)
-	"@earendil-works/pi-agent-core",
-	"@earendil-works/pi-ai",
-	"@earendil-works/pi-tui",
+	// ponytail: Pi packages are bundled (workspace deps), not external
+	// They were external when we depended on upstream npm versions, but now
+	// we publish our own versions and need them inlined for bun --compile
 	// Other external deps
 	"@modelcontextprotocol/sdk",
 	"@silvia-odwyer/photon-node",
