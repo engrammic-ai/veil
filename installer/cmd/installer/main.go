@@ -1107,7 +1107,11 @@ func moveFile(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil
 	}
-	// Rename failed (likely cross-device), fall back to copy + delete
+	// Rename failed (likely cross-device), fall back to copy + delete.
+	// For self-update: remove dst first so a running binary can be replaced
+	// (unlink removes the dir entry but the inode stays alive while in use).
+	_ = os.Remove(dst) // ignore error if file doesn't exist
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
