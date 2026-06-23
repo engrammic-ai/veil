@@ -13,7 +13,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { complete, type Message } from "@earendil-works/pi-ai";
+import { complete, type Message } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, SessionEntry } from "@engrammic/veil";
 import { BorderedLoader, convertToLlm, serializeConversation } from "@engrammic/veil";
 
@@ -144,8 +144,8 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					return response.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
+						.filter((c: { type: string }): c is { type: "text"; text: string } => c.type === "text")
+						.map((c: { type: "text"; text: string }) => c.text)
 						.join("\n");
 				};
 
