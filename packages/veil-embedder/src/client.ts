@@ -49,12 +49,34 @@ export class EmbedderClient {
 	private startTimeoutMs: number;
 	private baseUrl: string;
 	private starting: Promise<boolean> | null = null;
+	private restartCount = 0;
+	private lastRestartAttempt = 0;
 
 	constructor(config: EmbedderClientConfig = {}) {
 		this.port = config.port ?? DEFAULT_PORT;
 		this.autoStart = config.autoStart ?? true;
 		this.startTimeoutMs = config.startTimeoutMs ?? 30000;
 		this.baseUrl = `http://127.0.0.1:${this.port}`;
+	}
+
+	/** Check if server crashed (PID file exists but process is dead) */
+	private detectCrash(): boolean {
+		const pidInfo = getServerPidInfo();
+		if (!pidInfo) return false;
+		try {
+			process.kill(pidInfo.pid, 0);
+			return false; // process alive
+		} catch {
+			return true; // PID file exists but process dead = crash
+		}
+	}
+
+	/** Clean up stale state after crash detection */
+	private cleanupStalePid(): void {
+		try {
+			if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+			if (existsSync(LOCK_FILE)) unlinkSync(LOCK_FILE);
+		} catch {}
 	}
 
 	async isRunning(): Promise<boolean> {
@@ -98,9 +120,18 @@ export class EmbedderClient {
 						return true;
 					}
 
-					const serverPath = join(import.meta.dirname, "server.js");
-					if (!existsSync(serverPath)) {
-						console.error("veil-embedder server not found at", serverPath);
+					// Resolve server path: installed location first, then dev/dist
+					// ponytail: import.meta.dirname is /$bunfs/... in bundled context
+					const installedPath = join(LOG_DIR, "embedder", "server.js");
+					const dirname = import.meta.dirname;
+					const devPath = dirname && !dirname.startsWith("/$bunfs") ? join(dirname, "server.js") : null;
+					const serverPath = existsSync(installedPath)
+						? installedPath
+						: devPath && existsSync(devPath)
+							? devPath
+							: null;
+					if (!serverPath) {
+						console.error("veil-embedder server not found (run 'veil embedder start' manually)");
 						return false;
 					}
 
@@ -173,9 +204,44 @@ export class EmbedderClient {
 	}
 
 	async ensureRunning(): Promise<boolean> {
-		if (await this.isRunning()) return true;
+		if (await this.isRunning()) {
+			this.restartCount = 0; // reset on success
+			return true;
+		}
 		if (!this.autoStart) return false;
-		return this.start();
+
+		// Detect crash and clean up stale state
+		if (this.detectCrash()) {
+			console.error("[veil-embedder] Detected crashed server, cleaning up stale state");
+			this.cleanupStalePid();
+		}
+
+		// Backoff: max 3 retries, exponential delay (1s, 2s, 4s)
+		const MAX_RETRIES = 3;
+		const now = Date.now();
+		if (this.restartCount >= MAX_RETRIES && now - this.lastRestartAttempt < 60000) {
+			console.error("[veil-embedder] Too many restart failures, waiting before retry");
+			return false;
+		}
+		if (now - this.lastRestartAttempt > 60000) {
+			this.restartCount = 0; // reset after 1 minute
+		}
+
+		this.lastRestartAttempt = now;
+		this.restartCount++;
+
+		const backoffMs = Math.min(1000 * 2 ** (this.restartCount - 1), 4000);
+		if (this.restartCount > 1) {
+			console.error(`[veil-embedder] Restart attempt ${this.restartCount}/${MAX_RETRIES}, waiting ${backoffMs}ms`);
+			await new Promise((r) => setTimeout(r, backoffMs));
+		}
+
+		const started = await this.start();
+		if (started) {
+			this.restartCount = 0;
+			console.error("[veil-embedder] Server restarted successfully");
+		}
+		return started;
 	}
 
 	async status(): Promise<ServerStatus | null> {
@@ -205,6 +271,25 @@ export class EmbedderClient {
 			const data = (await res.json()) as EmbedResponse;
 			return data.embeddings.map((e) => new Float32Array(e));
 		} catch {
+			// Server may have crashed mid-request, try one restart
+			if (this.detectCrash()) {
+				console.error("[veil-embedder] Request failed, server crashed - attempting restart");
+				this.cleanupStalePid();
+				if (await this.start()) {
+					// Retry the request once
+					try {
+						const res = await fetch(`${this.baseUrl}/embed`, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ texts }),
+						});
+						if (res.ok) {
+							const data = (await res.json()) as EmbedResponse;
+							return data.embeddings.map((e) => new Float32Array(e));
+						}
+					} catch {}
+				}
+			}
 			return null;
 		}
 	}
