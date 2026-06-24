@@ -1,6 +1,6 @@
 # Veil Roadmap
 
-High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-16.
+High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-24.
 
 ## Vision
 
@@ -20,7 +20,7 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 ---
 
-## Current State (verified against code 2026-06-16)
+## Current State (verified against code 2026-06-24)
 
 ```
 [✓] Fork & Foundation — Pi fork (MIT), packages/engrammic, pnpm workspace
@@ -31,10 +31,11 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 [✓] Eviction — 3-stage cascade + adaptive threshold + circuit breaker
 [✓] Cognitive weight — afterToolCall -> recordOutcome -> SQL update -> scorer reads it
 [~] Cold tier — SqliteColdStore working; KG/engrammic adapter stubbed (throws), optional
-[✓] Agent tools — 8 veil_* tools registered with executors (2026-06-15)
-[✓] Self-tuning — AIMD re-request back-off + decay sweep scheduling (2026-06-15)
-[✓] Worldview — tree-sitter parser, symbol extraction, PageRank, co-access, unified anticipation (2026-06-16)
-[✓] Failure-memory — AttemptStore, ConvergenceMonitor, goal inference, attempt surfacing (2026-06-16)
+[✓] Agent tools — 8 veil_* tools registered with executors
+[✓] Self-tuning — AIMD re-request back-off + decay sweep scheduling
+[✓] Worldview — tree-sitter parser, symbol extraction, PageRank, co-access, unified anticipation
+[✓] Failure-memory — AttemptStore, ConvergenceMonitor, goal inference, attempt surfacing
+[✓] Distribution — Bun binaries, Go installer, GCS + GitHub Releases + npm (2026-06-23)
 ```
 
 ---
@@ -108,7 +109,7 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 ---
 
-### Ship — Distribution
+### Ship — Distribution — DONE 2026-06-23
 
 **Goal:** one-liner install for users to try Veil.
 
@@ -118,17 +119,17 @@ curl -sSL https://veil.engrammic.ai/install | sh
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| S.1 Binary builds | `bun build --compile` for linux-x64, linux-arm64, darwin-x64, darwin-arm64 | TODO |
+| S.1 Binary builds | `scripts/build-release.sh` — Bun binaries for linux/darwin x64/arm64 | DONE |
 | S.2 Install script | `scripts/install.sh` — downloads binary for platform | DONE |
-| S.3 GitHub Releases | Upload binaries on tag push | TODO |
-| S.4 Cloud Run | Host install script at `veil.engrammic.ai` | TODO |
-| S.5 README + docs | User-facing quick-start | DONE |
+| S.3 GitHub Releases | `release.yml` workflow_dispatch → GH releases + GCS | DONE |
+| S.4 Go installer | `installer/` — native Go installer binaries | DONE |
+| S.5 npm publish | Automated in release workflow | DONE |
+| S.6 README + docs | User-facing quick-start | DONE |
 
 **Distribution flow:**
-1. `bun build --compile` creates single binary (no Node.js required)
-2. GitHub Actions uploads binaries to Releases on tag
-3. Install script downloads correct binary for platform
-4. Cloud Run serves install script at `veil.engrammic.ai/install`
+1. `gh workflow run release.yml` with version input
+2. Bun builds binaries, Go builds installer
+3. Publishes to GCS + GitHub Releases + npm
 
 ---
 
@@ -151,9 +152,9 @@ curl -sSL https://veil.engrammic.ai/install | sh
 ## Sequencing
 
 ```
-Done   → Phase A (foundation) → Phase B (self-tuning) → Phase C (worldview) → Phase D (failure-memory) → Phase E (compression)
-Now    → Ship (npm + curl installer)
-Later  → CLI/UX finish, extension API, multi-agent (subagents pkg)
+Done   → Phase A-E (foundation, self-tuning, worldview, failure-memory, compression) → Ship (distribution)
+Now    → CLI/UX polish, extension API
+Later  → Multi-agent (subagents pkg)
 Opt-in → engrammic cloud cold tier, advanced features
 ```
 
