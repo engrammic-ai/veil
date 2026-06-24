@@ -65,7 +65,10 @@ packages/coding-agent/CHANGELOG.md    # Different versioning scheme
 
 ## Versioning
 
-Veil uses its own version scheme (0.1.x) independent of Pi (0.79.x). Don't sync `package.json` version fields from upstream.
+Veil uses its own version scheme (0.1.x) independent of Pi (0.79.x).
+
+- **Pi packages** (`@earendil-works/pi-*`): Keep upstream versions when syncing — internal imports depend on these
+- **Veil packages** (`@engrammic/veil-*`, `packages/coding-agent`): Use our 0.1.x versioning, don't sync from upstream
 
 ## TODO: Full Rebrand
 
