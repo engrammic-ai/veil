@@ -49,6 +49,9 @@ git push origin main
 - `packages/ai/src/models.generated.ts` - upstream code imports this
 - `packages/ai/src/image-models.generated.ts` - upstream code imports this
 
+**Reset after sync:**
+- `packages/coding-agent/CHANGELOG.md` - must use Veil versioning (0.1.x), not Pi's (0.79.x). The startup changelog display compares versions numerically, so Pi's higher minor versions would always show as "new". After merging upstream, replace with our changelog.
+
 ## Conflict Zones
 
 Files we heavily modify (expect conflicts):
@@ -57,7 +60,12 @@ Files we heavily modify (expect conflicts):
 packages/agent/src/agent.ts           # Context budget tracking
 packages/agent/src/agent-loop.ts      # Eviction hooks
 packages/coding-agent/src/core/       # Session + compaction changes
+packages/coding-agent/CHANGELOG.md    # Different versioning scheme
 ```
+
+## Versioning
+
+Veil uses its own version scheme (0.1.x) independent of Pi (0.79.x). Don't sync `package.json` version fields from upstream.
 
 ## TODO: Full Rebrand
 
