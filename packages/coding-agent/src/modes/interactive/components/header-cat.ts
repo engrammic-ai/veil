@@ -60,8 +60,9 @@ export class HeaderCat implements Component {
 	render(_width: number): string[] {
 		if (!this.enabled) return [];
 
-		const frame = CAT_FRAMES[this.state];
-		const color = CAT_COLORS[this.state];
+		// ponytail: fall back to "watching" if unknown state sneaks in
+		const frame = CAT_FRAMES[this.state] ?? CAT_FRAMES.watching;
+		const color = CAT_COLORS[this.state] ?? CAT_COLORS.watching;
 
 		const coloredFrame = frame.map((line) => theme.fg(color, line));
 

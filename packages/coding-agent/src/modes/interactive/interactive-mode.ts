@@ -433,13 +433,15 @@ export class InteractiveMode {
 			this.footerDataProvider.setExtensionStatus("memory", CAT_EMOTICONS.watching);
 
 			this.unsubscribeMemoryEvents = this.session.veilHarness.onMemoryEvent((event) => {
+				// ponytail: only handle known cat states, ignore others
+				const catState = (event.type in CAT_EMOTICONS ? event.type : "watching") as CatState;
 				// Update header cat
 				if (this.headerCat) {
-					this.headerCat.setState(event.type as CatState, event.detail);
+					this.headerCat.setState(catState, event.detail);
 					this.ui.requestRender();
 				}
 				// Update footer status with emoticon
-				const emoticon = CAT_EMOTICONS[event.type as CatState] ?? "(?.?)";
+				const emoticon = CAT_EMOTICONS[catState];
 				const status = event.detail ? `${emoticon} ${event.detail.slice(0, 30)}` : emoticon;
 				this.footerDataProvider.setExtensionStatus("memory", status);
 			});
