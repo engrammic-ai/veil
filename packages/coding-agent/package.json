@@ -78,7 +78,12 @@
 		}
 	},
 	"optionalDependencies": {
-		"@mariozechner/clipboard": "0.3.9"
+		"@mariozechner/clipboard": "0.3.9",
+		"sqlite-vec-darwin-arm64": "0.1.9",
+		"sqlite-vec-darwin-x64": "0.1.9",
+		"sqlite-vec-linux-x64": "0.1.9",
+		"sqlite-vec-linux-arm64": "0.1.9",
+		"sqlite-vec-windows-x64": "0.1.9"
 	},
 	"devDependencies": {
 		"@engrammic/veil-context": "^0.1.35",

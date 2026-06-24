@@ -11,8 +11,8 @@ Veil is a context-aware agent harness with episodic memory, **forked from [Pi](h
 ## Commands
 
 ```bash
-# Install (skip postinstall scripts from Pi)
-npm install --ignore-scripts
+# Install (native modules like better-sqlite3 will be built automatically)
+npm install
 
 # Build all packages (order matters: tui → ai → agent → coding-agent)
 npm run build

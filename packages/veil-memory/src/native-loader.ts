@@ -20,17 +20,21 @@ function isBun(): boolean {
 function getSqliteVecPath(): string | null {
 	const os = platform === "win32" ? "windows" : platform;
 	const suffix = platform === "win32" ? "dll" : platform === "darwin" ? "dylib" : "so";
-	const packageName = `sqlite-vec-${os}-${arch}`;
 	const fileName = `vec0.${suffix}`;
-
-	// Try to find the extension in node_modules
 	const nodeRequire = createRequire(import.meta.url);
-	try {
-		return nodeRequire.resolve(`${packageName}/${fileName}`);
-	} catch {
-		// Package not installed
-		return null;
+
+	// ponytail: try native arch first, fall back to x64 on arm64 (emulation works on Win/Mac)
+	const archsToTry = arch === "arm64" ? ["arm64", "x64"] : [arch];
+
+	for (const tryArch of archsToTry) {
+		const packageName = `sqlite-vec-${os}-${tryArch}`;
+		try {
+			return nodeRequire.resolve(`${packageName}/${fileName}`);
+		} catch {
+			// Not found, try next
+		}
 	}
+	return null;
 }
 
 let databaseCache: typeof BetterSqlite3 | null = null;
@@ -77,22 +81,28 @@ export function loadBetterSqlite3(): typeof BetterSqlite3 {
 
 /**
  * Load sqlite-vec extension into a database.
+ * Returns true if loaded successfully, false if unavailable (unsupported platform).
  */
-export function loadSqliteVec(db: BetterSqlite3.Database): void {
+export function loadSqliteVec(db: BetterSqlite3.Database): boolean {
 	const extPath = getSqliteVecPath();
 	if (!extPath) {
-		// Extension not installed - this is fine, vector search just won't be available
-		return;
+		// ponytail: platform package not found, skip vector search on unsupported arch
+		return false;
 	}
 
-	if (isBun()) {
-		// In Bun, use loadExtension directly with the path
-		(db as any).loadExtension(extPath);
-		return;
+	try {
+		if (isBun()) {
+			// In Bun, use loadExtension directly with the path
+			(db as any).loadExtension(extPath);
+		} else {
+			// In Node.js, use the sqlite-vec package's load function
+			const nodeRequire = createRequire(import.meta.url);
+			const sqliteVec = nodeRequire("sqlite-vec") as { load: (db: BetterSqlite3.Database) => void };
+			sqliteVec.load(db);
+		}
+		return true;
+	} catch {
+		// ponytail: extension load failed (missing Visual C++, unsupported arch), degrade gracefully
+		return false;
 	}
-
-	// In Node.js, use the sqlite-vec package's load function
-	const nodeRequire = createRequire(import.meta.url);
-	const sqliteVec = nodeRequire("sqlite-vec") as { load: (db: BetterSqlite3.Database) => void };
-	sqliteVec.load(db);
 }
