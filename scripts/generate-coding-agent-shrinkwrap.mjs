@@ -9,7 +9,8 @@ const repoRoot = resolve(scriptDir, "..");
 const codingAgentDir = join(repoRoot, "packages/coding-agent");
 const rootLockfilePath = join(repoRoot, "package-lock.json");
 const shrinkwrapPath = join(codingAgentDir, "npm-shrinkwrap.json");
-const internalPackagePrefixes = ["@earendil-works/pi-", "@engrammic/", "@veil/"];
+// ponytail: @earendil-works/pi-* are external npm packages, not local workspaces
+const internalPackagePrefixes = ["@engrammic/", "@veil/"];
 function isInternalPackage(name) {
 	return internalPackagePrefixes.some(prefix => name.startsWith(prefix));
 }
