@@ -94,7 +94,9 @@ export type MemoryEventType =
 	| "sleeping"
 	| "budget_exceeded"
 	| "budget_warning"
-	| "context_update";
+	| "context_update"
+	| "eviction"
+	| "checkpoint";
 
 export interface MemoryEvent {
 	type: MemoryEventType;
@@ -109,6 +111,19 @@ export interface MemoryEvent {
 		/** Harness budget */
 		budgetMax: number;
 		budgetUsed: number;
+	};
+	/** Eviction details, included with eviction events */
+	eviction?: {
+		evictedIds: string[];
+		tokensFreed: number;
+		turn: number;
+	};
+	/** Checkpoint details, included with checkpoint events */
+	checkpoint?: {
+		turn: number;
+		hotCount: number;
+		warmCount: number;
+		budgetPercent: number;
 	};
 }
 
@@ -612,6 +627,11 @@ export class VeilHarness {
 			}
 			// Emit eviction event with budget info
 			this.emitMemoryEvent("forgetting", `evicted ${evicted.length}, freed ~${freedTokens} tokens`);
+			// Emit structured eviction event for extensions
+			this.emitEvictionEvent(
+				evicted.map((e) => e.item.id),
+				freedTokens,
+			);
 			if (this.config.onEviction) {
 				this.config.onEviction(evicted);
 			}
@@ -685,8 +705,11 @@ export class VeilHarness {
 
 		// Tick turn counter
 		const isCheckpoint = this.manager.tick();
-		if (isCheckpoint && this.config.onCheckpoint) {
-			this.config.onCheckpoint(this.getTurnCount());
+		if (isCheckpoint) {
+			this.emitCheckpointEvent();
+			if (this.config.onCheckpoint) {
+				this.config.onCheckpoint(this.getTurnCount());
+			}
 		}
 
 		return undefined;
@@ -1264,6 +1287,51 @@ export class VeilHarness {
 			this.sessionStats.conflicts++;
 		}
 
+		this.config.onMemoryEvent?.(event);
+		for (const listener of this.memoryEventListeners) {
+			listener(event);
+		}
+	}
+
+	/**
+	 * Emit a structured eviction event for extensions.
+	 */
+	private emitEvictionEvent(evictedIds: string[], tokensFreed: number): void {
+		const event: MemoryEvent = {
+			type: "eviction",
+			detail: `${evictedIds.length} items evicted`,
+			eviction: {
+				evictedIds,
+				tokensFreed,
+				turn: this.getTurnCount(),
+			},
+		};
+		this.config.onMemoryEvent?.(event);
+		for (const listener of this.memoryEventListeners) {
+			listener(event);
+		}
+	}
+
+	/**
+	 * Emit a structured checkpoint event for extensions.
+	 */
+	private emitCheckpointEvent(): void {
+		const window = this.getWindow();
+		const warmStats = this.manager.getCache().getTypeCounts();
+		const warmCount = (warmStats.episodic ?? 0) + (warmStats.fact ?? 0) + (warmStats.procedural ?? 0);
+		const budgetPercent =
+			window.budget.maxTokens > 0 ? (window.budget.usedTokens / window.budget.maxTokens) * 100 : 0;
+
+		const event: MemoryEvent = {
+			type: "checkpoint",
+			detail: `turn ${this.getTurnCount()}`,
+			checkpoint: {
+				turn: this.getTurnCount(),
+				hotCount: window.items.length,
+				warmCount,
+				budgetPercent,
+			},
+		};
 		this.config.onMemoryEvent?.(event);
 		for (const listener of this.memoryEventListeners) {
 			listener(event);

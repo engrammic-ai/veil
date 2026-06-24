@@ -651,6 +651,30 @@ export interface ContextEvent {
 	messages: AgentMessage[];
 }
 
+/** Fired when Veil evicts items from the hot context. */
+export interface ContextEvictionEvent {
+	type: "context_eviction";
+	/** IDs of evicted items */
+	evictedIds: string[];
+	/** Number of tokens freed */
+	tokensFreed: number;
+	/** Current turn number */
+	turn: number;
+}
+
+/** Fired at Veil checkpoint intervals (e.g., every N turns). */
+export interface ContextCheckpointEvent {
+	type: "context_checkpoint";
+	/** Current turn number */
+	turn: number;
+	/** Hot items count */
+	hotCount: number;
+	/** Warm items count */
+	warmCount: number;
+	/** Token budget usage percentage */
+	budgetPercent: number;
+}
+
 /** Fired before a provider request is sent. Can replace the payload. */
 export interface BeforeProviderRequestEvent {
 	type: "before_provider_request";
@@ -998,6 +1022,8 @@ export type ExtensionEvent =
 	| ResourcesDiscoverEvent
 	| SessionEvent
 	| ContextEvent
+	| ContextEvictionEvent
+	| ContextCheckpointEvent
 	| BeforeProviderRequestEvent
 	| AfterProviderResponseEvent
 	| BeforeAgentStartEvent
@@ -1150,6 +1176,8 @@ export interface ExtensionAPI {
 	on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
 	on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
 	on(event: "context", handler: ExtensionHandler<ContextEvent, ContextEventResult>): void;
+	on(event: "context_eviction", handler: ExtensionHandler<ContextEvictionEvent>): void;
+	on(event: "context_checkpoint", handler: ExtensionHandler<ContextCheckpointEvent>): void;
 	on(
 		event: "before_provider_request",
 		handler: ExtensionHandler<BeforeProviderRequestEvent, BeforeProviderRequestEventResult>,

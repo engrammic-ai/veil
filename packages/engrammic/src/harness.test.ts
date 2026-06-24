@@ -253,6 +253,9 @@ describe("autoCapture integration", () => {
 			isError: false,
 		});
 
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
+
 		// Content should be stored in warm cache (extracted format, not raw)
 		const recalled = await harness.recall(["file", "read"], 10);
 		expect(recalled.length).toBe(1);
@@ -312,6 +315,9 @@ describe("autoCapture integration", () => {
 			});
 		}
 
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
+
 		// Only 5 should have been captured (maxItemsPerTurn)
 		const cache = harness.getManager().getCache();
 		const allItems = cache.getAll();
@@ -340,6 +346,9 @@ describe("autoCapture integration", () => {
 				isError: false,
 			});
 		}
+
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
 
 		// Only 1 item should exist in cache (deduplication by content hash)
 		const cache = harness.getManager().getCache();
@@ -1103,6 +1112,9 @@ describe("token budget tracking", () => {
 			});
 		}
 
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
+
 		const warningEvents = events.filter((e) => e.type === "budget_warning");
 		expect(warningEvents.length).toBe(1);
 		expect(harness.getCaptureBudget().softWarningEmitted).toBe(true);
@@ -1141,6 +1153,9 @@ describe("token budget tracking", () => {
 				isError: false,
 			});
 		}
+
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
 
 		const exceededEvents = events.filter((e) => e.type === "budget_exceeded");
 		expect(exceededEvents.length).toBeGreaterThan(0);
@@ -1183,6 +1198,9 @@ describe("token budget tracking", () => {
 				isError: false,
 			});
 		}
+
+		// Flush debounced captures before checking
+		harness.flushPendingCaptures();
 
 		const warningEvents = events.filter((e) => e.type === "budget_warning");
 		expect(warningEvents.length).toBe(1);

@@ -2275,6 +2275,7 @@ export class AgentSession {
 		if (this._veilHarness && this._extensionUIContext) {
 			const ui = this._extensionUIContext;
 			this._veilMemoryUnsubscribe = this._veilHarness.onMemoryEvent((event) => {
+				// Update UI status for all events
 				const indicators: Record<string, string> = {
 					sleeping: "z",
 					watching: ".",
@@ -2282,6 +2283,8 @@ export class AgentSession {
 					learned: "+",
 					recalled: "*",
 					conflict: "!",
+					eviction: "-",
+					checkpoint: "c",
 				};
 				const indicator = indicators[event.type] ?? ".";
 				const shortDetail = event.detail ? ` ${event.detail.slice(0, 20)}` : "";
@@ -2294,6 +2297,28 @@ export class AgentSession {
 								? "accent"
 								: "dim";
 				ui.setStatus("veil-cat", ui.theme.fg(color, `[${indicator}]${shortDetail}`));
+
+				// Forward eviction/checkpoint events to extensions
+				if (event.type === "eviction" && event.eviction) {
+					this._extensionRunner
+						.emit({
+							type: "context_eviction",
+							evictedIds: event.eviction.evictedIds,
+							tokensFreed: event.eviction.tokensFreed,
+							turn: event.eviction.turn,
+						})
+						.catch(() => {});
+				} else if (event.type === "checkpoint" && event.checkpoint) {
+					this._extensionRunner
+						.emit({
+							type: "context_checkpoint",
+							turn: event.checkpoint.turn,
+							hotCount: event.checkpoint.hotCount,
+							warmCount: event.checkpoint.warmCount,
+							budgetPercent: event.checkpoint.budgetPercent,
+						})
+						.catch(() => {});
+				}
 			});
 		}
 	}

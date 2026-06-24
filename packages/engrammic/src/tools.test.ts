@@ -9,8 +9,8 @@ import { ContextManager } from "./manager.ts";
 import { executeVeilTool, TOOL_SCHEMAS } from "./tools.ts";
 
 describe("TOOL_SCHEMAS", () => {
-	test("has 10 tools defined", () => {
-		expect(TOOL_SCHEMAS).toHaveLength(10);
+	test("has 12 tools defined", () => {
+		expect(TOOL_SCHEMAS).toHaveLength(12);
 	});
 
 	test("all tools have veil_ prefix", () => {
@@ -179,7 +179,9 @@ describe("executeVeilTool", () => {
 	});
 
 	test("veil_demote returns error if item not in active context", async () => {
-		const item = manager.remember("Not loaded", "fact", []);
+		// remember() auto-loads items, so we need to unload first to test the error case
+		const item = manager.remember("Initially loaded", "fact", []);
+		manager.unload([item.id]); // Now it's only in warm cache, not active
 
 		const result = await executeVeilTool("veil_demote", { id: item.id }, { manager });
 
@@ -213,8 +215,8 @@ describe("executeVeilTool", () => {
 		const result = await executeVeilTool("veil_history", { query: "test query" }, { manager });
 
 		expect(result.success).toBe(true);
-		const data = result.data as { message: string };
-		expect(data.message).toContain("No related context found");
+		const data = result.data as { formatted: string };
+		expect(data.formatted).toContain("No related context found");
 	});
 
 	test("veil_history passes days parameter to since calculation", async () => {
@@ -222,8 +224,8 @@ describe("executeVeilTool", () => {
 		const result = await executeVeilTool("veil_history", { query: "test", days: 30 }, { manager });
 
 		expect(result.success).toBe(true);
-		const data = result.data as { message: string };
-		expect(data.message).toContain("No related context found");
+		const data = result.data as { formatted: string };
+		expect(data.formatted).toContain("No related context found");
 	});
 
 	test("veil_history uses 7-day default when days not provided", async () => {
@@ -291,8 +293,8 @@ describe("veil_history with mock ColdStore that has query", () => {
 		const result = await executeVeilTool("veil_history", { query: "deployment", days: 1 }, { manager });
 		// mockItem is 2 days old; days=1 cuts off at 1 day ago — item should be filtered out
 		expect(result.success).toBe(true);
-		const data = result.data as { message?: string; items?: unknown[] };
-		expect(data.message).toContain("No related context found");
+		const data = result.data as { formatted?: string; items?: unknown[] };
+		expect(data.formatted).toContain("No related context found");
 	});
 });
 

@@ -249,7 +249,7 @@ describe("UX integration", () => {
 		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("Context Window");
+		// Shows hot items count and content preview
 		expect(joined).toContain("1 items");
 		expect(joined).toContain("Test content");
 

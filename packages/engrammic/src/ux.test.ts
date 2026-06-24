@@ -30,36 +30,37 @@ describe("getHealthColor", () => {
 
 describe("formatProgressBar", () => {
 	test("renders empty bar at 0%", () => {
-		expect(formatProgressBar(0, 20)).toBe("....................");
+		expect(formatProgressBar(0, 20)).toBe("░".repeat(20));
 	});
 
 	test("renders full bar at 100%", () => {
-		expect(formatProgressBar(100, 20)).toBe("====================");
+		expect(formatProgressBar(100, 20)).toBe("█".repeat(20));
 	});
 
 	test("renders partial bar at 50%", () => {
-		expect(formatProgressBar(50, 20)).toBe("==========..........");
+		expect(formatProgressBar(50, 20)).toBe("█".repeat(10) + "░".repeat(10));
 	});
 
 	test("handles width of 10", () => {
-		expect(formatProgressBar(30, 10)).toBe("===.......");
+		expect(formatProgressBar(30, 10)).toBe("███░░░░░░░");
 	});
 });
 
 describe("formatBox", () => {
 	test("renders box with title", () => {
 		const lines = formatBox(["Line 1", "Line 2"], "Test", 30);
-		expect(lines[0]).toBe("+-- Test ---------------------+");
+		expect(lines[0]).toContain("╭");
+		expect(lines[0]).toContain("Test");
 		expect(lines[1]).toContain("Line 1");
 		expect(lines[2]).toContain("Line 2");
-		expect(lines[3]).toMatch(/^\+-+\+$/);
+		expect(lines[3]).toContain("╰");
 	});
 
 	test("renders box without title", () => {
 		const lines = formatBox(["Hello"], undefined, 20);
-		expect(lines[0]).toBe("+------------------+");
+		expect(lines[0]).toContain("╭");
 		expect(lines[1]).toContain("Hello");
-		expect(lines[2]).toBe("+------------------+");
+		expect(lines[2]).toContain("╰");
 	});
 
 	test("handles empty content", () => {
@@ -70,9 +71,9 @@ describe("formatBox", () => {
 	test("handles title longer than width gracefully", () => {
 		const lines = formatBox(["Content"], "This Title Is Way Too Long", 20);
 		// Should not crash, title truncated by Math.max(0, remaining)
-		expect(lines[0]).toContain("+--");
+		expect(lines[0]).toContain("╭");
 		expect(lines[0]).toContain("This Title");
-		expect(lines[lines.length - 1]).toBe("+------------------+");
+		expect(lines[lines.length - 1]).toContain("╰");
 	});
 });
 

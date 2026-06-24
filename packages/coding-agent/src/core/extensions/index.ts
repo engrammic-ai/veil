@@ -41,9 +41,11 @@ export type {
 	// Context
 	CompactOptions,
 	// Events - Agent
+	ContextCheckpointEvent,
 	ContextEvent,
 	// Event Results
 	ContextEventResult,
+	ContextEvictionEvent,
 	ContextUsage,
 	CustomToolCallEvent,
 	CustomToolResultEvent,

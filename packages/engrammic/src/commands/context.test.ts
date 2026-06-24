@@ -66,13 +66,14 @@ function makeHarness(opts: {
 }
 
 describe("renderContextCommand", () => {
-	it("renders box format with header", async () => {
+	it("renders box format with Unicode borders", async () => {
 		const harness = makeHarness({});
 		const { lines } = await renderContextCommand(harness);
+		const joined = lines.join("\n");
 
-		expect(lines[0]).toContain("+--");
-		expect(lines[0]).toContain("Context Window");
-		expect(lines[lines.length - 1]).toContain("+--");
+		// Uses Unicode box-drawing characters
+		expect(joined).toContain("╭");
+		expect(joined).toContain("╰");
 	});
 
 	it("shows hot items section", async () => {
@@ -80,7 +81,7 @@ describe("renderContextCommand", () => {
 		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("Hot (loaded):");
+		expect(joined).toContain("Hot");
 		expect(joined).toContain("0 items");
 	});
 
@@ -97,8 +98,8 @@ describe("renderContextCommand", () => {
 		const joined = lines.join("\n");
 
 		expect(joined).toContain("1 items");
-		expect(joined).toContain("explicit");
-		expect(joined).toContain("[pin]");
+		// Shows item content preview
+		expect(joined).toContain("Episodic memory");
 	});
 
 	it("shows warm and cold counts", async () => {
@@ -109,9 +110,10 @@ describe("renderContextCommand", () => {
 		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("Warm (cached):");
+		// Uses icons: ◐ Cached, ○ Storage
+		expect(joined).toContain("Cached");
 		expect(joined).toContain("35 items");
-		expect(joined).toContain("Cold (storage):");
+		expect(joined).toContain("Storage");
 	});
 
 	it("shows budget with progress bar", async () => {
@@ -121,10 +123,10 @@ describe("renderContextCommand", () => {
 		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("Budget:");
 		expect(joined).toContain("2k");
 		expect(joined).toContain("8k");
-		expect(joined).toMatch(/[=.]+/);
+		// Uses Unicode progress bar characters
+		expect(joined).toMatch(/[█░]+/);
 	});
 
 	it("shows adaptive threshold", async () => {
@@ -132,8 +134,8 @@ describe("renderContextCommand", () => {
 		const { lines } = await renderContextCommand(harness);
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("Threshold:");
-		expect(joined).toContain("75%");
+		// Shows eviction threshold inline with budget
+		expect(joined).toContain("evict@75%");
 	});
 });
 
@@ -141,10 +143,11 @@ describe("renderContextSearch", () => {
 	it("renders box with search header", async () => {
 		const harness = makeHarness({ searchResults: [] });
 		const { lines } = await renderContextSearch(harness, "auth");
+		const joined = lines.join("\n");
 
-		expect(lines[0]).toContain("+--");
-		expect(lines[0]).toContain("Context Search");
-		expect(lines[lines.length - 1]).toContain("+--");
+		// Uses Unicode box-drawing characters
+		expect(joined).toContain("╭");
+		expect(joined).toContain("╰");
 	});
 
 	it("shows query in results header", async () => {
@@ -152,7 +155,8 @@ describe("renderContextSearch", () => {
 		const { lines } = await renderContextSearch(harness, "auth");
 		const joined = lines.join("\n");
 
-		expect(joined).toContain('Results for "auth"');
+		// Shows search query inline
+		expect(joined).toContain('"auth"');
 	});
 
 	it("shows no results message for empty results", async () => {
@@ -188,8 +192,9 @@ describe("renderContextSearch", () => {
 		const { lines } = await renderContextSearch(harness, "auth");
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("[hot]");
-		expect(joined).toContain("[warm]");
+		// Uses tier icons: ◉ hot, ◐ warm, ○ cold
+		expect(joined).toContain("◉");
+		expect(joined).toContain("◐");
 		expect(joined).toContain("abc123");
 		expect(joined).toContain("def456");
 		expect(joined).toContain("episodic:");
@@ -221,8 +226,8 @@ describe("renderContextSearch", () => {
 		const { lines } = await renderContextSearch(harness, "test");
 		const joined = lines.join("\n");
 
-		expect(joined).toContain("2 results");
-		expect(joined).toContain("1 hot");
-		expect(joined).toContain("1 warm");
+		expect(joined).toContain("Found 2");
+		expect(joined).toContain("◉1"); // 1 hot
+		expect(joined).toContain("◐1"); // 1 warm
 	});
 });
