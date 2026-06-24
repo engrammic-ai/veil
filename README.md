@@ -22,6 +22,9 @@ npm install -g @engrammic/veil
 
 # or curl
 curl -sSL https://veil.engrammic.ai/install | sh
+
+# Or for windows;
+irm https://veil.engrammic.ai/install.ps1 | iex
 ```
 
 Then run in any project:
