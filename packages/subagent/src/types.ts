@@ -61,7 +61,8 @@ export type ParentMessage =
 	| { version: 1; type: "redirect"; task: string }
 	| { version: 1; type: "abort"; reason?: string }
 	| { version: 1; type: "respond"; requestId: string; answer: string }
-	| { version: 1; type: "config"; key: string; value: unknown };
+	| { version: 1; type: "config"; key: string; value: unknown }
+	| { version: 1; type: "permission_response"; requestId: string; result: "allow" | "deny" | "allow-session" };
 
 export type ChildMessage =
 	| { version: 1; type: "pong" }
@@ -71,7 +72,8 @@ export type ChildMessage =
 	| { version: 1; type: "progress"; message: string; percent?: number }
 	| { version: 1; type: "log"; level: "debug" | "info" | "warn" | "error"; message: string }
 	| { version: 1; type: "complete"; result: string }
-	| { version: 1; type: "error"; message: string };
+	| { version: 1; type: "error"; message: string }
+	| { version: 1; type: "permission_request"; requestId: string; toolName: string; message: string };
 
 export type IpcMessage = ParentMessage | ChildMessage;
 

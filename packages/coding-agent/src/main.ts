@@ -1014,6 +1014,7 @@ export async function main(args: string[], options?: MainOptions) {
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
+			veilIpc: parsed.veilIpc,
 		});
 		stopThemeWatcher();
 		restoreStdout();

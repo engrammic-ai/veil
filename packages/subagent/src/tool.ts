@@ -29,6 +29,12 @@ export interface SubagentToolConfig {
 	onEscalate?: (question: string, childTag: string) => Promise<string>;
 	onCheckpoint?: (checkpoint: ChildMessage & { type: "checkpoint" }, childTag: string) => void;
 	onProgress?: (progress: ChildMessage & { type: "progress" }, childTag: string) => void;
+	/** Handle tool permission requests from subagent */
+	onPermissionRequest?: (
+		toolName: string,
+		message: string,
+		childTag: string,
+	) => Promise<"allow" | "deny" | "allow-session">;
 }
 
 export interface TaskItem {
@@ -110,6 +116,9 @@ async function runSingleAgent(
 		} else if (msg.type === "escalate" && config.onEscalate) {
 			const answer = await config.onEscalate(msg.question, agentName);
 			ipcServer.send({ version: 1, type: "respond", requestId: msg.requestId, answer });
+		} else if (msg.type === "permission_request" && config.onPermissionRequest) {
+			const result = await config.onPermissionRequest(msg.toolName, msg.message, agentName);
+			ipcServer.send({ version: 1, type: "permission_response", requestId: msg.requestId, result });
 		}
 	});
 
