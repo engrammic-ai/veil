@@ -2159,7 +2159,8 @@ export class InteractiveMode {
 		return result === "Yes";
 	}
 
-	private async showToolApproval(
+	/** Show tool approval dialog. Public for subagent permission routing. */
+	async showToolApproval(
 		toolName: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,

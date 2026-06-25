@@ -990,6 +990,12 @@ export async function main(args: string[], options?: MainOptions) {
 			initialMessages: parsed.messages,
 			verbose: parsed.verbose,
 		});
+
+		// Expose confirmToolApproval for subagent permission routing
+		const CONFIRM_TOOL_APPROVAL_KEY = Symbol.for("veil:confirmToolApproval");
+		(globalThis as any)[CONFIRM_TOOL_APPROVAL_KEY] = (toolName: string, message: string) =>
+			interactiveMode.showToolApproval(toolName, message);
+
 		if (startupBenchmark) {
 			await interactiveMode.init();
 			time("interactiveMode.init");
