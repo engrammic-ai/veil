@@ -852,6 +852,9 @@ func (m *Model) renderExtensionsPrompt() string {
 	var lines []string
 	lines = append(lines, "Recommended Extensions:")
 	lines = append(lines, "")
+	lines = append(lines, "  • pi-mcp-adapter - MCP server integration")
+	lines = append(lines, "    Lazy loading, OAuth, resources, config sharing with Claude Code/Cursor.")
+	lines = append(lines, "")
 	lines = append(lines, "  • pi-web-access - Web search, content fetching, video understanding")
 	lines = append(lines, "    Works zero-config via Exa MCP, or add API keys for more providers.")
 	lines = append(lines, "")
@@ -875,6 +878,7 @@ func (m *Model) installRecommendedExtensions() tea.Cmd {
 		}
 
 		extensions := []string{
+			"npm:pi-mcp-adapter",
 			"npm:pi-web-access",
 			"npm:@engrammic/veil-subagents",
 		}

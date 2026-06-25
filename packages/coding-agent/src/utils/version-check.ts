@@ -1,8 +1,7 @@
 import { compare, valid } from "semver";
 import { getVeilUserAgent } from "./veil-user-agent.ts";
 
-// TODO: Replace with engrammic.ai version check endpoint when available
-const LATEST_VERSION_URL = ""; // Disabled: was "https://pi.dev/api/latest-version"
+const LATEST_VERSION_URL = "https://registry.npmjs.org/@engrammic/veil/latest";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {

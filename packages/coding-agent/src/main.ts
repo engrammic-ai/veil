@@ -31,7 +31,6 @@ import { AuthStorage } from "./core/auth-storage.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
-import { mcpExtension } from "./core/mcp/index.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
@@ -62,6 +61,7 @@ import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
+import { checkForNewPiVersion } from "./utils/version-check.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
 /**
@@ -525,6 +525,16 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
+	// Non-blocking version check
+	checkForNewPiVersion(VERSION)
+		.then((latest) => {
+			if (latest) {
+				console.log(chalk.cyan(`Update available: ${VERSION} -> ${latest.version}`));
+				if (latest.note) console.log(chalk.dim(latest.note));
+			}
+		})
+		.catch(() => {}); // Silent fail
+
 	if (parsed.export) {
 		let result: string;
 		try {
@@ -681,7 +691,7 @@ export async function main(args: string[], options?: MainOptions) {
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories: [...(options?.extensionFactories ?? []), ...(parsed.noMcp ? [] : [mcpExtension])],
+				extensionFactories: [...(options?.extensionFactories ?? [])],
 			},
 		});
 		const { settingsManager, modelRegistry, resourceLoader } = services;
