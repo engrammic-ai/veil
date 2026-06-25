@@ -12,6 +12,7 @@ function createUiContext(
 	return {
 		select: async () => undefined,
 		confirm: async () => false,
+		confirmToolApproval: async () => "deny",
 		input: async () => undefined,
 		notify: onNotify,
 		onTerminalInput: () => () => {},

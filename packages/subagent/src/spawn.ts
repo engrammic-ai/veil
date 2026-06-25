@@ -55,6 +55,11 @@ export function getVeilInvocation(ctx: SubagentContext, agent: AgentConfig): str
 		args.push("--tools", tools.join(","));
 	}
 
+	// Pass session-allowed tools from parent
+	if (ctx.sessionAllowed.length > 0) {
+		args.push("--session-allow", ctx.sessionAllowed.join(","));
+	}
+
 	// Pass system prompt with anti-sycophancy preamble
 	if (agent.systemPrompt) {
 		args.push("--system-prompt", SUBAGENT_PREAMBLE + agent.systemPrompt);

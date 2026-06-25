@@ -15,6 +15,8 @@ export interface SubagentContextOptions {
 	enableVeilTools?: boolean;
 	/** Limit inherited warm items (default: 100) */
 	maxWarmInherit?: number;
+	/** Session-allowed tools to inherit from parent */
+	sessionAllowed?: string[];
 }
 
 export interface SubagentContext {
@@ -28,6 +30,8 @@ export interface SubagentContext {
 	ipcPath: string;
 	/** Tag prefix */
 	tag: string;
+	/** Session-allowed tools inherited from parent */
+	sessionAllowed: string[];
 	/** Remove child DB after merge */
 	cleanup(): Promise<void>;
 }

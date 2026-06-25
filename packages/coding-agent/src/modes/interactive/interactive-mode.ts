@@ -2040,6 +2040,7 @@ export class InteractiveMode {
 		return {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
+			confirmToolApproval: (toolName, message, opts) => this.showToolApproval(toolName, message, opts),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
@@ -2156,6 +2157,21 @@ export class InteractiveMode {
 	): Promise<boolean> {
 		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
 		return result === "Yes";
+	}
+
+	private async showToolApproval(
+		toolName: string,
+		message: string,
+		opts?: ExtensionUIDialogOptions,
+	): Promise<"allow" | "deny" | "allow-session"> {
+		const result = await this.showExtensionSelector(
+			`Tool Approval: ${toolName}\n${message}`,
+			["Allow", "Allow for session", "Deny"],
+			opts,
+		);
+		if (result === "Allow") return "allow";
+		if (result === "Allow for session") return "allow-session";
+		return "deny";
 	}
 
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {

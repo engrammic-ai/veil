@@ -816,6 +816,15 @@ export async function main(args: string[], options?: MainOptions) {
 			created.session.setThinkingLevel(created.session.thinkingLevel);
 		}
 
+		// Initialize session-allowed tools from parent (subagent inheritance)
+		if (parsed.sessionAllow?.length) {
+			created.session.permissionManager.initSessionAllowed(parsed.sessionAllow);
+		}
+
+		// Expose PermissionManager via global Symbol for extensions (subagent inheritance)
+		const PERMISSION_MANAGER_KEY = Symbol.for("veil:permissionManager");
+		(globalThis as any)[PERMISSION_MANAGER_KEY] = created.session.permissionManager;
+
 		// Wire up VeilHarness auto-capture via subscribeToEvents.
 		// AgentSession doesn't expose AgentHarness directly, so we create a
 		// compatible adapter over session.agent's subscription API.
@@ -892,8 +901,9 @@ export async function main(args: string[], options?: MainOptions) {
 			if (harnessCleanedUp || !session.veilHarness) return;
 			harnessCleanedUp = true;
 			await session.veilHarness.close();
-			// Clean up global reference
+			// Clean up global references
 			delete (globalThis as any)[Symbol.for("veil:harness")];
+			delete (globalThis as any)[Symbol.for("veil:permissionManager")];
 		};
 		process.on("beforeExit", cleanupHarness);
 		process.on("SIGINT", async () => {

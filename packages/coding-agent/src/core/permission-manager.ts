@@ -535,6 +535,18 @@ export class PermissionManager {
 		this.sessionAllowed.delete(toolName);
 	}
 
+	/** Get all session-allowed tool names (for passing to subagents) */
+	getSessionAllowed(): string[] {
+		return [...this.sessionAllowed];
+	}
+
+	/** Initialize session-allowed tools (e.g., inherited from parent) */
+	initSessionAllowed(tools: string[]): void {
+		for (const tool of tools) {
+			this.sessionAllowed.add(tool);
+		}
+	}
+
 	resetSessionOverrides(): void {
 		this.sessionAllowed.clear();
 		this.sessionDenied.clear();

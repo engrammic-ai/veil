@@ -10,6 +10,7 @@ describe("getVeilInvocation", () => {
 			childDbPath: "/tmp/child.db",
 			ipcPath: "/tmp/veil-ipc.sock",
 			tag: "scout",
+			sessionAllowed: [],
 			cleanup: async () => {},
 		};
 
@@ -43,6 +44,7 @@ describe("getVeilInvocation", () => {
 			childDbPath: "/tmp/child.db",
 			ipcPath: "/tmp/veil-ipc.sock",
 			tag: "worker",
+			sessionAllowed: [],
 			cleanup: async () => {},
 		};
 

@@ -38,6 +38,7 @@ export function createSubagentContext(
 		childDbPath,
 		ipcPath: socketPath,
 		tag: options.tag,
+		sessionAllowed: options.sessionAllowed ?? [],
 		async cleanup() {
 			try {
 				fs.rmSync(childDbPath, { force: true });

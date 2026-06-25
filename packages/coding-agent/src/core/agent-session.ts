@@ -452,10 +452,12 @@ export class AgentSession {
 						? detectWriteBypass(String(argsRecord.command))
 						: undefined;
 				const message = writeBypassWarning
-					? `WARNING: ${writeBypassWarning}\n\nAllow ${toolCall.name}? Args: ${argsPreview}`
-					: `Allow ${toolCall.name}? Args: ${argsPreview}`;
-				const approved = await this._extensionUIContext?.confirm("Tool Approval", message);
-				if (!approved) {
+					? `WARNING: ${writeBypassWarning}\n\nArgs: ${argsPreview}`
+					: `Args: ${argsPreview}`;
+				const result = await this._extensionUIContext?.confirmToolApproval(toolCall.name, message);
+				if (result === "allow-session") {
+					this._permissionManager.allowForSession(toolCall.name);
+				} else if (result !== "allow") {
 					return { block: true, reason: "User denied tool execution" };
 				}
 			}

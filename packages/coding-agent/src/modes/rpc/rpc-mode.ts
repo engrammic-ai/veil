@@ -143,6 +143,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
 			),
 
+		confirmToolApproval: (toolName, message, opts) =>
+			createDialogPromise(
+				opts,
+				"deny" as "allow" | "deny" | "allow-session",
+				{ method: "confirmToolApproval", toolName, message, timeout: opts?.timeout },
+				(r) =>
+					"cancelled" in r && r.cancelled
+						? "deny"
+						: "result" in r
+							? (r.result as "allow" | "deny" | "allow-session")
+							: "deny",
+			),
+
 		input: (title, placeholder, opts) =>
 			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,

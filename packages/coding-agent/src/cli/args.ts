@@ -64,6 +64,8 @@ export interface Args {
 	veilIpc?: string;
 	/** Enable veil_* tools (default: true) */
 	veilTools?: boolean;
+	/** Session-allowed tools inherited from parent */
+	sessionAllow?: string[];
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -208,6 +210,8 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--veil-tools" && i + 1 < args.length) {
 			const val = args[++i].toLowerCase();
 			result.veilTools = val !== "false" && val !== "0" && val !== "no";
+		} else if (arg === "--session-allow" && i + 1 < args.length) {
+			result.sessionAllow = args[++i].split(",").filter(Boolean);
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {

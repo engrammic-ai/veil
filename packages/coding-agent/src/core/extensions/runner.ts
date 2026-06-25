@@ -229,6 +229,7 @@ export async function emitProjectTrustEvent(
 const noOpUIContext: ExtensionUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
+	confirmToolApproval: async () => "deny",
 	input: async () => undefined,
 	notify: () => {},
 	onTerminalInput: () => () => {},

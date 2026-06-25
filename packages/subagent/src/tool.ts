@@ -12,11 +12,20 @@ import type { AgentConfig, AgentScope, ChildMessage } from "./types.ts";
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 
+/** Get session-allowed tools from parent's PermissionManager (if available) */
+function getParentSessionAllowed(): string[] {
+	const PERMISSION_MANAGER_KEY = Symbol.for("veil:permissionManager");
+	const pm = (globalThis as any)[PERMISSION_MANAGER_KEY];
+	return pm?.getSessionAllowed?.() ?? [];
+}
+
 export interface SubagentToolConfig {
 	parentDbPath: string;
 	parentSessionId: string;
 	/** VeilHarness instance for context merge (optional - if not provided, merge is skipped) */
 	harness?: VeilHarness;
+	/** Session-allowed tools from parent to pass to subagents */
+	sessionAllowed?: string[];
 	onEscalate?: (question: string, childTag: string) => Promise<string>;
 	onCheckpoint?: (checkpoint: ChildMessage & { type: "checkpoint" }, childTag: string) => void;
 	onProgress?: (progress: ChildMessage & { type: "progress" }, childTag: string) => void;
@@ -81,10 +90,13 @@ async function runSingleAgent(
 
 	// Create context for this subagent
 	// All subagents get veil tools by default
+	// Session-allowed tools: use config if provided, else auto-detect from parent
+	const sessionAllowed = config.sessionAllowed ?? getParentSessionAllowed();
 	const ctx = createSubagentContext(config.parentDbPath, config.parentSessionId, {
 		tag: agentName,
 		inheritWarm: agent.inheritContext ?? true,
 		enableVeilTools: true, // ponytail: always enable veil tools for subagents
+		sessionAllowed,
 	});
 
 	// Start IPC server

@@ -128,6 +128,13 @@ export interface ExtensionUIContext {
 	/** Show a confirmation dialog. */
 	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean>;
 
+	/** Show a tool approval dialog with session-allow option. */
+	confirmToolApproval(
+		toolName: string,
+		message: string,
+		opts?: ExtensionUIDialogOptions,
+	): Promise<"allow" | "deny" | "allow-session">;
+
 	/** Show a text input dialog. */
 	input(title: string, placeholder?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
