@@ -18,10 +18,12 @@ function Write-Warn { param($msg) Write-Host "warn  $msg" -ForegroundColor Yello
 function Write-Err { param($msg) Write-Host "error $msg" -ForegroundColor Red; exit 1 }
 
 function Get-Platform {
-    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    # ponytail: $env:PROCESSOR_ARCHITECTURE works on PowerShell 5.1+, no .NET Core needed
+    $arch = $env:PROCESSOR_ARCHITECTURE
     switch ($arch) {
-        "X64" { return "windows-x64" }
-        "Arm64" { return "windows-arm64" }
+        "AMD64" { return "windows-x64" }
+        "ARM64" { return "windows-arm64" }
+        "x86"   { Write-Err "32-bit Windows is not supported" }
         default { Write-Err "Unsupported architecture: $arch" }
     }
 }
