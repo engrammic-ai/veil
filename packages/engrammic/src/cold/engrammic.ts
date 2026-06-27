@@ -7,8 +7,9 @@
 
 import { createHash } from "node:crypto";
 import type { ContextItem } from "../types.ts";
-import type { McpExecutor } from "./engrammic-mock.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
+
+export type McpExecutor = (tool: string, params: Record<string, unknown>) => Promise<unknown>;
 
 // --- Public types ---
 
@@ -169,6 +170,11 @@ export class EngrammicColdStore implements ColdStore {
 		} catch {
 			return 0;
 		}
+	}
+
+	/** Lightweight connection check using the spec-mandated tick tool. Throws on failure. */
+	async probe(): Promise<void> {
+		await this.mcp("tick", {});
 	}
 
 	async query(

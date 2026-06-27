@@ -3,6 +3,10 @@
  * Not for production use.
  */
 
+import type { McpExecutor } from "./engrammic.ts";
+
+export type { McpExecutor } from "./engrammic.ts";
+
 interface MockNode {
 	node_id: string;
 	node_type: "Memory" | "Claim";
@@ -22,8 +26,6 @@ export interface ConflictInfo {
 interface ConflictsResponse {
 	conflicts: ConflictInfo[];
 }
-
-export type McpExecutor = (tool: string, params: Record<string, unknown>) => Promise<unknown>;
 
 export class MockEngrammicServer {
 	private nodes = new Map<string, MockNode>();

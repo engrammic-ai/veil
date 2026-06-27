@@ -17,8 +17,8 @@ import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
+import type { McpExecutor } from "./cold/engrammic.ts";
 import { EngrammicColdStore } from "./cold/engrammic.ts";
-import type { McpExecutor } from "./cold/engrammic-mock.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
@@ -158,8 +158,6 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 		defaultDecay?: "ephemeral" | "standard" | "durable" | "permanent";
 		/** Fall back to local cold store if engrammic is unreachable. Default: false. */
 		fallbackToLocal?: boolean;
-		enableCache?: boolean;
-		cacheTtlSeconds?: number;
 	};
 	mcpExecutor?: McpExecutor;
 }
@@ -488,25 +486,23 @@ export class VeilHarness {
 	/**
 	 * Validate engrammic MCP connection by calling tick.
 	 * If unavailable and fallbackToLocal, swaps ContextManager's cold store to local.
-	 * Errors are non-fatal: emitted as memory events.
+	 * If unavailable and fallbackToLocal is false, throws an error.
 	 */
 	private validateEngrammicConnection(store: EngrammicColdStore, fallbackToLocal: boolean): void {
 		store
-			.count()
+			.probe()
 			.then(() => {
-				this.emitMemoryEvent("sleeping", "engrammic cold store connected");
+				this.emitMemoryEvent("watching", "engrammic cold store connected");
 			})
 			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
 				if (fallbackToLocal) {
 					const local = this.createLocalColdStore();
 					this.manager.setCold(local);
 					this.coldStore = local;
 					this.emitMemoryEvent("sleeping", "engrammic unavailable, using local cold store");
 				} else {
-					this.emitMemoryEvent(
-						"sleeping",
-						`engrammic cold store unavailable: ${err instanceof Error ? err.message : String(err)}`,
-					);
+					throw new Error(`[veil] engrammic cold store unavailable: ${message}`);
 				}
 			});
 	}
