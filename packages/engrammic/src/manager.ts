@@ -548,6 +548,13 @@ export class ContextManager {
 	}
 
 	/**
+	 * Replace the cold store (used by harness when falling back from engrammic to local).
+	 */
+	setCold(store: ColdStore): void {
+		this.cold = store;
+	}
+
+	/**
 	 * Get the merged configuration for use by the harness.
 	 */
 	getConfig(): ContextManagerConfig {

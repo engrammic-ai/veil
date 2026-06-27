@@ -17,6 +17,8 @@ import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
+import { EngrammicColdStore } from "./cold/engrammic.ts";
+import type { McpExecutor } from "./cold/engrammic-mock.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
@@ -147,6 +149,19 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	ipcPath?: string; // IPC socket path for parent-child communication
 	enableVeilTools?: boolean; // Whether to enable veil_* tools (default: true)
 	archivePath?: string; // Path to conversation archive DB (enables turn archiving when provided)
+	// Cold backend selection
+	coldBackend?: "local" | "engrammic"; // default: "local"
+	engrammic?: {
+		mcpServerName?: string;
+		siloId?: string;
+		tagWithProject?: boolean;
+		defaultDecay?: "ephemeral" | "standard" | "durable" | "permanent";
+		/** Fall back to local cold store if engrammic is unreachable. Default: false. */
+		fallbackToLocal?: boolean;
+		enableCache?: boolean;
+		cacheTtlSeconds?: number;
+	};
+	mcpExecutor?: McpExecutor;
 }
 
 export interface ImportOptions {
@@ -359,48 +374,22 @@ export class VeilHarness {
 		// Cold store uses ~/.veil/cold.db globally with projectId-based isolation
 		let coldStore = config.coldStore;
 		if (!coldStore) {
-			coldStore = new VeilMemoryColdStore({
-				// dbPath defaults to ~/.veil/cold.db, projectId defaults to cwd hash
-				onConflict: (_newId: string, _conflictsWith: string[], content: string) => {
-					this.emitMemoryEvent("conflict", content);
-				},
-				onSemanticConflict: (conflict) => {
-					// Only queue unresolved conflicts for LLM review
-					if (!conflict.autoResolved || conflict.resolution === "unresolved") {
-						const pendingConflict: PendingConflict = {
-							id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-							subject: conflict.existingContent.slice(0, 50),
-							beliefA: {
-								eventId: conflict.existingEventId,
-								content: conflict.existingContent,
-								confidence: conflict.existingConfidence,
-								sourceTier: conflict.existingSourceTier as PendingConflict["beliefA"]["sourceTier"],
-								recordedAt: Date.now(), // We don't have the original timestamp here
-							},
-							beliefB: {
-								eventId: "new", // Will be filled after store
-								content: conflict.newContent,
-								confidence: conflict.newConfidence,
-								sourceTier: conflict.newSourceTier as PendingConflict["beliefB"]["sourceTier"],
-								recordedAt: Date.now(),
-							},
-							similarity: conflict.similarity,
-							detectedAt: Date.now(),
-							suggestion: "Compare the sources and content to determine which belief is correct.",
-						};
-						this.pendingConflicts.push(pendingConflict);
-						this.emitMemoryEvent(
-							"conflict",
-							`Semantic conflict: "${conflict.existingContent.slice(0, 30)}..." vs new fact`,
-						);
-					} else if (conflict.autoResolved) {
-						// Log auto-resolved conflicts
-						this.emitMemoryEvent("learned", `Auto-resolved: ${conflict.reason}`);
-					}
-				},
-			});
+			if (config.coldBackend === "engrammic") {
+				if (!config.mcpExecutor) {
+					throw new Error("[veil] coldBackend='engrammic' requires mcpExecutor");
+				}
+				coldStore = new EngrammicColdStore({
+					mcpServerName: config.engrammic?.mcpServerName,
+					siloId: config.engrammic?.siloId,
+					tagWithProject: config.engrammic?.tagWithProject,
+					defaultDecay: config.engrammic?.defaultDecay,
+					mcpExecutor: config.mcpExecutor,
+				});
+			} else {
+				coldStore = this.createLocalColdStore();
+			}
 		}
-		// Save reference for conflict tools
+		// Save reference for conflict tools (local store only)
 		if (coldStore instanceof VeilMemoryColdStore) {
 			this.coldStore = coldStore;
 		}
@@ -435,6 +424,11 @@ export class VeilHarness {
 			});
 		}
 
+		// Async engrammic connection validation (after manager is created)
+		if (config.coldBackend === "engrammic" && !config.coldStore && coldStore instanceof EngrammicColdStore) {
+			this.validateEngrammicConnection(coldStore, config.engrammic?.fallbackToLocal ?? false);
+		}
+
 		// Clean up orphaned child DBs from crashed sessions (parent mode only)
 		if (config.dbPath && !this.isChildMode) {
 			try {
@@ -446,6 +440,75 @@ export class VeilHarness {
 				// Non-fatal, continue
 			}
 		}
+	}
+
+	/**
+	 * Create local VeilMemoryColdStore with conflict callbacks wired to harness events.
+	 */
+	private createLocalColdStore(): VeilMemoryColdStore {
+		return new VeilMemoryColdStore({
+			onConflict: (_newId: string, _conflictsWith: string[], content: string) => {
+				this.emitMemoryEvent("conflict", content);
+			},
+			onSemanticConflict: (conflict) => {
+				if (!conflict.autoResolved || conflict.resolution === "unresolved") {
+					const pendingConflict: PendingConflict = {
+						id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+						subject: conflict.existingContent.slice(0, 50),
+						beliefA: {
+							eventId: conflict.existingEventId,
+							content: conflict.existingContent,
+							confidence: conflict.existingConfidence,
+							sourceTier: conflict.existingSourceTier as PendingConflict["beliefA"]["sourceTier"],
+							recordedAt: Date.now(),
+						},
+						beliefB: {
+							eventId: "new",
+							content: conflict.newContent,
+							confidence: conflict.newConfidence,
+							sourceTier: conflict.newSourceTier as PendingConflict["beliefB"]["sourceTier"],
+							recordedAt: Date.now(),
+						},
+						similarity: conflict.similarity,
+						detectedAt: Date.now(),
+						suggestion: "Compare the sources and content to determine which belief is correct.",
+					};
+					this.pendingConflicts.push(pendingConflict);
+					this.emitMemoryEvent(
+						"conflict",
+						`Semantic conflict: "${conflict.existingContent.slice(0, 30)}..." vs new fact`,
+					);
+				} else if (conflict.autoResolved) {
+					this.emitMemoryEvent("learned", `Auto-resolved: ${conflict.reason}`);
+				}
+			},
+		});
+	}
+
+	/**
+	 * Validate engrammic MCP connection by calling tick.
+	 * If unavailable and fallbackToLocal, swaps ContextManager's cold store to local.
+	 * Errors are non-fatal: emitted as memory events.
+	 */
+	private validateEngrammicConnection(store: EngrammicColdStore, fallbackToLocal: boolean): void {
+		store
+			.count()
+			.then(() => {
+				this.emitMemoryEvent("sleeping", "engrammic cold store connected");
+			})
+			.catch((err: unknown) => {
+				if (fallbackToLocal) {
+					const local = this.createLocalColdStore();
+					this.manager.setCold(local);
+					this.coldStore = local;
+					this.emitMemoryEvent("sleeping", "engrammic unavailable, using local cold store");
+				} else {
+					this.emitMemoryEvent(
+						"sleeping",
+						`engrammic cold store unavailable: ${err instanceof Error ? err.message : String(err)}`,
+					);
+				}
+			});
 	}
 
 	/**
