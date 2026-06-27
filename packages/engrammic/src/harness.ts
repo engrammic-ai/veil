@@ -502,7 +502,8 @@ export class VeilHarness {
 					this.coldStore = local;
 					this.emitMemoryEvent("sleeping", "engrammic unavailable, using local cold store");
 				} else {
-					throw new Error(`[veil] engrammic cold store unavailable: ${message}`);
+					console.error(`[veil] engrammic cold store unavailable: ${message}`);
+					this.emitMemoryEvent("sleeping", `engrammic cold store unavailable: ${message}`);
 				}
 			});
 	}
