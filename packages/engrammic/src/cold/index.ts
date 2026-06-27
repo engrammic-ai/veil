@@ -12,6 +12,7 @@ export {
 	EngrammicColdStore,
 	type EngrammicColdStoreConfig,
 	EngrammicUnavailableError,
+	type McpExecutor,
 	type TraceResult,
 } from "./engrammic.ts";
 export * from "./interface.ts";
