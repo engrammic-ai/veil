@@ -150,12 +150,12 @@ function createJsonUIContext(): ExtensionUIContext {
 
 				// Output permission request as JSON event
 				writeRawStdout(
-					JSON.stringify({
+					`${JSON.stringify({
 						type: "permission_request",
 						requestId,
 						toolName,
 						message,
-					}) + "\n",
+					})}\n`,
 				);
 
 				// Timeout after 30s - parent must respond
