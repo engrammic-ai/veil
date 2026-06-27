@@ -17,10 +17,10 @@ interface MockNode {
 }
 
 export interface ConflictInfo {
-	conflict_id: string;
-	node_ids: string[];
-	description: string;
-	severity: "low" | "medium" | "high";
+	edge_id: string;
+	node_a: { node_id: string; content: string; agent_id: string };
+	node_b: { node_id: string; content: string; agent_id: string };
+	resolution_status: "unresolved" | "escalated" | "resolved" | "dismissed";
 }
 
 interface ConflictsResponse {
@@ -108,7 +108,8 @@ export class MockEngrammicServer {
 		this.nodes.set(id, {
 			node_id: id,
 			node_type: "Claim",
-			content: params.content as string,
+			// EngrammicColdStore passes 'claim'; accept both for compatibility
+			content: (params.claim ?? params.content) as string,
 			tags: (params.tags as string[]) ?? [],
 			confidence: (params.confidence as number) ?? 0.9,
 			created_at: new Date().toISOString(),
@@ -145,11 +146,13 @@ export class MockEngrammicServer {
 		this.nodes.delete(params.node_id as string);
 	}
 
-	private handleTrace(params: Record<string, unknown>): { chain: MockNode[] } {
+	private handleTrace(params: Record<string, unknown>): {
+		chain: Array<{ node_id: string; content: string; edge_type: string }>;
+	} {
 		const nodeId = params.node_id as string | undefined;
 		if (!nodeId) return { chain: [] };
 		const node = this.nodes.get(nodeId);
-		return { chain: node ? [node] : [] };
+		return { chain: node ? [{ node_id: node.node_id, content: node.content, edge_type: "DERIVED_FROM" }] : [] };
 	}
 
 	// Utility for testing
