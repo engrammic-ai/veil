@@ -38,9 +38,9 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "workspace:*",
-		"@earendil-works/pi-ai": "workspace:*",
-		"@earendil-works/pi-tui": "workspace:*",
+		"@earendil-works/pi-agent-core": "*",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-tui": "*",
 		"@modelcontextprotocol/sdk": "1.29.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"@xenova/transformers": "2.17.2",
@@ -86,7 +86,7 @@
 		"sqlite-vec-windows-x64": "0.1.9"
 	},
 	"devDependencies": {
-		"@engrammic/veil-context": "workspace:*",
+		"@engrammic/veil-context": "*",
 		"@types/cross-spawn": "6.0.6",
 		"@types/diff": "7.0.2",
 		"@types/hosted-git-info": "3.0.5",
@@ -94,8 +94,8 @@
 		"@types/node": "24.12.4",
 		"@types/proper-lockfile": "4.1.4",
 		"@types/semver": "7.7.1",
-		"@veil/embedder": "workspace:*",
-		"@veil/subagent": "workspace:*",
+		"@veil/embedder": "*",
+		"@veil/subagent": "*",
 		"esbuild": "0.28.1",
 		"shx": "0.4.0",
 		"typescript": "5.9.3",
