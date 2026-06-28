@@ -360,6 +360,7 @@ export class VeilHarness {
 
 	// Cold storage reference for conflict tools
 	private coldStore: VeilMemoryColdStore | undefined;
+	private coldStoreAny: ColdStore | undefined;
 
 	// Pending conflicts for LLM resolution
 	private pendingConflicts: PendingConflict[] = [];
@@ -392,9 +393,12 @@ export class VeilHarness {
 				coldStore = this.createLocalColdStore();
 			}
 		}
-		// Save reference for conflict tools (local store only)
+		// Save reference for conflict tools (works with any ColdStore that supports conflicts)
 		if (coldStore instanceof VeilMemoryColdStore) {
 			this.coldStore = coldStore;
+		} else if (coldStore) {
+			// Store EngrammicColdStore or other backends for conflict tools
+			this.coldStoreAny = coldStore;
 		}
 
 		this.manager = new ContextManager(config, coldStore);
@@ -1735,6 +1739,7 @@ export class VeilHarness {
 		const result = await executeVeilTool(name, params, {
 			manager: this.manager,
 			coldStore: this.coldStore,
+			coldStoreAny: this.coldStoreAny,
 			onRecall: (ids) => this.onRecall(ids),
 		});
 

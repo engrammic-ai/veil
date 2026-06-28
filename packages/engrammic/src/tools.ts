@@ -1,5 +1,7 @@
 // packages/engrammic/src/tools.ts
 
+import type { EngrammicColdStore } from "./cold/engrammic.ts";
+import type { ColdStore } from "./cold/interface.ts";
 import type { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { hydrateStub, parseStub } from "./hydration.ts";
 import { formatStub } from "./injection.ts";
@@ -189,6 +191,7 @@ export const TOOL_SCHEMAS: ToolDefinition[] = [
 export interface ToolContext {
 	manager: ContextManager;
 	coldStore?: VeilMemoryColdStore;
+	coldStoreAny?: ColdStore;
 	onRecall?: (ids: string[]) => void;
 }
 
@@ -221,9 +224,9 @@ export async function executeVeilTool(
 		case "veil_turn_meta":
 			return executeTurnMeta(params as { type: string; intent_id?: string; decision_summary?: string });
 		case "veil_conflicts":
-			return executeConflicts(ctx);
+			return await executeConflicts(ctx);
 		case "veil_resolve_conflict":
-			return executeResolveConflict(
+			return await executeResolveConflict(
 				params as { conflict_event_id: string; winner_event_id: string; reason: string },
 				ctx,
 			);
@@ -368,41 +371,82 @@ function wrapToolResult(tool: string, count: number, content: string): string {
 	return `<veil-${tool} count="${count}">\n${status}:\n${content}\n</veil-${tool}>`;
 }
 
-function executeConflicts(ctx: ToolContext): ToolResult {
-	if (!ctx.coldStore) {
-		return { success: false, error: "Cold storage not configured" };
-	}
+async function executeConflicts(ctx: ToolContext): Promise<ToolResult> {
+	// Try VeilMemoryColdStore first (local sqlite)
+	if (ctx.coldStore) {
+		const conflicts = ctx.coldStore.getConflicts();
+		if (conflicts.length === 0) {
+			return { success: true, data: { formatted: "No conflicts detected.", conflicts: [] } };
+		}
 
-	const conflicts = ctx.coldStore.getConflicts();
-	if (conflicts.length === 0) {
-		return { success: true, data: { formatted: "No conflicts detected.", conflicts: [] } };
-	}
-
-	const lines = conflicts.map((c, i) => {
-		return `[${i + 1}] Subject: ${c.subjectHash.slice(0, 8)}...
+		const lines = conflicts.map((c, i) => {
+			return `[${i + 1}] Subject: ${c.subjectHash.slice(0, 8)}...
   A: "${c.contentA.slice(0, 60)}..." (id: ${c.eventIdA}, conf: ${c.confidenceA})
   B: "${c.contentB.slice(0, 60)}..." (id: ${c.eventIdB}, conf: ${c.confidenceB})`;
-	});
+		});
 
-	const formatted = `<veil-conflicts count="${conflicts.length}">
+		const formatted = `<veil-conflicts count="${conflicts.length}">
 ${lines.join("\n\n")}
 </veil-conflicts>`;
 
-	return { success: true, data: { formatted, conflicts } };
+		return { success: true, data: { formatted, conflicts } };
+	}
+
+	// Try EngrammicColdStore (remote MCP)
+	const engrammic = ctx.coldStoreAny as EngrammicColdStore | undefined;
+	if (engrammic && "conflicts" in engrammic) {
+		try {
+			const conflicts = await engrammic.conflicts(50);
+			if (conflicts.length === 0) {
+				return { success: true, data: { formatted: "No conflicts detected.", conflicts: [] } };
+			}
+
+			const lines = conflicts.map((c, i) => {
+				return `[${i + 1}] Conflict: ${c.conflictId.slice(0, 8)}... (${c.status})
+  A: "${c.nodeA.content.slice(0, 60)}..." (id: ${c.nodeA.id}, agent: ${c.nodeA.agentId})
+  B: "${c.nodeB.content.slice(0, 60)}..." (id: ${c.nodeB.id}, agent: ${c.nodeB.agentId})`;
+			});
+
+			const formatted = `<veil-conflicts count="${conflicts.length}">
+${lines.join("\n\n")}
+</veil-conflicts>`;
+
+			return { success: true, data: { formatted, conflicts } };
+		} catch (err) {
+			return {
+				success: false,
+				error: `Failed to fetch conflicts: ${err instanceof Error ? err.message : String(err)}`,
+			};
+		}
+	}
+
+	return { success: false, error: "Cold storage not configured" };
 }
 
-function executeResolveConflict(
+async function executeResolveConflict(
 	params: { conflict_event_id: string; winner_event_id: string; reason: string },
 	ctx: ToolContext,
-): ToolResult {
-	if (!ctx.coldStore) {
-		return { success: false, error: "Cold storage not configured" };
+): Promise<ToolResult> {
+	// Try VeilMemoryColdStore first (local sqlite)
+	if (ctx.coldStore) {
+		try {
+			ctx.coldStore.resolveConflict(params.conflict_event_id, params.winner_event_id, params.reason);
+			return { success: true, data: { resolved: params.conflict_event_id, winner: params.winner_event_id } };
+		} catch (err) {
+			return { success: false, error: `Resolution failed: ${err instanceof Error ? err.message : String(err)}` };
+		}
 	}
 
-	try {
-		ctx.coldStore.resolveConflict(params.conflict_event_id, params.winner_event_id, params.reason);
-		return { success: true, data: { resolved: params.conflict_event_id, winner: params.winner_event_id } };
-	} catch (err) {
-		return { success: false, error: `Resolution failed: ${err instanceof Error ? err.message : String(err)}` };
+	// Try EngrammicColdStore (remote MCP)
+	const engrammic = ctx.coldStoreAny as EngrammicColdStore | undefined;
+	if (engrammic && "resolveConflict" in engrammic) {
+		try {
+			await engrammic.resolveConflict(params.conflict_event_id, params.winner_event_id);
+			return { success: true, data: { resolved: params.conflict_event_id, winner: params.winner_event_id } };
+		} catch (err) {
+			return { success: false, error: `Resolution failed: ${err instanceof Error ? err.message : String(err)}` };
+		}
 	}
+
+	return { success: false, error: "Cold storage not configured" };
 }

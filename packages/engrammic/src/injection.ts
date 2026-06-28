@@ -14,7 +14,8 @@ const TYPE_MAP: Record<ContextItem["type"], string> = {
 
 export function formatStub(item: ContextItem): string {
 	const prefix = TYPE_MAP[item.type];
-	const summary = item.content.slice(0, 50).replace(/\n/g, " ").trim();
+	// Strip brackets to avoid breaking stub parser (which uses [...] as delimiters)
+	const summary = item.content.slice(0, 50).replace(/\n/g, " ").replace(/[[\]]/g, "").trim();
 	return `[${prefix}:${item.id}:${summary}]`;
 }
 
