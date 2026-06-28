@@ -22,7 +22,7 @@
 		"test": "vitest --run"
 	},
 	"dependencies": {
-		"@engrammic/veil-context": "^0.1.35",
+		"@engrammic/veil-context": "workspace:*",
 		"better-sqlite3": "11.10.0"
 	},
 	"devDependencies": {

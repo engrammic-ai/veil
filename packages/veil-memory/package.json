@@ -18,7 +18,7 @@
 		"clean": "rm -rf dist"
 	},
 	"dependencies": {
-		"@veil/embedder": "^0.1.35",
+		"@veil/embedder": "workspace:*",
 		"better-sqlite3": "11.10.0",
 		"sqlite-vec": "0.1.9",
 		"ulid": "2.3.0"

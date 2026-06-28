@@ -26,7 +26,7 @@
 		"test": "vitest --run"
 	},
 	"dependencies": {
-		"@veil/memory": "^0.1.35",
+		"@veil/memory": "workspace:*",
 		"better-sqlite3": "11.10.0",
 		"graphology": "0.26.0",
 		"graphology-pagerank": "1.1.0",
