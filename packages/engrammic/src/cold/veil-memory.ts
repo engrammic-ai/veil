@@ -235,6 +235,12 @@ export class VeilMemoryColdStore implements ColdStore {
 	}
 
 	async query(text: string, tags: string[], limit: number): Promise<ContextItem[]> {
+		// Star query: list recent items, no semantic search
+		if (text === "*") {
+			const result = await this.list({ tags, limit, sort: "recent" });
+			return result.items;
+		}
+
 		const results = await this.store.recall(text, {
 			namespace: this.namespace,
 			limit,

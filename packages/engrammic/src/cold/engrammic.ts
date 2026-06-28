@@ -88,8 +88,8 @@ export class EngrammicColdStore implements ColdStore {
 		semantic: true,
 		temporal: true,
 		provenance: true,
-		glob: true,
-		listing: true,
+		glob: false, // TODO: implement list() with MCP list_mode
+		listing: false,
 		entityResolution: false,
 	};
 
