@@ -5,6 +5,9 @@
 
 import { randomUUID } from "node:crypto";
 import type { ContextItem } from "../types.ts";
+import { AliasTable } from "./alias-table.ts";
+import type { EntityRef } from "./entity.ts";
+import { extractFingerprint, fingerprintSimilarity } from "./entity.ts";
 import type { ColdStore, ColdStoreCapabilities, ListOptions, ListResult } from "./interface.ts";
 
 /**
@@ -74,6 +77,8 @@ function advancePi(pattern: string, pi: number): number {
 
 export class MockColdStore implements ColdStore {
 	private items: Map<string, ContextItem> = new Map();
+	private entityRegistry: Map<string, EntityRef> = new Map();
+	private aliasTable: AliasTable = new AliasTable();
 
 	readonly capabilities: ColdStoreCapabilities = {
 		semantic: false,
@@ -81,7 +86,7 @@ export class MockColdStore implements ColdStore {
 		provenance: false,
 		glob: true,
 		listing: true,
-		entityResolution: false,
+		entityResolution: true,
 	};
 
 	async demote(item: ContextItem): Promise<string> {
@@ -154,6 +159,110 @@ export class MockColdStore implements ColdStore {
 
 	async fetchByPrefix(prefix: string, limit = 100): Promise<ContextItem[]> {
 		return [...this.items.values()].filter((item) => item.id.startsWith(prefix)).slice(0, limit);
+	}
+
+	async resolveEntities(items: ContextItem[]): Promise<{
+		resolved: ContextItem[];
+		needsReview: Array<{ item: ContextItem; candidates: EntityRef[] }>;
+	}> {
+		const fingerprints = items.map((item) => extractFingerprint(item.content));
+
+		// Group by main entity name (most frequent term from fingerprint)
+		const groups = new Map<string, number[]>();
+		for (let i = 0; i < items.length; i++) {
+			const name = fingerprints[i][0] ?? "__unknown__";
+			if (!groups.has(name)) groups.set(name, []);
+			groups.get(name)!.push(i);
+		}
+
+		const resolved: ContextItem[] = [];
+		const needsReview: Array<{ item: ContextItem; candidates: EntityRef[] }> = [];
+
+		for (const [, groupIdxs] of groups) {
+			if (groupIdxs.length === 1) {
+				const idx = groupIdxs[0];
+				const entity = await this.createEntity({
+					canonicalName: fingerprints[idx][0] ?? "__unknown__",
+					aliases: [],
+					fingerprint: fingerprints[idx],
+					sources: [],
+				});
+				resolved.push({ ...items[idx], entityRef: entity.id });
+				continue;
+			}
+
+			// Union-find clustering within name group
+			const n = groupIdxs.length;
+			const parent = Array.from({ length: n }, (_, i) => i);
+
+			const find = (x: number): number => {
+				if (parent[x] !== x) parent[x] = find(parent[x]);
+				return parent[x];
+			};
+			const union = (x: number, y: number) => {
+				parent[find(x)] = find(y);
+			};
+
+			const ambiguous = new Set<number>();
+
+			for (let i = 0; i < n; i++) {
+				for (let j = i + 1; j < n; j++) {
+					const sim = fingerprintSimilarity(fingerprints[groupIdxs[i]], fingerprints[groupIdxs[j]]);
+					if (sim > 0.8) {
+						union(i, j);
+					} else if (sim >= 0.5) {
+						ambiguous.add(i);
+						ambiguous.add(j);
+					}
+					// < 0.5: distinct entities, remain in separate clusters
+				}
+			}
+
+			// Create one entity per cluster root
+			const clusterToEntity = new Map<number, EntityRef>();
+			for (let i = 0; i < n; i++) {
+				const root = find(i);
+				if (!clusterToEntity.has(root)) {
+					const fp = fingerprints[groupIdxs[root]];
+					const entity = await this.createEntity({
+						canonicalName: fp[0] ?? "__unknown__",
+						aliases: [],
+						fingerprint: fp,
+						sources: [],
+					});
+					clusterToEntity.set(root, entity);
+				}
+			}
+
+			const allCandidates = [...clusterToEntity.values()];
+
+			for (let i = 0; i < n; i++) {
+				const item = items[groupIdxs[i]];
+				if (ambiguous.has(i)) {
+					needsReview.push({ item, candidates: allCandidates });
+				} else {
+					const entity = clusterToEntity.get(find(i))!;
+					resolved.push({ ...item, entityRef: entity.id });
+				}
+			}
+		}
+
+		return { resolved, needsReview };
+	}
+
+	async addEntityAlias(variant: string, canonicalId: string): Promise<void> {
+		this.aliasTable.addAlias(variant, canonicalId);
+	}
+
+	async getEntity(id: string): Promise<EntityRef | null> {
+		return this.entityRegistry.get(id) ?? null;
+	}
+
+	async createEntity(entity: Omit<EntityRef, "id">): Promise<EntityRef> {
+		const id = `entity_${randomUUID()}`;
+		const fullEntity: EntityRef = { id, ...entity };
+		this.entityRegistry.set(id, fullEntity);
+		return { ...fullEntity };
 	}
 
 	async close(): Promise<void> {

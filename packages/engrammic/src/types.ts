@@ -48,6 +48,10 @@ export interface ContextItem {
 	resourceMtime?: number; // mtime (ms) of referenced file when captured
 	resourceHash?: string; // sha256 prefix of file content when captured
 	isStale?: boolean; // set on recall if the referenced resource changed
+
+	// Entity disambiguation
+	entityRef?: string; // resolved canonical entity ID
+	provisionalEntityId?: string; // pre-resolution hash(source_domain, normalized_name)
 }
 
 // Type alias extracted from ContextItem for reuse

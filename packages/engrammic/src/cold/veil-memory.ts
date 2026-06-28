@@ -19,6 +19,8 @@ import {
 	type StoreConfig,
 } from "@veil/memory";
 import type { ContextItem } from "../types.ts";
+import { AliasTable } from "./alias-table.ts";
+import { type EntityRef, extractFingerprint, fingerprintSimilarity } from "./entity.ts";
 import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig, ListOptions, ListResult } from "./interface.ts";
 
 type EmbedderTier = "none" | "light" | "balanced" | "quality" | "max" | "ollama";
@@ -93,6 +95,8 @@ export class VeilMemoryColdStore implements ColdStore {
 	private _embedderError?: string;
 	private onConflict?: (newEventId: string, conflictsWith: string[], content: string) => void;
 	private onSemanticConflict?: (conflict: SemanticConflictInfo) => void;
+	private aliasTable: AliasTable = new AliasTable();
+	private entities: Map<string, EntityRef> = new Map();
 
 	readonly capabilities: ColdStoreCapabilities = {
 		semantic: true, // sqlite-vec embeddings
@@ -100,7 +104,7 @@ export class VeilMemoryColdStore implements ColdStore {
 		provenance: true, // version vectors + source tiers
 		glob: true,
 		listing: true,
-		entityResolution: false,
+		entityResolution: true,
 	};
 
 	constructor(config: VeilMemoryColdStoreConfig) {
@@ -401,6 +405,139 @@ export class VeilMemoryColdStore implements ColdStore {
 		);
 	}
 
+	async resolveEntities(items: ContextItem[]): Promise<{
+		resolved: ContextItem[];
+		needsReview: Array<{ item: ContextItem; candidates: EntityRef[] }>;
+	}> {
+		const resolved: ContextItem[] = [];
+		const needsReview: Array<{ item: ContextItem; candidates: EntityRef[] }> = [];
+
+		// Group items by normalized entity name extracted from content
+		const groups = new Map<string, ContextItem[]>();
+		for (const item of items) {
+			const name = this.extractEntityName(item.content);
+			const existing = groups.get(name) ?? [];
+			existing.push(item);
+			groups.set(name, existing);
+		}
+
+		for (const [name, group] of groups) {
+			// Check alias table first
+			const aliasedId = this.aliasTable.resolve(name);
+			if (aliasedId) {
+				const entity = this.entities.get(aliasedId);
+				if (entity) {
+					for (const item of group) {
+						resolved.push({ ...item, entityRef: aliasedId });
+					}
+					continue;
+				}
+			}
+
+			// Compute fingerprints for each item in the group
+			const fingerprints = group.map((item) => extractFingerprint(item.content));
+
+			// Cluster by pairwise similarity
+			// Each cluster is a set of item indices
+			const clusterOf = new Array<number>(group.length).fill(-1);
+			let clusterCount = 0;
+
+			for (let i = 0; i < group.length; i++) {
+				if (clusterOf[i] !== -1) continue;
+				clusterOf[i] = clusterCount++;
+
+				for (let j = i + 1; j < group.length; j++) {
+					if (clusterOf[j] !== -1) continue;
+					const sim = fingerprintSimilarity(fingerprints[i], fingerprints[j]);
+					if (sim > 0.8) {
+						clusterOf[j] = clusterOf[i];
+					}
+				}
+			}
+
+			// Build clusters
+			const clusters = new Map<number, number[]>();
+			for (let i = 0; i < group.length; i++) {
+				const c = clusterOf[i];
+				const existing = clusters.get(c) ?? [];
+				existing.push(i);
+				clusters.set(c, existing);
+			}
+
+			// For each cluster, find or create an entity and check for ambiguous items
+			for (const [, indices] of clusters) {
+				// Representative fingerprint: union of all fingerprints in cluster
+				const repFingerprint = [...new Set(indices.flatMap((i) => fingerprints[i]))].slice(0, 10);
+
+				// Find the best matching existing entity by fingerprint similarity
+				let bestEntity: EntityRef | null = null;
+				let bestSim = 0;
+				for (const entity of this.entities.values()) {
+					if (entity.canonicalName.toLowerCase() !== name) continue;
+					const sim = fingerprintSimilarity(entity.fingerprint, repFingerprint);
+					if (sim > bestSim) {
+						bestSim = sim;
+						bestEntity = entity;
+					}
+				}
+
+				if (bestSim > 0.8 && bestEntity) {
+					// Clear match: assign to existing entity
+					for (const i of indices) {
+						resolved.push({ ...group[i], entityRef: bestEntity.id });
+					}
+				} else if (bestSim >= 0.5 && bestEntity) {
+					// Ambiguous: surface for review
+					const candidates = this.candidatesForName(name, repFingerprint);
+					for (const i of indices) {
+						needsReview.push({ item: group[i], candidates });
+					}
+				} else {
+					// No matching entity — check cross-cluster ambiguity before auto-creating
+					// Find all existing entities with this canonical name
+					const sameNameEntities = [...this.entities.values()].filter(
+						(e) => e.canonicalName.toLowerCase() === name,
+					);
+
+					if (sameNameEntities.length > 0) {
+						// There are other entities with this name — needs human disambiguation
+						for (const i of indices) {
+							needsReview.push({ item: group[i], candidates: sameNameEntities });
+						}
+					} else {
+						// New entity: auto-create and resolve
+						const newEntity = await this.createEntity({
+							canonicalName: name,
+							aliases: [],
+							fingerprint: repFingerprint,
+							sources: [],
+						});
+						for (const i of indices) {
+							resolved.push({ ...group[i], entityRef: newEntity.id });
+						}
+					}
+				}
+			}
+		}
+
+		return { resolved, needsReview };
+	}
+
+	async addEntityAlias(variant: string, canonicalId: string): Promise<void> {
+		this.aliasTable.addAlias(variant, canonicalId);
+	}
+
+	async getEntity(id: string): Promise<EntityRef | null> {
+		return this.entities.get(id) ?? null;
+	}
+
+	async createEntity(entity: Omit<EntityRef, "id">): Promise<EntityRef> {
+		const id = `entity_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+		const newEntity: EntityRef = { id, ...entity };
+		this.entities.set(id, newEntity);
+		return newEntity;
+	}
+
 	async close(): Promise<void> {
 		this.store.close();
 	}
@@ -449,6 +586,25 @@ export class VeilMemoryColdStore implements ColdStore {
 	}
 
 	// --- Private helpers ---
+
+	/** Extract a normalized entity name: first run of capitalized words, or first meaningful token. */
+	private extractEntityName(content: string): string {
+		const capitalized = content.match(/\b([A-Z][a-zA-Z0-9-]*(?:\s+[A-Z][a-zA-Z0-9-]*)*)\b/);
+		if (capitalized) return capitalized[1].toLowerCase().trim();
+		// Fallback: first non-stopword token
+		const tokens = content
+			.toLowerCase()
+			.split(/\W+/)
+			.filter((t) => t.length > 2);
+		return tokens[0] ?? "unknown";
+	}
+
+	/** Return all known entities whose canonical name matches and that have non-trivial fingerprint overlap. */
+	private candidatesForName(name: string, fingerprint: string[]): EntityRef[] {
+		return [...this.entities.values()].filter(
+			(e) => e.canonicalName.toLowerCase() === name || fingerprintSimilarity(e.fingerprint, fingerprint) >= 0.5,
+		);
+	}
 
 	private mapType(type: ContextItem["type"]): "episodic" | "factual" | "procedural" {
 		switch (type) {
