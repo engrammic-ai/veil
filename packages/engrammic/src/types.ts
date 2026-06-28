@@ -86,6 +86,19 @@ export interface ContextManifest {
 	items: ManifestItem[]; // Max 10
 }
 
+// Cold surfacing result item
+export interface SurfacedItem {
+	item: ManifestItem;
+	confidence: number; // 0-1, from cognitiveWeight/priority
+}
+
+// Summary of surfacing operation
+export interface SurfacingResult {
+	loaded: string[]; // IDs auto-loaded (confidence > 0.8)
+	stubs: ManifestItem[]; // medium confidence (0.5-0.8)
+	conflicts: number; // engrammic conflicts count
+}
+
 export interface TurnMeta {
 	type: "decision" | "exploration" | "action" | "correction" | "status" | "intent";
 	intentId?: string;

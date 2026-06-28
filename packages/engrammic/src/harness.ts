@@ -10,13 +10,15 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
 import { extractContent, generateInternalTags, getCaptureRule } from "./capture.ts";
 import { normalizeCapture } from "./capture-document.ts";
 import { type CatConfig, CatWidget, type SessionStats } from "./cat.ts";
+import type { McpExecutor } from "./cold/engrammic.ts";
+import { EngrammicColdStore } from "./cold/engrammic.ts";
 import type { ColdStore } from "./cold/interface.ts";
 import { VeilMemoryColdStore } from "./cold/veil-memory.ts";
 import { type ContentMetadata, compressSync } from "./compression/index.ts";
@@ -60,6 +62,7 @@ import type {
 	ContextManagerConfig,
 	ContextManifest,
 	EvictionCandidate,
+	ManifestItem,
 	PendingConflict,
 	TaskContext,
 	Trigger,
@@ -92,6 +95,7 @@ export type MemoryEventType =
 	| "forgetting"
 	| "conflict"
 	| "sleeping"
+	| "surfaced"
 	| "budget_exceeded"
 	| "budget_warning"
 	| "context_update"
@@ -147,6 +151,17 @@ export interface VeilHarnessConfig extends Partial<ContextManagerConfig> {
 	ipcPath?: string; // IPC socket path for parent-child communication
 	enableVeilTools?: boolean; // Whether to enable veil_* tools (default: true)
 	archivePath?: string; // Path to conversation archive DB (enables turn archiving when provided)
+	// Cold backend selection
+	coldBackend?: "local" | "engrammic"; // default: "local"
+	engrammic?: {
+		mcpServerName?: string;
+		siloId?: string;
+		tagWithProject?: boolean;
+		defaultDecay?: "ephemeral" | "standard" | "durable" | "permanent";
+		/** Fall back to local cold store if engrammic is unreachable. Default: false. */
+		fallbackToLocal?: boolean;
+	};
+	mcpExecutor?: McpExecutor;
 }
 
 export interface ImportOptions {
@@ -349,6 +364,9 @@ export class VeilHarness {
 	// Pending conflicts for LLM resolution
 	private pendingConflicts: PendingConflict[] = [];
 
+	// Cold-surfaced stubs awaiting promotion
+	private pendingStubs: ManifestItem[] = [];
+
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
@@ -359,48 +377,22 @@ export class VeilHarness {
 		// Cold store uses ~/.veil/cold.db globally with projectId-based isolation
 		let coldStore = config.coldStore;
 		if (!coldStore) {
-			coldStore = new VeilMemoryColdStore({
-				// dbPath defaults to ~/.veil/cold.db, projectId defaults to cwd hash
-				onConflict: (_newId: string, _conflictsWith: string[], content: string) => {
-					this.emitMemoryEvent("conflict", content);
-				},
-				onSemanticConflict: (conflict) => {
-					// Only queue unresolved conflicts for LLM review
-					if (!conflict.autoResolved || conflict.resolution === "unresolved") {
-						const pendingConflict: PendingConflict = {
-							id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-							subject: conflict.existingContent.slice(0, 50),
-							beliefA: {
-								eventId: conflict.existingEventId,
-								content: conflict.existingContent,
-								confidence: conflict.existingConfidence,
-								sourceTier: conflict.existingSourceTier as PendingConflict["beliefA"]["sourceTier"],
-								recordedAt: Date.now(), // We don't have the original timestamp here
-							},
-							beliefB: {
-								eventId: "new", // Will be filled after store
-								content: conflict.newContent,
-								confidence: conflict.newConfidence,
-								sourceTier: conflict.newSourceTier as PendingConflict["beliefB"]["sourceTier"],
-								recordedAt: Date.now(),
-							},
-							similarity: conflict.similarity,
-							detectedAt: Date.now(),
-							suggestion: "Compare the sources and content to determine which belief is correct.",
-						};
-						this.pendingConflicts.push(pendingConflict);
-						this.emitMemoryEvent(
-							"conflict",
-							`Semantic conflict: "${conflict.existingContent.slice(0, 30)}..." vs new fact`,
-						);
-					} else if (conflict.autoResolved) {
-						// Log auto-resolved conflicts
-						this.emitMemoryEvent("learned", `Auto-resolved: ${conflict.reason}`);
-					}
-				},
-			});
+			if (config.coldBackend === "engrammic") {
+				if (!config.mcpExecutor) {
+					throw new Error("[veil] coldBackend='engrammic' requires mcpExecutor");
+				}
+				coldStore = new EngrammicColdStore({
+					mcpServerName: config.engrammic?.mcpServerName,
+					siloId: config.engrammic?.siloId,
+					tagWithProject: config.engrammic?.tagWithProject,
+					defaultDecay: config.engrammic?.defaultDecay,
+					mcpExecutor: config.mcpExecutor,
+				});
+			} else {
+				coldStore = this.createLocalColdStore();
+			}
 		}
-		// Save reference for conflict tools
+		// Save reference for conflict tools (local store only)
 		if (coldStore instanceof VeilMemoryColdStore) {
 			this.coldStore = coldStore;
 		}
@@ -435,6 +427,14 @@ export class VeilHarness {
 			});
 		}
 
+		// Async engrammic connection validation (after manager is created)
+		if (config.coldBackend === "engrammic" && !config.coldStore && coldStore instanceof EngrammicColdStore) {
+			this.validateEngrammicConnection(coldStore, config.engrammic?.fallbackToLocal ?? false);
+		}
+
+		// Proactive cold surfacing (non-blocking)
+		this.surfaceOnInit(coldStore);
+
 		// Clean up orphaned child DBs from crashed sessions (parent mode only)
 		if (config.dbPath && !this.isChildMode) {
 			try {
@@ -446,6 +446,142 @@ export class VeilHarness {
 				// Non-fatal, continue
 			}
 		}
+	}
+
+	/**
+	 * Create local VeilMemoryColdStore with conflict callbacks wired to harness events.
+	 */
+	private createLocalColdStore(): VeilMemoryColdStore {
+		return new VeilMemoryColdStore({
+			onConflict: (_newId: string, _conflictsWith: string[], content: string) => {
+				this.emitMemoryEvent("conflict", content);
+			},
+			onSemanticConflict: (conflict) => {
+				if (!conflict.autoResolved || conflict.resolution === "unresolved") {
+					const pendingConflict: PendingConflict = {
+						id: `conflict-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+						subject: conflict.existingContent.slice(0, 50),
+						beliefA: {
+							eventId: conflict.existingEventId,
+							content: conflict.existingContent,
+							confidence: conflict.existingConfidence,
+							sourceTier: conflict.existingSourceTier as PendingConflict["beliefA"]["sourceTier"],
+							recordedAt: Date.now(),
+						},
+						beliefB: {
+							eventId: "new",
+							content: conflict.newContent,
+							confidence: conflict.newConfidence,
+							sourceTier: conflict.newSourceTier as PendingConflict["beliefB"]["sourceTier"],
+							recordedAt: Date.now(),
+						},
+						similarity: conflict.similarity,
+						detectedAt: Date.now(),
+						suggestion: "Compare the sources and content to determine which belief is correct.",
+					};
+					this.pendingConflicts.push(pendingConflict);
+					this.emitMemoryEvent(
+						"conflict",
+						`Semantic conflict: "${conflict.existingContent.slice(0, 30)}..." vs new fact`,
+					);
+				} else if (conflict.autoResolved) {
+					this.emitMemoryEvent("learned", `Auto-resolved: ${conflict.reason}`);
+				}
+			},
+		});
+	}
+
+	/**
+	 * Validate engrammic MCP connection by calling tick.
+	 * If unavailable and fallbackToLocal, swaps ContextManager's cold store to local.
+	 * If unavailable and fallbackToLocal is false, throws an error.
+	 */
+	private validateEngrammicConnection(store: EngrammicColdStore, fallbackToLocal: boolean): void {
+		store
+			.probe()
+			.then(() => {
+				this.emitMemoryEvent("watching", "engrammic cold store connected");
+			})
+			.catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				if (fallbackToLocal) {
+					const local = this.createLocalColdStore();
+					this.manager.setCold(local);
+					this.coldStore = local;
+					this.emitMemoryEvent("sleeping", "engrammic unavailable, using local cold store");
+				} else {
+					console.error(`[veil] engrammic cold store unavailable: ${message}`);
+					this.emitMemoryEvent("sleeping", `engrammic cold store unavailable: ${message}`);
+				}
+			});
+	}
+
+	/**
+	 * Proactive cold surfacing on session init.
+	 * Auto-loads high-confidence items, stubs medium-confidence ones.
+	 * Also polls for engrammic conflicts if applicable.
+	 */
+	private surfaceOnInit(coldStore: ColdStore | undefined): void {
+		const usage = this.getUsage();
+		if (usage.percent > 80) return; // ponytail: skip if budget tight
+
+		const projectContext = this.getProjectContext();
+
+		this.manager
+			.surfaceCold(projectContext, 10)
+			.then(async (items) => {
+				let loadedCount = 0;
+				for (const { item, confidence } of items) {
+					if (confidence > 0.8) {
+						// Fetch from cold to warm, then load to hot
+						const fetched = await this.manager.fetchFromCold(item.id);
+						if (fetched) {
+							this.load([fetched.id]);
+							loadedCount++;
+						}
+					} else if (confidence >= 0.5) {
+						this.pendingStubs.push(item);
+					}
+				}
+				if (loadedCount > 0 || this.pendingStubs.length > 0) {
+					const parts = [];
+					if (loadedCount > 0) parts.push(`${loadedCount} loaded`);
+					if (this.pendingStubs.length > 0) parts.push(`${this.pendingStubs.length} stub(s)`);
+					this.emitMemoryEvent("surfaced", parts.join(", "));
+				}
+			})
+			.catch(() => {
+				/* non-fatal */
+			});
+
+		// Poll engrammic conflicts
+		if (coldStore && "conflicts" in coldStore && typeof (coldStore as EngrammicColdStore).conflicts === "function") {
+			(coldStore as EngrammicColdStore)
+				.conflicts(10)
+				.then((conflicts) => {
+					if (conflicts.length > 0) {
+						this.emitMemoryEvent("conflict", `${conflicts.length} unresolved memory conflict(s)`);
+					}
+				})
+				.catch(() => {
+					/* non-fatal */
+				});
+		}
+	}
+
+	/**
+	 * Get project context for cold surfacing.
+	 */
+	private getProjectContext(): string[] {
+		// ponytail: start simple, project name from cwd
+		return [basename(process.cwd())];
+	}
+
+	/**
+	 * Get pending stubs from cold surfacing for anticipation system.
+	 */
+	getPendingStubs(): ManifestItem[] {
+		return this.pendingStubs;
 	}
 
 	/**

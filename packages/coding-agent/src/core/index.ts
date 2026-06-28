@@ -76,3 +76,4 @@ export {
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";
+export { createMcpExecutor } from "./veil-integration.ts";
