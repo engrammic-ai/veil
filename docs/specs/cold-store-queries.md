@@ -75,7 +75,7 @@ Minimal glob subset (no regex, keeps it simple):
 
 Examples:
 - `project:veil-*` → `project:veil-memory`, `project:veil-embedder`
-- `type:ep?sodic` → `type:episodic`, `type:epsodic`
+- `type:epi?odic` → `type:episodic`, `type:epiXodic`
 - `scope:[gp]*` → `scope:global`, `scope:project`
 
 No `**` (recursive) — tags are flat strings, not paths.

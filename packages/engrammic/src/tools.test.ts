@@ -259,7 +259,14 @@ describe("veil_history with mock ColdStore that has query", () => {
 		};
 
 		const mockColdStore = {
-			capabilities: { semantic: true, temporal: false, provenance: false },
+			capabilities: {
+				semantic: true,
+				temporal: false,
+				provenance: false,
+				glob: false,
+				listing: false,
+				entityResolution: false,
+			},
 			demote: vi.fn().mockResolvedValue("ptr_1"),
 			fetch: vi.fn().mockResolvedValue(null),
 			exists: vi.fn().mockResolvedValue(false),

@@ -88,6 +88,9 @@ export class EngrammicColdStore implements ColdStore {
 		semantic: true,
 		temporal: true,
 		provenance: true,
+		glob: false, // TODO: implement list() with MCP list_mode
+		listing: false,
+		entityResolution: false,
 	};
 
 	private readonly executor: McpExecutor;
