@@ -24,10 +24,11 @@ import type {
 	ContextWindow,
 	EvictionCandidate,
 	ManifestItem,
+	SurfacedItem,
 	TaskContext,
 } from "./types.ts";
 import { DEFAULT_CONFIG } from "./types.ts";
-import { estimateTokens } from "./utils.ts";
+import { estimateTokens, formatRelativeTime } from "./utils.ts";
 import { RankStore } from "./worldview/graph-rank.ts";
 import { getStructuralSuggestions } from "./worldview/structural-anticipate.ts";
 import { StructuralFloor } from "./worldview/structural-floor.ts";
@@ -423,6 +424,38 @@ export class ContextManager {
 		// Bring back to warm cache
 		this.cache.put(item);
 		return item;
+	}
+
+	/**
+	 * Surface cold items for proactive loading.
+	 * Returns items with confidence scores for classification.
+	 */
+	async surfaceCold(projectContext: string[], limit = 10): Promise<SurfacedItem[]> {
+		const queryFn = this.cold?.query?.bind(this.cold);
+		if (!queryFn) return [];
+
+		const query = projectContext.filter(Boolean).join(" ");
+		if (!query) return [];
+
+		try {
+			const items = await this.circuitBreaker.execute(() => queryFn(query, [], limit));
+			if (!items) return [];
+
+			return items.map((item) => ({
+				item: {
+					id: item.id,
+					type: item.type,
+					tags: item.tags,
+					summary: item.content.slice(0, 50).replace(/\n/g, " "),
+					age: formatRelativeTime(item.lastAccess),
+					source: "cold" as const,
+				},
+				// ponytail: normalize cognitiveWeight (-1 to +1) to confidence (0 to 1)
+				confidence: (item.cognitiveWeight + 1) / 2,
+			}));
+		} catch {
+			return []; // ponytail: non-fatal, cold surfacing is best-effort
+		}
 	}
 
 	/**

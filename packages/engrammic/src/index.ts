@@ -222,6 +222,8 @@ export {
 	type EvictionCandidate,
 	type EvictionNotifyConfig,
 	type ManifestItem,
+	type SurfacedItem,
+	type SurfacingResult,
 	type TaskContext,
 	type Trigger,
 } from "./types.ts";

@@ -1,6 +1,6 @@
 # Veil Roadmap
 
-High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-24.
+High-level roadmap. The near-term architecture detail lives in `context/DESIGN-autonomic.md` (design of record); this file is the canonical sequencing view. Last reconciled against code 2026-06-27.
 
 ## Vision
 
@@ -20,7 +20,7 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 
 ---
 
-## Current State (verified against code 2026-06-24)
+## Current State (verified against code 2026-06-28)
 
 ```
 [✓] Fork & Foundation — Pi fork (MIT), packages/engrammic, pnpm workspace
@@ -30,12 +30,14 @@ Full detail, rationale, and open questions: `context/DESIGN-autonomic.md`.
 [✓] Injection — <veil-context> stubs; anticipatory manifest; failure-section surfacing
 [✓] Eviction — 3-stage cascade + adaptive threshold + circuit breaker
 [✓] Cognitive weight — afterToolCall -> recordOutcome -> SQL update -> scorer reads it
-[~] Cold tier — SqliteColdStore working; KG/engrammic adapter stubbed (throws), optional
+[✓] Cold tier — VeilMemoryColdStore + EngrammicColdStore adapter; proactive surfacing on init
 [✓] Agent tools — 8 veil_* tools registered with executors
 [✓] Self-tuning — AIMD re-request back-off + decay sweep scheduling
 [✓] Worldview — tree-sitter parser, symbol extraction, PageRank, co-access, unified anticipation
 [✓] Failure-memory — AttemptStore, ConvergenceMonitor, goal inference, attempt surfacing
 [✓] Distribution — Bun binaries, Go installer, GCS + GitHub Releases + npm (2026-06-23)
+[✓] CLI/UX — /context command, modular statusbar (cat, context-bar, tokens, model, mode widgets)
+[✓] Extension API — context_eviction + context_checkpoint events, pi.registerCommand()
 ```
 
 ---
@@ -133,17 +135,45 @@ curl -sSL https://veil.engrammic.ai/install | sh
 
 ---
 
+### Phase F — CLI/UX & Extension API — DONE 2026-06-27
+**Goal:** user-facing polish and extension points for plugins.
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| F.1 /context command | `/context` and `/ctx` commands in interactive mode | DONE |
+| F.2 Statusbar widgets | Modular widget system: cat, context-bar, tokens, model, mode | DONE |
+| F.3 Extension events | `context_eviction` + `context_checkpoint` events | DONE |
+| F.4 Command registration | `pi.registerCommand()` API for extensions | DONE |
+
+**Implementation:** `packages/coding-agent/src/extensions/veil-statusbar/`, `packages/engrammic/src/commands/`
+
+---
+
+### Phase G — Cold Storage & Surfacing — IN PROGRESS
+**Goal:** Make cold storage proactively useful; add engrammic as optional backend.
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| G.1 EngrammicColdStore | Adapter wrapping engrammic MCP tools | DONE |
+| G.2 Cold surfacing | Proactive surfacing on session start + anticipation | DONE |
+| G.3 Conflict surfacing | Poll engrammic conflicts on session start | DONE |
+| G.4 Local cache | `~/.veil/cache/engrammic.db` read-through cache | NOT STARTED |
+
+**Specs:**
+- `context/specs/SPEC-engrammic-cold-adapter.md` — EngrammicColdStore design
+- `docs/superpowers/plans/2026-06-23-cold-surfacing.md` — surfacing triggers
+
+**Config:** `coldBackend: "local" | "engrammic"` (default: local)
+
+---
+
 ### Cross-cutting / later
 
 **Validation & tuning** (ongoing): run real sessions, log eviction decisions, track re-request rate, calibrate decay. Target <5% re-request.
 
-**CLI & UX**: `--veil` flag, `/context` command, status bar. (Status-bar / `/context` UX was specced and partially implemented; reconcile and finish.)
-
-**Extension API**: expose `pi.veil.*`, emit `context_eviction` / `context_checkpoint` events, docs + examples.
-
 **Multi-agent (community subagents package)**: fork/merge `VeilHarness` across subagents per `context/SPEC-subagent-context.md`. Replaces the dropped Go orchestrator (archived at `context/archive/go-orchestrator-spec.md`).
 
-**Optional cloud (engrammic)**: KG cold adapter for cross-device/cross-session memory; team/shared workspaces. Opt-in, never required — local SQLite is always sufficient.
+**Cross-project local** (low priority): `scope: 'global'` for VeilMemoryColdStore — only needed for airgap/offline users who want cross-project without engrammic.
 
 **Advanced**: confidence-aware retrieval, embedding-based semantic worldview (optional local model).
 
@@ -152,10 +182,10 @@ curl -sSL https://veil.engrammic.ai/install | sh
 ## Sequencing
 
 ```
-Done   → Phase A-E (foundation, self-tuning, worldview, failure-memory, compression) → Ship (distribution)
-Now    → CLI/UX polish, extension API
+Done   → Phase A-F (foundation, self-tuning, worldview, failure-memory, compression, CLI/UX, extension API) → Ship
+Next   → Phase G (cold storage & surfacing, engrammic adapter)
 Later  → Multi-agent (subagents pkg)
-Opt-in → engrammic cloud cold tier, advanced features
+Opt-in → advanced features (semantic worldview, confidence-aware retrieval)
 ```
 
 ---

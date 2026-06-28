@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { buildManifest, DEFAULT_TRIGGERS, formatManifest, matchTriggers } from "./anticipate.ts";
 import { type AttemptRecord, AttemptStore, detectFailure } from "./attempts.ts";
 import { hashContent } from "./cache.ts";
@@ -62,6 +62,7 @@ import type {
 	ContextManagerConfig,
 	ContextManifest,
 	EvictionCandidate,
+	ManifestItem,
 	PendingConflict,
 	TaskContext,
 	Trigger,
@@ -94,6 +95,7 @@ export type MemoryEventType =
 	| "forgetting"
 	| "conflict"
 	| "sleeping"
+	| "surfaced"
 	| "budget_exceeded"
 	| "budget_warning"
 	| "context_update"
@@ -362,6 +364,9 @@ export class VeilHarness {
 	// Pending conflicts for LLM resolution
 	private pendingConflicts: PendingConflict[] = [];
 
+	// Cold-surfaced stubs awaiting promotion
+	private pendingStubs: ManifestItem[] = [];
+
 	constructor(config: VeilHarnessConfig = {}) {
 		this.config = config;
 		this.sessionId = config.sessionId;
@@ -426,6 +431,9 @@ export class VeilHarness {
 		if (config.coldBackend === "engrammic" && !config.coldStore && coldStore instanceof EngrammicColdStore) {
 			this.validateEngrammicConnection(coldStore, config.engrammic?.fallbackToLocal ?? false);
 		}
+
+		// Proactive cold surfacing (non-blocking)
+		this.surfaceOnInit(coldStore);
 
 		// Clean up orphaned child DBs from crashed sessions (parent mode only)
 		if (config.dbPath && !this.isChildMode) {
@@ -506,6 +514,74 @@ export class VeilHarness {
 					this.emitMemoryEvent("sleeping", `engrammic cold store unavailable: ${message}`);
 				}
 			});
+	}
+
+	/**
+	 * Proactive cold surfacing on session init.
+	 * Auto-loads high-confidence items, stubs medium-confidence ones.
+	 * Also polls for engrammic conflicts if applicable.
+	 */
+	private surfaceOnInit(coldStore: ColdStore | undefined): void {
+		const usage = this.getUsage();
+		if (usage.percent > 80) return; // ponytail: skip if budget tight
+
+		const projectContext = this.getProjectContext();
+
+		this.manager
+			.surfaceCold(projectContext, 10)
+			.then(async (items) => {
+				let loadedCount = 0;
+				for (const { item, confidence } of items) {
+					if (confidence > 0.8) {
+						// Fetch from cold to warm, then load to hot
+						const fetched = await this.manager.fetchFromCold(item.id);
+						if (fetched) {
+							this.load([fetched.id]);
+							loadedCount++;
+						}
+					} else if (confidence >= 0.5) {
+						this.pendingStubs.push(item);
+					}
+				}
+				if (loadedCount > 0 || this.pendingStubs.length > 0) {
+					const parts = [];
+					if (loadedCount > 0) parts.push(`${loadedCount} loaded`);
+					if (this.pendingStubs.length > 0) parts.push(`${this.pendingStubs.length} stub(s)`);
+					this.emitMemoryEvent("surfaced", parts.join(", "));
+				}
+			})
+			.catch(() => {
+				/* non-fatal */
+			});
+
+		// Poll engrammic conflicts
+		if (coldStore && "conflicts" in coldStore && typeof (coldStore as EngrammicColdStore).conflicts === "function") {
+			(coldStore as EngrammicColdStore)
+				.conflicts(10)
+				.then((conflicts) => {
+					if (conflicts.length > 0) {
+						this.emitMemoryEvent("conflict", `${conflicts.length} unresolved memory conflict(s)`);
+					}
+				})
+				.catch(() => {
+					/* non-fatal */
+				});
+		}
+	}
+
+	/**
+	 * Get project context for cold surfacing.
+	 */
+	private getProjectContext(): string[] {
+		// ponytail: start simple, project name from cwd
+		return [basename(process.cwd())];
+	}
+
+	/**
+	 * Get pending stubs from cold surfacing for anticipation system.
+	 */
+	getPendingStubs(): ManifestItem[] {
+		return this.pendingStubs;
 	}
 
 	/**
