@@ -7,6 +7,9 @@
  */
 
 import type { ContextItem } from "../types.ts";
+import type { EntityRef } from "./entity.ts";
+
+export type { EntityRef };
 
 export interface ColdStoreCapabilities {
 	semantic: boolean; // can do similarity search
@@ -14,6 +17,7 @@ export interface ColdStoreCapabilities {
 	provenance: boolean; // tracks source/evidence chains
 	glob: boolean; // supports glob patterns in tags
 	listing: boolean; // supports list() without semantic query
+	entityResolution: boolean; // supports entity disambiguation
 }
 
 export interface ListOptions {
@@ -83,6 +87,34 @@ export interface ColdStore {
 	 * Useful for bulk operations on related items.
 	 */
 	fetchByPrefix?(prefix: string, limit?: number): Promise<ContextItem[]>;
+
+	/**
+	 * Resolve entity mentions to canonical refs.
+	 * Returns unresolved items for human review.
+	 * Only available if capabilities.entityResolution is true.
+	 */
+	resolveEntities?(items: ContextItem[]): Promise<{
+		resolved: ContextItem[];
+		needsReview: Array<{ item: ContextItem; candidates: EntityRef[] }>;
+	}>;
+
+	/**
+	 * Register an alias mapping variant name to a canonical entity ID.
+	 * Only available if capabilities.entityResolution is true.
+	 */
+	addEntityAlias?(variant: string, canonicalId: string): Promise<void>;
+
+	/**
+	 * Get an entity ref by ID. Returns null if not found.
+	 * Only available if capabilities.entityResolution is true.
+	 */
+	getEntity?(id: string): Promise<EntityRef | null>;
+
+	/**
+	 * Create a new entity ref. Returns the created entity with assigned ID.
+	 * Only available if capabilities.entityResolution is true.
+	 */
+	createEntity?(entity: Omit<EntityRef, "id">): Promise<EntityRef>;
 
 	/**
 	 * What this cold store supports.

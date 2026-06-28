@@ -90,6 +90,7 @@ export class EngrammicColdStore implements ColdStore {
 		provenance: true,
 		glob: true,
 		listing: true,
+		entityResolution: false,
 	};
 
 	private readonly executor: McpExecutor;

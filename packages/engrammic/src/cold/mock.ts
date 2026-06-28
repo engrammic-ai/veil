@@ -81,6 +81,7 @@ export class MockColdStore implements ColdStore {
 		provenance: false,
 		glob: true,
 		listing: true,
+		entityResolution: false,
 	};
 
 	async demote(item: ContextItem): Promise<string> {

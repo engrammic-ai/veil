@@ -100,6 +100,7 @@ export class VeilMemoryColdStore implements ColdStore {
 		provenance: true, // version vectors + source tiers
 		glob: true,
 		listing: true,
+		entityResolution: false,
 	};
 
 	constructor(config: VeilMemoryColdStoreConfig) {
