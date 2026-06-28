@@ -19,7 +19,7 @@ import {
 	type StoreConfig,
 } from "@veil/memory";
 import type { ContextItem } from "../types.ts";
-import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig } from "./interface.ts";
+import type { ColdStore, ColdStoreCapabilities, ColdStoreConfig, ListOptions, ListResult } from "./interface.ts";
 
 type EmbedderTier = "none" | "light" | "balanced" | "quality" | "max" | "ollama";
 
@@ -76,6 +76,16 @@ export interface VeilMemoryColdStoreConfig extends ColdStoreConfig {
 
 export type EmbedderStatus = "active" | "failed" | "disabled";
 
+/** Convert glob pattern to SQL LIKE syntax (case-insensitive mode). Note: [abc] sets are unsupported. */
+function globToLike(glob: string): string {
+	return glob.replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/\*/g, "%").replace(/\?/g, "_");
+}
+
+/** Escape special LIKE characters in a literal prefix string. */
+function escapeLike(literal: string): string {
+	return literal.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 export class VeilMemoryColdStore implements ColdStore {
 	private store: MemoryStore;
 	private namespace: string;
@@ -88,6 +98,8 @@ export class VeilMemoryColdStore implements ColdStore {
 		semantic: true, // sqlite-vec embeddings
 		temporal: true, // bi-temporal storage
 		provenance: true, // version vectors + source tiers
+		glob: true,
+		listing: true,
 	};
 
 	constructor(config: VeilMemoryColdStoreConfig) {
@@ -232,6 +244,154 @@ export class VeilMemoryColdStore implements ColdStore {
 		return results
 			.filter((r): r is CurrentBelief => "eventId" in r)
 			.map((belief) => this.beliefToItem(belief, belief.eventId));
+	}
+
+	async list(options: ListOptions = {}): Promise<ListResult> {
+		const db = (this.store as unknown as { db: import("better-sqlite3").Database }).db;
+		const matchOp = options.ignoreCase ? "LIKE" : "GLOB";
+
+		let sql = `SELECT cb.*, me.tags FROM current_beliefs cb
+      JOIN memory_events me ON cb.event_id = me.event_id
+      WHERE cb.namespace = ?`;
+		const params: unknown[] = [this.namespace];
+
+		if (options.tags?.length) {
+			for (const pattern of options.tags) {
+				if (options.ignoreCase && /\[/.test(pattern)) {
+					throw new Error(
+						`Character sets [abc] not supported with ignoreCase=true. Use case-sensitive mode or multiple patterns. (pattern: "${pattern}")`,
+					);
+				}
+				const sqlPattern = options.ignoreCase ? globToLike(pattern) : pattern;
+				sql += ` AND EXISTS (
+          SELECT 1 FROM json_each(me.tags)
+          WHERE json_each.value ${matchOp} ?
+        )`;
+				params.push(sqlPattern);
+			}
+		}
+
+		// Count total before pagination
+		const countSql = `SELECT COUNT(*) as count FROM (${sql})`;
+		const { count: total } = db.prepare(countSql).get(...params) as { count: number };
+
+		sql +=
+			options.sort === "oldest"
+				? ` ORDER BY me.recorded_at ASC`
+				: ` ORDER BY cb.last_recall DESC, me.recorded_at DESC`;
+
+		const offset = options.cursor ? parseInt(options.cursor, 10) : 0;
+		const limit = options.limit ?? 100;
+		sql += ` LIMIT ? OFFSET ?`;
+		params.push(limit, offset);
+
+		const rows = db.prepare(sql).all(...params) as Array<{
+			event_id: string;
+			namespace: string;
+			content: string;
+			memory_type: string;
+			subject: string | null;
+			subject_hash: string | null;
+			confidence: number;
+			valid_from: number;
+			recorded_at: number;
+			difficulty: number;
+			stability: number;
+			retrievability: number;
+			last_recall: number | null;
+			recall_count: number;
+			has_conflicts: number;
+			conflict_event_ids: string | null;
+			tags: string;
+		}>;
+
+		const items = rows.map((row) =>
+			this.beliefToItem(
+				{
+					eventId: row.event_id,
+					namespace: row.namespace,
+					content: row.content,
+					memoryType: row.memory_type as import("@veil/memory").MemoryType,
+					subject: row.subject ?? undefined,
+					subjectHash: row.subject_hash ?? undefined,
+					confidence: row.confidence,
+					validFrom: row.valid_from,
+					recordedAt: row.recorded_at,
+					difficulty: row.difficulty,
+					stability: row.stability,
+					retrievability: row.retrievability,
+					lastRecall: row.last_recall ?? undefined,
+					recallCount: row.recall_count,
+					hasConflicts: row.has_conflicts === 1,
+					conflictEventIds: row.conflict_event_ids ? JSON.parse(row.conflict_event_ids) : undefined,
+					tags: JSON.parse(row.tags),
+				},
+				row.event_id,
+			),
+		);
+
+		const nextOffset = offset + limit;
+		return {
+			items,
+			nextCursor: nextOffset < total ? String(nextOffset) : undefined,
+			total,
+		};
+	}
+
+	async fetchByPrefix(prefix: string, limit = 100): Promise<ContextItem[]> {
+		const db = (this.store as unknown as { db: import("better-sqlite3").Database }).db;
+
+		const rows = db
+			.prepare(
+				`SELECT cb.*, me.tags FROM current_beliefs cb
+        JOIN memory_events me ON cb.event_id = me.event_id
+        WHERE cb.namespace = ? AND cb.event_id LIKE ? ESCAPE '\\'
+        LIMIT ?`,
+			)
+			.all(this.namespace, `${escapeLike(prefix)}%`, limit) as Array<{
+			event_id: string;
+			namespace: string;
+			content: string;
+			memory_type: string;
+			subject: string | null;
+			subject_hash: string | null;
+			confidence: number;
+			valid_from: number;
+			recorded_at: number;
+			difficulty: number;
+			stability: number;
+			retrievability: number;
+			last_recall: number | null;
+			recall_count: number;
+			has_conflicts: number;
+			conflict_event_ids: string | null;
+			tags: string;
+		}>;
+
+		return rows.map((row) =>
+			this.beliefToItem(
+				{
+					eventId: row.event_id,
+					namespace: row.namespace,
+					content: row.content,
+					memoryType: row.memory_type as import("@veil/memory").MemoryType,
+					subject: row.subject ?? undefined,
+					subjectHash: row.subject_hash ?? undefined,
+					confidence: row.confidence,
+					validFrom: row.valid_from,
+					recordedAt: row.recorded_at,
+					difficulty: row.difficulty,
+					stability: row.stability,
+					retrievability: row.retrievability,
+					lastRecall: row.last_recall ?? undefined,
+					recallCount: row.recall_count,
+					hasConflicts: row.has_conflicts === 1,
+					conflictEventIds: row.conflict_event_ids ? JSON.parse(row.conflict_event_ids) : undefined,
+					tags: JSON.parse(row.tags),
+				},
+				row.event_id,
+			),
+		);
 	}
 
 	async close(): Promise<void> {

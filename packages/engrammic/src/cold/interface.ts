@@ -12,6 +12,29 @@ export interface ColdStoreCapabilities {
 	semantic: boolean; // can do similarity search
 	temporal: boolean; // tracks valid_time / system_time
 	provenance: boolean; // tracks source/evidence chains
+	glob: boolean; // supports glob patterns in tags
+	listing: boolean; // supports list() without semantic query
+}
+
+export interface ListOptions {
+	/** Glob patterns allowed. Empty = no tag filter. */
+	tags?: string[];
+	/** Max items to return. Default: 100. */
+	limit?: number;
+	/** Pagination cursor from previous response. */
+	cursor?: string;
+	/** Sort order. Default: "recent". */
+	sort?: "recent" | "oldest" | "relevance";
+	/** Case-insensitive glob matching. Default: false (case-sensitive). */
+	ignoreCase?: boolean;
+}
+
+export interface ListResult {
+	items: ContextItem[];
+	/** Pass to next list() call for pagination. Absent = no more pages. */
+	nextCursor?: string;
+	/** Total count if backend supports it. */
+	total?: number;
 }
 
 export interface ColdStore {
@@ -47,6 +70,19 @@ export interface ColdStore {
 	 * Only available if capabilities.semantic is true.
 	 */
 	query?(text: string, tags: string[], limit: number): Promise<ContextItem[]>;
+
+	/**
+	 * List items without semantic query.
+	 * Use for browsing, "show all", or glob-filtered listing.
+	 * Only available if capabilities.listing is true.
+	 */
+	list?(options?: ListOptions): Promise<ListResult>;
+
+	/**
+	 * Fetch all items whose ID starts with prefix.
+	 * Useful for bulk operations on related items.
+	 */
+	fetchByPrefix?(prefix: string, limit?: number): Promise<ContextItem[]>;
 
 	/**
 	 * What this cold store supports.

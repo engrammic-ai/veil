@@ -88,6 +88,8 @@ export class EngrammicColdStore implements ColdStore {
 		semantic: true,
 		temporal: true,
 		provenance: true,
+		glob: true,
+		listing: true,
 	};
 
 	private readonly executor: McpExecutor;

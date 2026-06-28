@@ -114,6 +114,8 @@ describe("VeilHarness integration", () => {
 					semantic: false,
 					temporal: false,
 					provenance: false,
+					glob: false,
+					listing: false,
 				},
 				demote: async () => {
 					throw new Error("Cold storage unavailable");

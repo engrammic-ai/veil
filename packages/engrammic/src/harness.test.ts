@@ -828,7 +828,7 @@ describe("processUserMessage buildManifest exception handling", () => {
 		// Provide a cold store whose query method always throws — this exercises the
 		// try/catch around buildManifest inside processUserMessage.
 		const throwingColdStore = {
-			capabilities: { semantic: true, temporal: false, provenance: false },
+			capabilities: { semantic: true, temporal: false, provenance: false, glob: false, listing: false },
 			demote: vi.fn().mockResolvedValue("ptr_x"),
 			fetch: vi.fn().mockResolvedValue(null),
 			exists: vi.fn().mockResolvedValue(false),
