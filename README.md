@@ -2,12 +2,15 @@
 
 <img src=".github/media/banner.svg" alt="Veil" width="800" />
 
+**Your agent forgets. This one doesn't.**
+
 [![npm version](https://img.shields.io/npm/v/@engrammic/veil?style=flat-square&color=c2410c)](https://www.npmjs.com/package/@engrammic/veil)
 [![license](https://img.shields.io/npm/l/@engrammic/veil?style=flat-square&color=92400e)](LICENSE)
 
 [Install](#install) ·
 [Why Veil](#why-veil) ·
 [Features](#features) ·
+[vs Alternatives](#vs-alternatives) ·
 [Docs](#documentation)
 
 </div>
@@ -37,11 +40,12 @@ veil
 
 ## Why Veil
 
-Context that governs itself, so you stop thinking about it.
+Other tools reset every session. Veil remembers.
 
-Veil is a coding agent with **self-managing context** — stale context fades automatically, the system learns what matters from its own mistakes, and failures are remembered so loops converge instead of grinding.
-
-No LLM in the memory loop. Pure deterministic scoring on the hot path.
+- **Cross-session persistence** — context survives restarts, not just compaction
+- **Local-first** — sqlite-vec embeddings, no cloud dependency, works offline
+- **Self-tuning** — FSRS decay learns what matters; stale context fades, important context stays
+- **Deterministic** — no LLM in the memory loop, sub-10ms scoring on every turn
 
 ---
 
@@ -85,6 +89,21 @@ Code, config, and conversations compress based on relevance. Old context fades, 
 </td>
 </tr>
 </table>
+
+---
+
+## vs Alternatives
+
+Most "memory" solutions are config files with marketing. Veil is infrastructure.
+
+| | Veil | Config-based kits |
+|---|:---:|:---:|
+| Memory persists across sessions | Yes | No |
+| Works offline | Yes | Cloud-dependent |
+| Learns what matters (FSRS decay) | Yes | Static rules |
+| Semantic search (sqlite-vec) | Yes | Keyword only |
+| Survives context compaction | Yes | Hopes for the best |
+| Ships as actual code | Yes | CLAUDE.md + vibes |
 
 ---
 
